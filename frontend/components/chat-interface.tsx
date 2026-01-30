@@ -5,6 +5,7 @@ import { Send, Brain } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { createClient } from "@/lib/supabase/client"
 import { authenticatedFetch } from "@/lib/api"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -67,36 +68,47 @@ export function ChatInterface({
         }
     })
 
-    // Load History on Mount
+    // Load History from Supabase
     React.useEffect(() => {
-        const saved = localStorage.getItem('sam_chat_history');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved, (key, value) => {
-                    if (key === 'timestamp') return new Date(value);
-                    return value;
-                });
-                setMessages(parsed);
-            } catch (e) {
-                console.error("Failed to parse chat history", e);
+        const fetchHistory = async () => {
+            const supabase = createClient()
+            const { data, error } = await supabase
+                .from('messages')
+                .select('*')
+                .order('created_at', { ascending: true })
+                .limit(100)
+
+            if (error) {
+                console.error("Error fetching chat history:", error)
+                return
             }
-        } else {
-            setMessages([{
-                role: "assistant",
-                content: "Te encuentras ante la entrada de la caverna. El olor a humedad y podredumbre emana de su interior. ¿Qué haces?",
-                timestamp: new Date()
-            }]);
+
+            if (data) {
+                const history: Message[] = data.map((msg: any) => ({
+                    role: msg.role as "user" | "assistant" | "system",
+                    content: msg.content,
+                    timestamp: new Date(msg.created_at),
+                    imageUrl: msg.image_url,
+                    debugInfo: msg.metadata // Assuming metadata stores extra info if any
+                }))
+
+                // If history is empty, show welcome message
+                if (history.length === 0) {
+                    setMessages([{
+                        role: "assistant",
+                        content: "Te encuentras ante la entrada de la caverna. El olor a humedad y podredumbre emana de su interior. ¿Qué haces?",
+                        timestamp: new Date()
+                    }])
+                } else {
+                    setMessages(history)
+                }
+            }
         }
+
+        fetchHistory()
     }, []);
 
-    // Save History on Change
-    React.useEffect(() => {
-        if (messages.length > 0) {
-            localStorage.setItem('sam_chat_history', JSON.stringify(messages));
-        }
-    }, [messages]);
-
-    // Auto-scroll to bottom directly
+    // Scroll effect
     React.useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }, [messages])
