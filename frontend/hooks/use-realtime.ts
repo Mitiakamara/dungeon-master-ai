@@ -41,7 +41,7 @@ export function useRealtime({
                     table: table,
                     filter: filter
                 },
-                (payload) => {
+                (payload: any) => {
                     console.log(`⚡ Realtime Event [${table}]:`, payload)
                     onData(payload)
                 }
