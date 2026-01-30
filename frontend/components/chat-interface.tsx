@@ -19,11 +19,16 @@ interface Message {
 }
 
 export function ChatInterface({
+    selectedCharacter,
+    externalEvent,
+    onEventHandled,
+    onCharacterUpdate
+}: {
     selectedCharacter: any,
     externalEvent?: string | null,
     onEventHandled?: () => void,
     onCharacterUpdate?: (updates: any) => void
-    }) {
+}) {
     const [messages, setMessages] = React.useState<Message[]>([])
     const [input, setInput] = React.useState("")
     const [isLoading, setIsLoading] = React.useState(false)
