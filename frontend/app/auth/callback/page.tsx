@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 
-export default function AuthCallbackPage() {
+function AuthCallbackContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const [status, setStatus] = useState('Authenticating...')
@@ -29,10 +29,9 @@ export default function AuthCallbackPage() {
                     } else {
                         console.log("Client-Side Auth: Success! Redirecting...")
                         setStatus('Success! Redirecting...')
-                        // Wait a tick to ensure cookie is set (though client-side usually instantaneous)
                         setTimeout(() => {
                             router.push(next)
-                            router.refresh() // Ensure server components re-render with new auth state if needed
+                            router.refresh()
                         }, 500)
                     }
                 } catch (err: any) {
@@ -42,7 +41,6 @@ export default function AuthCallbackPage() {
                 }
             } else {
                 setStatus('No auth code found')
-                // redirect home if no code
                 setTimeout(() => router.push('/'), 2000)
             }
         }
@@ -69,5 +67,13 @@ export default function AuthCallbackPage() {
                 )}
             </div>
         </div>
+    )
+}
+
+export default function AuthCallbackPage() {
+    return (
+        <Suspense fallback={<div className="flex h-screen items-center justify-center">Loading Auth...</div>}>
+            <AuthCallbackContent />
+        </Suspense>
     )
 }
