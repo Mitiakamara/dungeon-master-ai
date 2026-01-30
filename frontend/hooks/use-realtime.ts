@@ -46,7 +46,7 @@ export function useRealtime({
                     onData(payload)
                 }
             )
-            .subscribe((status) => {
+            .subscribe((status: any) => {
                 console.log(`🔌 Subscription status [${table}]: ${status}`)
             })
 
