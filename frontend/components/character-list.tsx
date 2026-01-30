@@ -55,7 +55,7 @@ export function CharacterList({
         getUser()
 
         // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
             if (session?.user) {
                 setUserId(session.user.id)
                 fetchCharacters(session.user.id)
