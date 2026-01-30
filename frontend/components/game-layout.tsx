@@ -17,6 +17,7 @@ import { Commlink } from "@/components/commlink/commlink-dialog"
 import Link from "next/link"
 import { useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { useRealtime } from "@/hooks/use-realtime"
 
 export default function GameLayout() {
     const [createOpen, setCreateOpen] = useState(false)
@@ -24,6 +25,29 @@ export default function GameLayout() {
 
     const [selectedCharacter, setSelectedCharacter] = useState<any>(null)
     const [rollEvent, setRollEvent] = useState<string | null>(null)
+
+    // [PHASE 13] Realtime Character Updates
+    useRealtime({
+        table: 'characters',
+        event: 'UPDATE',
+        onData: (payload: any) => {
+            const newChar = payload.new
+            console.log("⚡ Character Update Received:", newChar)
+
+            // Only update if it matches our selected character
+            if (selectedCharacter && newChar.id === selectedCharacter.id) {
+                // Merge status updates safely
+                setSelectedCharacter((prev: any) => ({
+                    ...prev,
+                    ...newChar,
+                    status: {
+                        ...prev.status,
+                        ...(newChar.status || {})
+                    }
+                }))
+            }
+        }
+    })
 
     // Persistence: Load on mount
     React.useEffect(() => {
