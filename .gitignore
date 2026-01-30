@@ -1,0 +1,28 @@
+
+# System
+.DS_Store
+Thumbs.db
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+.env
+.env.local
+
+# Frontend
+node_modules/
+.next/
+out/
+build/
+coverage/
+
+# Data & Resources (Private)
+resources/
+backend/debug_log.txt
+*.pdf
+*.epub

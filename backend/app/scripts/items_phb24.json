@@ -1,0 +1,909 @@
+[
+  {
+    "name": "Quarterstaff",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 bludgeoning",
+      "cost": "2 cp",
+      "weight": "2 kg",
+      "properties": [
+        "Versatile (1d8)",
+        "Topple"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Dagger",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 piercing",
+      "cost": "2 gp",
+      "weight": "0.5 kg",
+      "properties": [
+        "Thrown (range 6/18)",
+        "Light",
+        "Finesse",
+        "Slow"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Club",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 bludgeoning",
+      "cost": "1 cp",
+      "weight": "1 kg",
+      "properties": [
+        "Light",
+        "Nick"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Greatclub",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 bludgeoning",
+      "cost": "2 cp",
+      "weight": "5 kg",
+      "properties": [
+        "Two-Handed",
+        "Push"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Handaxe",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 slashing",
+      "cost": "5 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Thrown (range 6/18)",
+        "Light",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Sickle",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 slashing",
+      "cost": "1 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Light",
+        "Nick"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Javelin",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "5 cp",
+      "weight": "1 kg",
+      "properties": [
+        "Thrown (range 9/36)",
+        "Debilitate"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Spear",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "1 gp",
+      "weight": "1.5 kg",
+      "properties": [
+        "Thrown (range 6/18)",
+        "Versatile (1d8)",
+        "Debilitate"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Light Hammer",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 bludgeoning",
+      "cost": "2 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Thrown (range 6/18)",
+        "Light",
+        "Nick"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Mace",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 bludgeoning",
+      "cost": "5 gp",
+      "weight": "2 kg",
+      "properties": [
+        "Debilitate"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Shortbow",
+    "type": "Simple Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "25 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Two-Handed",
+        "Ammunition (range 24/96; arrow)",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Light Crossbow",
+    "type": "Simple Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 piercing",
+      "cost": "25 gp",
+      "weight": "2.5 kg",
+      "properties": [
+        "Two-Handed",
+        "Ammunition (range 24/96; bolt)",
+        "Loading",
+        "Push"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Dart",
+    "type": "Simple Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 piercing",
+      "cost": "5 cp",
+      "weight": "125 g",
+      "properties": [
+        "Thrown (range 6/18)",
+        "Finesse",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Sling",
+    "type": "Simple Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 bludgeoning",
+      "cost": "1 cp",
+      "weight": "—",
+      "properties": [
+        "Ammunition (range 9/36; projectile)",
+        "Slow"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Halberd",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d10 slashing",
+      "cost": "20 gp",
+      "weight": "3 kg",
+      "properties": [
+        "Two-Handed",
+        "Reach",
+        "Heavy",
+        "Cleave"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Scimitar",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 slashing",
+      "cost": "25 gp",
+      "weight": "1.5 kg",
+      "properties": [
+        "Light",
+        "Finesse",
+        "Nick"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Shortsword",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "10 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Light",
+        "Finesse",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Longsword",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 slashing",
+      "cost": "15 gp",
+      "weight": "1.5 kg",
+      "properties": [
+        "Versatile (1d10)",
+        "Debilitate"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Greatsword",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "2d6 slashing",
+      "cost": "50 gp",
+      "weight": "3 kg",
+      "properties": [
+        "Two-Handed",
+        "Heavy",
+        "Vex"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Rapier",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 piercing",
+      "cost": "25 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Finesse",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Glaive",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d10 slashing",
+      "cost": "20 gp",
+      "weight": "3 kg",
+      "properties": [
+        "Two-Handed",
+        "Reach",
+        "Heavy",
+        "Vex"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Greataxe",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d12 slashing",
+      "cost": "30 gp",
+      "weight": "3.5 kg",
+      "properties": [
+        "Two-Handed",
+        "Heavy",
+        "Cleave"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Battleaxe",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 slashing",
+      "cost": "10 gp",
+      "weight": "2 kg",
+      "properties": [
+        "Versatile (1d10)",
+        "Topple"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Lance",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d10 piercing",
+      "cost": "10 gp",
+      "weight": "3 kg",
+      "properties": [
+        "Two-Handed (unless mounted)",
+        "Reach",
+        "Heavy",
+        "Push"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Whip",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d4 slashing",
+      "cost": "2 gp",
+      "weight": "1.5 kg",
+      "properties": [
+        "Reach",
+        "Finesse",
+        "Slow"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Morningstar",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 piercing",
+      "cost": "15 gp",
+      "weight": "2 kg",
+      "properties": [
+        "Debilitate"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Flail",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 bludgeoning",
+      "cost": "10 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Debilitate"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Warhammer",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 bludgeoning",
+      "cost": "15 gp",
+      "weight": "2.5 kg",
+      "properties": [
+        "Versatile (1d10)",
+        "Push"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Maul",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "2d6 bludgeoning",
+      "cost": "10 gp",
+      "weight": "5 kg",
+      "properties": [
+        "Two-Handed",
+        "Heavy",
+        "Topple"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Pike",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d10 piercing",
+      "cost": "5 gp",
+      "weight": "9 kg",
+      "properties": [
+        "Two-Handed",
+        "Reach",
+        "Heavy",
+        "Push"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "War Pick",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 piercing",
+      "cost": "5 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Versatile (1d10)",
+        "Debilitate"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Trident",
+    "type": "Martial Melee Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "5 gp",
+      "weight": "2 kg",
+      "properties": [
+        "Thrown (range 6/18)",
+        "Versatile (1d10)",
+        "Topple"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Longbow",
+    "type": "Martial Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d8 piercing",
+      "cost": "50 gp",
+      "weight": "1 kg",
+      "properties": [
+        "Two-Handed",
+        "Ammunition (range 45/180; arrow)",
+        "Heavy",
+        "Slow"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Hand Crossbow",
+    "type": "Martial Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "75 gp",
+      "weight": "1.5 kg",
+      "properties": [
+        "Light",
+        "Ammunition (range 9/36; bolt)",
+        "Loading",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Heavy Crossbow",
+    "type": "Martial Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d10 piercing",
+      "cost": "50 gp",
+      "weight": "9 kg",
+      "properties": [
+        "Two-Handed",
+        "Ammunition (range 30/120; bolt)",
+        "Heavy",
+        "Loading",
+        "Push"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Blowgun",
+    "type": "Martial Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1 piercing",
+      "cost": "10 gp",
+      "weight": "0.5 kg",
+      "properties": [
+        "Ammunition (range 7.5/30; dart)",
+        "Loading",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Musket",
+    "type": "Martial Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d12 piercing",
+      "cost": "500 gp",
+      "weight": "500 g",
+      "properties": [
+        "Two-Handed",
+        "Ammunition (range 12/36; bullet)",
+        "Loading",
+        "Slow"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Pistol",
+    "type": "Martial Ranged Weapon",
+    "rarity": "Common",
+    "properties": {
+      "damage": "1d10 piercing",
+      "cost": "250 gp",
+      "weight": "1.5 kg",
+      "properties": [
+        "Ammunition (range 9/27; bullet)",
+        "Loading",
+        "Graze"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Padded Armor",
+    "type": "Light Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "5 gp",
+      "weight": "4 kg",
+      "properties": [
+        "AC 11 + Dex modifier",
+        "Disadvantage on Stealth checks",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Leather Armor",
+    "type": "Light Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "10 gp",
+      "weight": "5 kg",
+      "properties": [
+        "AC 11 + Dex modifier",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Studded Leather Armor",
+    "type": "Light Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "45 gp",
+      "weight": "6.5 kg",
+      "properties": [
+        "AC 12 + Dex modifier",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Hide Armor",
+    "type": "Medium Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "10 gp",
+      "weight": "6 kg",
+      "properties": [
+        "AC 12 + Dex modifier (max 2)",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Chain Shirt",
+    "type": "Medium Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "50 gp",
+      "weight": "10 kg",
+      "properties": [
+        "AC 13 + Dex modifier (max 2)",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Scale Mail",
+    "type": "Medium Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "50 gp",
+      "weight": "22.5 kg",
+      "properties": [
+        "AC 14 + Dex modifier (max 2)",
+        "Disadvantage on Stealth checks",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Breastplate",
+    "type": "Medium Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "400 gp",
+      "weight": "10 kg",
+      "properties": [
+        "AC 14 + Dex modifier (max 2)",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Half Plate",
+    "type": "Medium Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "750 gp",
+      "weight": "20 kg",
+      "properties": [
+        "AC 15 + Dex modifier (max 2)",
+        "Disadvantage on Stealth checks",
+        "Don/Doff Time: 1 minute"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Ring Mail",
+    "type": "Heavy Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "30 gp",
+      "weight": "20 kg",
+      "properties": [
+        "AC 14",
+        "Disadvantage on Stealth checks",
+        "Don Time: 10 minutes",
+        "Doff Time: 5 minutes"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Chain Mail",
+    "type": "Heavy Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "75 gp",
+      "weight": "27.5 kg",
+      "properties": [
+        "AC 16",
+        "Strength 13 requirement",
+        "Disadvantage on Stealth checks",
+        "Don Time: 10 minutes",
+        "Doff Time: 5 minutes"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Splint Armor",
+    "type": "Heavy Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "200 gp",
+      "weight": "30 kg",
+      "properties": [
+        "AC 17",
+        "Strength 15 requirement",
+        "Disadvantage on Stealth checks",
+        "Don Time: 10 minutes",
+        "Doff Time: 5 minutes"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Plate Armor",
+    "type": "Heavy Armor",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "1500 gp",
+      "weight": "32.5 kg",
+      "properties": [
+        "AC 18",
+        "Strength 15 requirement",
+        "Disadvantage on Stealth checks",
+        "Don Time: 10 minutes",
+        "Doff Time: 5 minutes"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Shield",
+    "type": "Shield",
+    "rarity": "Common",
+    "properties": {
+      "damage": "N/A",
+      "cost": "10 gp",
+      "weight": "3 kg",
+      "properties": [
+        "AC +2 bonus",
+        "Don/Doff Time: Action"
+      ]
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Staff",
+    "type": "Arcane Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "5 gp",
+      "weight": "2 kg",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Crystal",
+    "type": "Arcane Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "10 gp",
+      "weight": "0.5 kg",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Orb",
+    "type": "Arcane Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "20 gp",
+      "weight": "1.5 kg",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Rod",
+    "type": "Arcane Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "10 gp",
+      "weight": "1 kg",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Wand",
+    "type": "Arcane Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "10 gp",
+      "weight": "0.5 kg",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Wooden Staff",
+    "type": "Druidic Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "5 gp",
+      "weight": "2 kg",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Sprig of Mistletoe",
+    "type": "Druidic Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "1 gp",
+      "weight": "N/A",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  },
+  {
+    "name": "Yew Wand",
+    "type": "Druidic Focus",
+    "rarity": "Common",
+    "properties": {
+      "damage": null,
+      "cost": "10 gp",
+      "weight": "0.5 kg",
+      "properties": []
+    },
+    "source": "PHB 2024"
+  }
+]
