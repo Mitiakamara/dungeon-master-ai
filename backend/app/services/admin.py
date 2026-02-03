@@ -142,7 +142,25 @@ class AdminService:
 
     @staticmethod
     def reset_campaign() -> str:
-        # Since we don't store chat logs in DB (yet), only frontend has them.
-        # We return a trigger code to frontend.
-        return "⚠️ Campaign Reset Initiated. <ACTION>CLEAR_CHAT</ACTION>"
+        try:
+            # 1. Reset Character Health
+            res = supabase.table("characters").select("*").execute()
+            count = 0
+            if res.data:
+                for char in res.data:
+                    status = char.get("status", {})
+                    # Only reset if we know max HP
+                    if status and "hp_max" in status:
+                        status["hp_current"] = status["hp_max"]
+                        # Optional: Reset other things like "conditions"?
+                        # status["conditions"] = [] 
+                        
+                        # Update DB
+                        supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
+                        count += 1
+            
+            # 2. Clear Chat (Frontend Action) & Refresh Data
+            return f"⚠️ Campaign Reset! Chat wiped. {count} Characters fully healed. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
+        except Exception as e:
+            return f"❌ Reset Error: {e}"
 
