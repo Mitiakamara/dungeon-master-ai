@@ -39,7 +39,7 @@ export function ChatInterface({
     const [debugOpen, setDebugOpen] = React.useState(false)
     const [currentDebugInfo, setCurrentDebugInfo] = React.useState<any>(null)
 
-    // [PHASE 13] Realtime Subscription
+    // [PHASE 13] Realtime Subscription & State Parsing
     useRealtime({
         table: 'messages',
         event: 'INSERT',
@@ -47,12 +47,32 @@ export function ChatInterface({
             const newItem = payload.new
             if (!newItem) return
 
-            // Prevent duplicate display of our own just-sent messages
-            // (Simple heuristic: if content matches last message and it's less than 2s old)
+            // 1. Check for State Updates in content
+            // Format: <UPDATE>{"status": {"hp_current": 10}}</UPDATE>
+            const updateRegex = /<UPDATE>(.*?)<\/UPDATE>/s;
+            const match = newItem.content.match(updateRegex);
+
+            let displayContent = newItem.content;
+
+            if (match && match[1]) {
+                try {
+                    const updateData = JSON.parse(match[1]);
+                    console.log("⚡ Auto-Applying State Update:", updateData);
+                    if (onCharacterUpdate) {
+                        onCharacterUpdate(updateData);
+                    }
+                    // Remove the tag from display
+                    displayContent = newItem.content.replace(match[0], "").trim();
+                } catch (e) {
+                    console.error("Failed to parse Update Tag:", e);
+                }
+            }
+
+            // 2. Prevent duplicate display
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1]
                 const isDuplicate = lastMsg
-                    && lastMsg.content === newItem.content
+                    && lastMsg.content === displayContent // Check against CLEANED content
                     && lastMsg.role === newItem.role
                     && (new Date().getTime() - new Date(lastMsg.timestamp).getTime() < 5000)
 
@@ -60,7 +80,7 @@ export function ChatInterface({
 
                 return [...prev, {
                     role: newItem.role as "user" | "assistant",
-                    content: newItem.content,
+                    content: displayContent,
                     timestamp: newItem.created_at ? new Date(newItem.created_at) : new Date(),
                     imageUrl: newItem.image_url
                 }]
