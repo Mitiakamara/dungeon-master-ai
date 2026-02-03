@@ -19,6 +19,7 @@ class AdminService:
         Returns a string response to be shown in the chat.
         """
         try:
+            import time
             parts = command_str.strip().split()
             if not parts:
                 return "Empty command."
@@ -31,13 +32,13 @@ class AdminService:
             elif cmd == "/reset":
                 return AdminService.reset_campaign(user_id)
             elif cmd == "/checkpoint":
-                if not args:
-                    return "Usage: /checkpoint [name]"
-                return AdminService.create_checkpoint(" ".join(args))
+                # Auto-name if not provided
+                name = " ".join(args) if args else f"autosave_{int(time.time())}"
+                return AdminService.create_checkpoint(name, user_id)
             elif cmd == "/load":
                 if not args:
                     return "Usage: /load [name]"
-                return AdminService.load_checkpoint(" ".join(args))
+                return AdminService.load_checkpoint(" ".join(args), user_id)
             elif cmd == "/list":
                 return AdminService.list_checkpoints()
             else:
@@ -53,13 +54,11 @@ class AdminService:
         return """
 **⚔️ Admin Command Center ⚔️**
 
-*   `/checkpoint [name]` - Save current state manually.
-*   `/load [name]` - Restore a saved state.
+*   `/checkpoint [name]` - Save current state (Chat + Stats).
+*   `/load [name]` - Restore a saved state (Wipes current chat).
 *   `/reset` - Wipe chat history & Restore HP.
 *   `/list` - Show all checkpoints.
 *   `/help` - Show this menu.
-
-*Note: Checkpoints save Chat History + All Character Statuses.*
 """
 
     @staticmethod
@@ -77,26 +76,30 @@ class AdminService:
             return f"Error listing checkpoints: {e}"
 
     @staticmethod
-    def create_checkpoint(name: str) -> str:
+    def create_checkpoint(name: str, user_id: str) -> str:
         try:
-            # Retrieving all characters
+            # 1. Characters
             chars = supabase.table("characters").select("*").execute()
+            
+            # 2. Chat History
+            chat = supabase.table("messages").select("*").eq("user_id", user_id).order("created_at").execute()
             
             data = {
                 "name": name,
                 "character_states": chars.data if chars.data else [],
-                "notes": "Manual Save via Admin Console"
+                "chat_history": chat.data if chat.data else [], 
+                "notes": "Full State Save via Admin Console"
             }
             
             # Upsert checkpoint (name is unique)
             supabase.table("checkpoints").upsert(data, on_conflict="name").execute()
-            return f"✅ Checkpoint '**{name}**' saved successfully."
+            return f"✅ Checkpoint '**{name}**' saved (Chars + Chat)."
             
         except Exception as e:
             return f"❌ Error creating checkpoint: {e}"
 
     @staticmethod
-    def load_checkpoint(name: str) -> str:
+    def load_checkpoint(name: str, user_id: str) -> str:
         try:
             # 1. Fetch Checkpoint
             res = supabase.table("checkpoints").select("*").eq("name", name).execute()
@@ -107,16 +110,26 @@ class AdminService:
             
             # 2. Restore Characters
             saved_chars = cp.get("character_states", [])
-            count = 0
+            count_chars = 0
             if isinstance(saved_chars, list):
                 for char in saved_chars:
                     # Upsert each char to restore stats/inventory
                     # Security: This overwrites current state with old state.
                     if "id" in char:
                         supabase.table("characters").upsert(char).execute()
-                        count += 1
+                        count_chars += 1
             
-            return f"🔄 Loaded checkpoint '**{name}**'. Restored {count} characters. <ACTION>REFRESH_CHARACTERS</ACTION>"
+            # 3. Restore Chat History
+            saved_chat = cp.get("chat_history", [])
+            count_msgs = 0
+            if isinstance(saved_chat, list) and saved_chat:
+                # Wipe current history for this user
+                supabase.table("messages").delete().eq("user_id", user_id).execute()
+                # Restore old history
+                supabase.table("messages").insert(saved_chat).execute()
+                count_msgs = len(saved_chat)
+
+            return f"🔄 Loaded '**{name}**'. Restored {count_msgs} msgs & {count_chars} chars. <ACTION>REFRESH_CHARACTERS</ACTION><ACTION>RELOAD_CHAT</ACTION>"
             
         except Exception as e:
             return f"❌ Error loading checkpoint: {e}"
