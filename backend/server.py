@@ -84,7 +84,8 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         if request.message.strip().startswith("/"):
             try:
                 from app.services.admin import AdminService
-                admin_response = AdminService.handle_command(request.message)
+                # Pass user_id so admin commands affect THIS user
+                admin_response = AdminService.handle_command(request.message, user_id)
                 return {
                     "response": admin_response,
                     "image_url": None
