@@ -68,7 +68,7 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         except Exception as db_e:
             print(f"WARNING: Basic insert failed (likely FK constraint). Attempting to find campaign...")
             # Fallback: Find first campaign for user
-            camps = sam_brain.supabase.table("campaigns").select("id").eq("user_id", user_id).limit(1).execute()
+            camps = sam_brain.supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
             if camps.data:
                 cid = camps.data[0]['id']
                 sam_brain.supabase.table("messages").insert({
