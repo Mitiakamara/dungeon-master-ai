@@ -2,7 +2,68 @@
 
 import * as React from "react"
 import { Send, Brain } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
+
+// ... inside ChatInterface component
+const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!input.trim() || isLoading) return
+
+    const userMsg = input.trim()
+    setInput("")
+    setIsLoading(true)
+
+    // Optimistic UI Update (Show user message immediately)
+    setMessages(prev => [...prev, {
+        role: "user",
+        content: userMsg,
+        timestamp: new Date()
+    }])
+
+    try {
+        // [PHASE 11] AUTHENTICATED CALL
+        // Using authenticatedFetch to hit the backend
+        const response = await authenticatedFetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: userMsg,
+                history: messages.map(m => m.content).slice(-10), // Context Window
+                character_context: selectedCharacter ? JSON.stringify(selectedCharacter) : "No character selected"
+            })
+        })
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            console.error("API Error:", response.status, errorText)
+            throw new Error(`Server Error: ${response.status} - ${errorText}`)
+        }
+
+        const data = await response.json()
+
+        // Note: We don't need to manually add the AI response here anymore 
+        // because Realtime subscription will catch it and add it!
+        // BUT, for speed (latency compensation), we might want to?
+        // Let's stick to Realtime as the source of truth to verify it works.
+        // If we don't see the response, Realtime is broken.
+
+    } catch (error) {
+        console.error("Chat Error:", error)
+        toast.error("❌ Fallo de conexión con S.A.M.", {
+            description: "El cerebro no responde. Verifica tu conexión o intenta de nuevo.",
+            action: {
+                label: "Reintentar",
+                onClick: () => handleSubmit()
+            }
+        })
+        // Remove optimistic message on failure? Or keep it with error state?
+        // For now, keep it.
+    } finally {
+        setIsLoading(false)
+    }
+}
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { createClient } from "@/lib/supabase/client"
