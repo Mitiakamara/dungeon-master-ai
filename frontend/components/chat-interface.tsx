@@ -284,8 +284,16 @@ export function ChatInterface({
 
         } catch (error) {
             console.error(error)
-            const errorMsg: Message = { role: "system", content: "Error communicating with S.A.M.", timestamp: new Date() }
+            const errorMsg: Message = { role: "system", content: "Error communicating with S.A.M. (Offline)", timestamp: new Date() }
             setMessages(prev => [...prev, errorMsg])
+
+            toast.error("❌ Fallo de conexión con S.A.M.", {
+                description: "El servidor no responde. Verifica tu conexión.",
+                action: {
+                    label: "Reintentar",
+                    onClick: () => handleSendMessage(null, contentToSend)
+                }
+            })
         } finally {
             setIsLoading(false)
         }
