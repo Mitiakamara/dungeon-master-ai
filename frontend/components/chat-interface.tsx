@@ -49,7 +49,7 @@ export function ChatInterface({
 
             // 1. Check for State Updates in content
             // Format: <UPDATE>{"status": {"hp_current": 10}}</UPDATE>
-            const updateRegex = /<UPDATE>(.*?)<\/UPDATE>/s;
+            const updateRegex = /<UPDATE>([\s\S]*?)<\/UPDATE>/;
             const match = newItem.content.match(updateRegex);
 
             let displayContent = newItem.content;
