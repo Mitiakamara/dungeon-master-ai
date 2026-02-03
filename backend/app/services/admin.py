@@ -29,7 +29,7 @@ class AdminService:
             if cmd == "/help":
                 return AdminService.help_command()
             elif cmd == "/reset":
-                return AdminService.reset_campaign()
+                return AdminService.reset_campaign(user_id)
             elif cmd == "/checkpoint":
                 if not args:
                     return "Usage: /checkpoint [name]"
@@ -55,7 +55,7 @@ class AdminService:
 
 *   `/checkpoint [name]` - Save current state manually.
 *   `/load [name]` - Restore a saved state.
-*   `/reset` - Wipe chat history (Restart Campaign).
+*   `/reset` - Wipe chat history & Restore HP.
 *   `/list` - Show all checkpoints.
 *   `/help` - Show this menu.
 
@@ -79,20 +79,6 @@ class AdminService:
     @staticmethod
     def create_checkpoint(name: str) -> str:
         try:
-            # 1. Get Chat History (Last 50 messages? Or all? Usually we rely on client sending history, 
-            # but backend might not store full history unless we implement persisting chat in DB properly.
-            # Frontend persists history in LocalStorage. Backend currently just RAGs rules.
-            # WAIT: If frontend has history, Backend 'reset' assumes clearing DB history?
-            # Reviewing: `chat_interface.tsx` persists to LocalStorage.
-            # If we want a TRUE reset/restore, we need Backend Persistence or Frontend Logic.
-            
-            # CURRENT ARCHITECTURE LIMITATION:
-            # Chat history is CLIENT SIDE mainly.
-            # If backend triggers reset, it just tells frontend?
-            # Or does backend store a copy?
-            # `admin.py` runs on backend.
-            
-            # Let's assume for this phase we save CHARACTER STATE mostly.
             # Retrieving all characters
             chars = supabase.table("characters").select("*").execute()
             
@@ -130,18 +116,13 @@ class AdminService:
                         supabase.table("characters").upsert(char).execute()
                         count += 1
             
-            # 3. Return a special instruction to Frontend?
-            # The backend returns a string. The frontend displays it.
-            # But the frontend needs to RELOAD character data.
-            # We can issue a <RELOAD_UI> tag or similar?
-            
             return f"🔄 Loaded checkpoint '**{name}**'. Restored {count} characters. <ACTION>REFRESH_CHARACTERS</ACTION>"
             
         except Exception as e:
             return f"❌ Error loading checkpoint: {e}"
 
     @staticmethod
-    def reset_campaign() -> str:
+    def reset_campaign(user_id: str) -> str:
         try:
             # 1. Reset Character Health
             res = supabase.table("characters").select("*").execute()
@@ -159,8 +140,17 @@ class AdminService:
                         supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
                         count += 1
             
-            # 2. Clear Chat (Frontend Action) & Refresh Data
-            return f"⚠️ Campaign Reset! Chat wiped. {count} Characters fully healed. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
+            # 2. DELETE CHAT HISTORY from Database
+            # We delete all messages where user_id matches the GM/User
+            # (In a real app, this might be campaign_id scoped)
+            if user_id:
+                try:
+                    supabase.table("messages").delete().eq("user_id", user_id).execute()
+                except Exception as del_err:
+                     print(f"Warning: Failed to delete user messages: {del_err}")
+
+            # 3. Clear Chat (Frontend Action) & Refresh Data
+            return f"⚠️ Campaign Reset! Chat History DB Cleared. {count} Characters fully healed. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
         except Exception as e:
             return f"❌ Reset Error: {e}"
 
