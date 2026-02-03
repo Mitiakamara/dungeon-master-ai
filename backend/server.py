@@ -43,6 +43,10 @@ class RollRequest(BaseModel):
 def read_root():
     return {"status": "online", "system": "S.A.M."}
 
+@app.get("/api/version")
+def get_version():
+    return {"version": "1.0.1", "deployed_at": "2026-02-03 T21:15:00 UTC", "fix": "AI Persistence v2"}
+
 @app.post("/api/chat")
 async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token)):
     """
@@ -54,39 +58,32 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         print(f"DEBUG CHAT REQUEST: {request.message} from {user_id}")
         
         # [PHASE 13] PERSISTENCE LAYER - SAVE USER MESSAGE
-        # We need a campaign_id. For now, we'll try to find the user's most recent campaign or use a NULL if allowed.
-        # Ideally, Frontend should pass campaign_id. We'll default to NULL/None and hope schema allows it 
-        # or we update schema later.
-        
+        cid = None
         try:
-            sam_brain.supabase.table("messages").insert({
-                "role": "user",
-                "content": request.message,
-                "user_id": user_id,
-                # "campaign_id": ... # Pending Frontend update
-            }).execute()
-        except Exception as db_e:
-            print(f"WARNING: Basic insert failed (likely FK constraint). Attempting to find campaign...")
-            # Fallback: Find first campaign for user
+             # Fallback: Find first campaign for user (gm_id)
             camps = sam_brain.supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
             if camps.data:
                 cid = camps.data[0]['id']
-                sam_brain.supabase.table("messages").insert({
-                    "role": "user",
-                    "content": request.message,
-                    "user_id": user_id,
-                    "campaign_id": cid
-                }).execute()
-            else:
-                 print(f"ERROR: No campaign found for user. Message might not be saved.")
+        except Exception:
+            pass
+
+        try:
+            user_payload = {
+                "role": "user",
+                "content": request.message,
+                "user_id": user_id,
+            }
+            if cid:
+                user_payload["campaign_id"] = cid
+            
+            sam_brain.supabase.table("messages").insert(user_payload).execute()
+        except Exception as db_e:
+            print(f"WARNING: User insert failed: {db_e}")
 
         # [PHASE 11] ADMIN COMMAND INTERCEPTOR
         if request.message.strip().startswith("/"):
             try:
-                import sys
-                print(f"DEBUG: sys.path: {sys.path}")
                 from app.services.admin import AdminService
-                print(f"DEBUG: AdminService imported: {AdminService}")
                 admin_response = AdminService.handle_command(request.message)
                 return {
                     "response": admin_response,
@@ -94,7 +91,7 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 }
             except Exception as e:
                 import traceback
-                print(f"DEBUG IMPORT ERROR: {traceback.format_exc()}")
+                print(f"DEBUG ADMIN ERROR: {traceback.format_exc()}")
                 return {
                     "response": f"ADMIN ERROR: {str(e)}",
                     "image_url": None
@@ -108,20 +105,19 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         
         # [PHASE 13] PERSISTENCE LAYER - SAVE AI MESSAGE
         try:
-            # Re-fetch campaign ID if we found one earlier, or try insert null
-            # For speed, we just try insert again or use the same logic
-            # Simplified: Just insert role=assistant
-             sam_brain.supabase.table("messages").insert({
+             ai_payload = {
                 "role": "assistant",
                 "content": response['response'],
                 "image_url": response.get('image_url'),
                 "metadata": response.get('debug_info'),
-                # "campaign_id": ... 
-            }).execute()
+                "user_id": user_id 
+            }
+             if cid:
+                 ai_payload["campaign_id"] = cid
+
+             sam_brain.supabase.table("messages").insert(ai_payload).execute()
         except Exception as e:
-             # Retry with campaign lookup if needed (duplicate logic, but safer)
-             # In production we'd refactor this into a helper "save_message"
-             pass
+             print(f"FAILED TO SAVE AI MESSAGE: {e}")
 
         return response # Returns {"response": "...", "image_url": "..."}
     except Exception as e:
