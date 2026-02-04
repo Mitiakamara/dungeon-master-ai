@@ -54,7 +54,7 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
     Persists data to Supabase 'messages' table to trigger Realtime updates.
     """
     try:
-        user_id = user['sub']
+        user_id = user.get('sub', 'unknown_user')
         print(f"DEBUG CHAT REQUEST: {request.message} from {user_id}")
         
         # [PHASE 13] PERSISTENCE LAYER - SAVE USER MESSAGE
@@ -122,8 +122,14 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
 
         return response # Returns {"response": "...", "image_url": "..."}
     except Exception as e:
-        print(f"CHAT ENDPOINT ERROR: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        trace = traceback.format_exc()
+        print(f"CHAT ENDPOINT ERROR: {e}\n{trace}")
+        # Return error as chat message so user sees it in UI
+        return {
+            "response": f"⚠️ **SYSTEM ERROR:** {str(e)}\n\n*(Check server logs for trace)*",
+            "image_url": None
+        }
 
 @app.post("/api/roll")
 async def roll_dice(request: RollRequest):
