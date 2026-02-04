@@ -287,9 +287,23 @@ export function ChatInterface({
                 }
 
                 if (finalContent || data.image_url) {
-                    // [SYNC FIX] We do NOT manually add the AI response to state here.
-                    // We rely 100% on the Realtime subscription to receive the 'INSERT' event.
-                    console.log("✅ Message sent, waiting for Realtime sync...");
+                    // [SYNC OR MANUAL?] 
+                    // Admin Commands (starting with /) are ephemeral -> No DB -> Manual UI Update
+                    const isAdmin = contentToSend.trim().startsWith("/");
+
+                    if (isAdmin) {
+                        const assistantMsg: Message = {
+                            role: "assistant", // "system" maybe? No, assistant is fine.
+                            content: finalContent,
+                            imageUrl: data.image_url,
+                            debugInfo: data.debug_info,
+                            timestamp: new Date()
+                        }
+                        setMessages(prev => [...prev, assistantMsg]);
+                    } else {
+                        // Standard AI messages -> Wait for Realtime INSERT event
+                        console.log("✅ Message sent, waiting for Realtime sync...");
+                    }
                 }
             }
 
