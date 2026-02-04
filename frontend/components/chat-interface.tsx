@@ -82,6 +82,39 @@ export function ChatInterface({
                     }
                 }
 
+                // [PHASE 15] Parse LOOT, XP, EVENTS
+                const lootRegex = /<LOOT>(.*?)<\/LOOT>/g;
+                let lootMatch;
+                while ((lootMatch = lootRegex.exec(displayContent)) !== null) {
+                    try {
+                        const lootJson = JSON.parse(lootMatch[1]);
+                        const itemStr = `${lootJson.qty || 1}x ${lootJson.item}`;
+                        toast.success(`🎁 Loot Found: ${itemStr}`);
+
+                        // We assume the strict <UPDATE> tag handles the actual DB insertion, 
+                        // this is just for the visual Pop-up.
+                    } catch {
+                        // Fallback for simple text Loot
+                        toast.success(`🎁 Loot Found: ${lootMatch[1]}`);
+                    }
+                    displayContent = displayContent.replace(lootMatch[0], "").trim();
+                }
+
+                const xpRegex = /<XP_GAIN>(.*?)<\/XP_GAIN>/g;
+                let xpMatch;
+                while ((xpMatch = xpRegex.exec(displayContent)) !== null) {
+                    toast.info(`✨ +${xpMatch[1]} XP`);
+                    displayContent = displayContent.replace(xpMatch[0], "").trim();
+                }
+
+                if (displayContent.includes("<EVENT>LEVEL_UP</EVENT>")) {
+                    toast.warning("🆙 LEVEL UP! YOU FEEL UNSTOPPABLE!", {
+                        duration: 5000,
+                        className: "bg-yellow-500 text-black font-bold text-lg"
+                    });
+                    displayContent = displayContent.replace("<EVENT>LEVEL_UP</EVENT>", "").trim();
+                }
+
                 if (!displayContent.trim() && match) {
                     // Fallback if AI only sent an update tag and no text (rare, but happens)
                     displayContent = "*(S.A.M. te mira fijamente mientras las leyes de la física se reajustan...)*";

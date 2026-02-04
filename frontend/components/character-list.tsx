@@ -14,6 +14,29 @@ interface Character {
     class: string
     level: number
     image_url?: string
+    status?: {
+        xp?: number
+        hp_current?: number
+        hp_max?: number
+        // ... other props
+    }
+}
+
+// 5e XP Table helper
+function getLevelProgress(xp: number = 0, level: number = 1) {
+    // Current Level Flooring
+    const levels = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
+    const currentBase = levels[level - 1] || 0;
+    const nextGoal = levels[level] || 355000;
+
+    const needed = nextGoal - currentBase;
+    const currentInLevel = xp - currentBase;
+
+    let percent = (currentInLevel / needed) * 100;
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+
+    return { percent, current: xp, next: nextGoal };
 }
 
 import { CharacterSheetDialog } from "@/components/character-sheet-dialog"
@@ -152,9 +175,18 @@ export function CharacterList({
                                             </Avatar>
                                             <div className="flex flex-col items-start overflow-hidden">
                                                 <span className="text-sm font-medium truncate w-full text-left">{char.name}</span>
-                                                <span className="text-xs text-muted-foreground truncate w-full text-left">
-                                                    {char.class && typeof char.class === 'string' ? char.class.split('(')[0].trim() : 'Unknown'} Lvl {char.level}
-                                                </span>
+                                                <div className="flex items-center justify-between w-full">
+                                                    <span className="text-xs text-muted-foreground truncate text-left">
+                                                        {char.class && typeof char.class === 'string' ? char.class.split('(')[0].trim() : 'Unknown'} Lvl {char.level}
+                                                    </span>
+                                                    {/* XP Bar */}
+                                                    <div className="w-16 h-1.5 bg-secondary/50 rounded-full overflow-hidden ml-2 border border-white/10" title={`XP: ${char.status?.xp || 0}`}>
+                                                        <div
+                                                            className="h-full bg-purple-500/70"
+                                                            style={{ width: `${getLevelProgress(char.status?.xp || 0, char.level).percent}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
                                             </div>
                                         </Button>
                                         <Button

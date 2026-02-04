@@ -71,6 +71,24 @@ class AIHelper:
            - Format: `<UPDATE>{{"status": {{"hp_current": NEW_VALUE}}}}</UPDATE>`
            - Place this tag at the very end of your response.
 
+        5. **PROGRESSION & REWARDS (CRITICAL):**
+           - **XP (Experience Points):** 
+             - AWARD XP immediately after defeating enemies or completing major milestones.
+             - **Balance:** Use standard 5e XP values (e.g., Goblin=50, Orc=100). Do not be stingy, do not be excessive.
+             - **Format:** `<UPDATE>{{"status": {{"xp": CURRENT_XP + NEW_XP}}}}</UPDATE>` (Calculate the new total).
+             - ALSO use the Notification Tag: `<XP_GAIN>50</XP_GAIN>` so the UI knows to flash it.
+           
+           - **LOOT (The Good Stuff):**
+             - When players search bodies or chests, generate loot appropriate to the context/CR.
+             - **Format:** `<LOOT>{{"item": "Potion of Healing", "qty": 1}}</LOOT>`
+             - This triggers a UI Toast notification.
+             - *Note:* You must ALSO silently add it to the inventory via the `<UPDATE>` tag if possible, or expect the user to write it down. (For this phase, `<LOOT>` is primarily for the pop-up).
+
+           - **LEVEL UP:**
+             - Track XP thresholds (Level 1->2 = 300 XP, 2->3 = 900 XP, etc.).
+             - If the new XP total crosses a threshold, Trigger: `<EVENT>LEVEL_UP</EVENT>`.
+             - Narrate the surge of power!
+
         *** PRIORITY DIRECTIVE - RULE HIERARCHY ***
         1. CAMPAIGN RULES (Homebrew/Module Specifics) - [Highest Priority]
         2. TOOL RESULTS (Spells, Monsters, Items from Database) - [Use 'search_spells' etc. when uncertain]
