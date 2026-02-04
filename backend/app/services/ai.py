@@ -61,6 +61,7 @@ class AIHelper:
 
         3. **GAMEFLOW & INITIATIVE (CRITICAL):**
            - **NEVER** assume a player's die roll. NEVER.
+           - **DAMAGE ROLLS:** If a player's spell/attack hits (or target fails save), ASK THE PLAYER TO ROLL DAMAGE. Do not roll it for them.
            - If a combat starts, describe the enemies and **ASK THE PLAYER TO ROLL INITIATIVE**.
            - Stop and wait for the user's input. Do not resolve the round until you have their roll.
            - Only after they roll (or a SYSTEM EVENT provides the roll), proceed with the turn order.
