@@ -76,37 +76,43 @@ export function ChatInterface({
                         if (onCharacterUpdate) {
                             onCharacterUpdate(updateData);
                         }
-                        if (!displayContent.trim() && match) {
-                            // Fallback if AI only sent an update tag and no text (rare, but happens)
-                            displayContent = "*(S.A.M. te mira fijamente mientras las leyes de la física se reajustan...)*";
-                        }
-
-                        // [FIX] Handling <ACTION>CLEAR_CHAT</ACTION> from Realtime
-                        if (displayContent.includes("<ACTION>CLEAR_CHAT</ACTION>")) {
-                            console.log("🧹 Received Global Clear Command via Realtime");
-                            setMessages([]);
-                            return;
-                        }
-
-                        incomingMsg.content = displayContent;
-
-                        setMessages((prev) => {
-                            const lastMsg = prev[prev.length - 1];
-
-                            // [SYNC FIX] Deduplication Logic
-                            const isDuplicate = lastMsg
-                                && lastMsg.content === incomingMsg.content
-                                && lastMsg.role === incomingMsg.role;
-
-                            if (isDuplicate) {
-                                return prev;
-                            }
-
-                            return [...prev, incomingMsg];
-                        })
+                        displayContent = incomingMsg.content.replace(match[0], "").trim();
+                    } catch (e) {
+                        console.error("Failed to parse Update Tag:", e);
                     }
+                }
+
+                if (!displayContent.trim() && match) {
+                    // Fallback if AI only sent an update tag and no text (rare, but happens)
+                    displayContent = "*(S.A.M. te mira fijamente mientras las leyes de la física se reajustan...)*";
+                }
+
+                // [FIX] Handling <ACTION>CLEAR_CHAT</ACTION> from Realtime
+                if (displayContent.includes("<ACTION>CLEAR_CHAT</ACTION>")) {
+                    console.log("🧹 Received Global Clear Command via Realtime");
+                    setMessages([]);
+                    return;
+                }
+
+                incomingMsg.content = displayContent;
+
+                setMessages((prev) => {
+                    const lastMsg = prev[prev.length - 1];
+
+                    // [SYNC FIX] Deduplication Logic
+                    const isDuplicate = lastMsg
+                        && lastMsg.content === incomingMsg.content
+                        && lastMsg.role === incomingMsg.role;
+
+                    if (isDuplicate) {
+                        return prev;
+                    }
+
+                    return [...prev, incomingMsg];
+                })
+            }
         }
-            })
+    })
 
     // Load History from Supabase
     React.useEffect(() => {
