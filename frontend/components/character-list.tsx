@@ -163,36 +163,35 @@ export function CharacterList({
 
                             return (
                                 <div key={char.id} className="flex flex-col gap-1 transition-all">
-                                    <div className="flex gap-1 items-center group">
+                                    <div className="flex gap-1 items-center group relative">
                                         <Button
                                             variant={isSelected ? "secondary" : "ghost"}
-                                            className={`flex-1 justify-start h-auto py-2 px-3 ${isSelected ? 'bg-secondary' : ''}`}
+                                            className={`flex-1 justify-start h-auto py-2 px-3 pr-4 relative overflow-hidden ${isSelected ? 'bg-secondary' : ''}`}
                                             onClick={() => onSelectCharacter(char)}
                                         >
-                                            <Avatar className="h-8 w-8 mr-2">
+                                            <Avatar className="h-8 w-8 mr-2 z-10">
                                                 <AvatarImage src={char.image_url} />
                                                 <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
                                             </Avatar>
-                                            <div className="flex flex-col items-start overflow-hidden">
+                                            <div className="flex flex-col items-start overflow-hidden z-10">
                                                 <span className="text-sm font-medium truncate w-full text-left">{char.name}</span>
-                                                <div className="flex items-center justify-between w-full">
-                                                    <span className="text-xs text-muted-foreground truncate text-left">
-                                                        {char.class && typeof char.class === 'string' ? char.class.split('(')[0].trim() : 'Unknown'} Lvl {char.level}
-                                                    </span>
-                                                    {/* XP Bar */}
-                                                    <div className="w-16 h-1.5 bg-secondary/50 rounded-full overflow-hidden ml-2 border border-white/10" title={`XP: ${char.status?.xp || 0}`}>
-                                                        <div
-                                                            className="h-full bg-purple-500/70"
-                                                            style={{ width: `${getLevelProgress(char.status?.xp || 0, char.level).percent}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
+                                                <span className="text-xs text-muted-foreground truncate w-full text-left">
+                                                    {char.class && typeof char.class === 'string' ? char.class.split('(')[0].trim() : 'Unknown'} Lvl {char.level}
+                                                </span>
+                                            </div>
+
+                                            {/* Vertical XP Bar (Right Edge) */}
+                                            <div className="absolute right-0 top-0 bottom-0 w-1.5 bg-background/20 mix-blend-overlay" title={`XP: ${char.status?.xp || 0}`}>
+                                                <div
+                                                    className="absolute bottom-0 left-0 right-0 bg-purple-500/80 transition-all duration-500"
+                                                    style={{ height: `${getLevelProgress(char.status?.xp || 0, char.level).percent}%` }}
+                                                />
                                             </div>
                                         </Button>
                                         <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-10 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                                            className="h-10 w-8 shrink-0 text-muted-foreground hover:text-foreground z-10"
                                             onClick={() => {
                                                 setEditingChar(char)
                                                 onSelectCharacter(char)
