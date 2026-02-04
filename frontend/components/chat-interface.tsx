@@ -76,43 +76,37 @@ export function ChatInterface({
                         if (onCharacterUpdate) {
                             onCharacterUpdate(updateData);
                         }
-                        displayContent = incomingMsg.content.replace(match[0], "").trim();
-                    } catch (e) {
-                        console.error("Failed to parse Update Tag:", e);
+                        if (!displayContent.trim() && match) {
+                            // Fallback if AI only sent an update tag and no text (rare, but happens)
+                            displayContent = "*(S.A.M. te mira fijamente mientras las leyes de la física se reajustan...)*";
+                        }
+
+                        // [FIX] Handling <ACTION>CLEAR_CHAT</ACTION> from Realtime
+                        if (displayContent.includes("<ACTION>CLEAR_CHAT</ACTION>")) {
+                            console.log("🧹 Received Global Clear Command via Realtime");
+                            setMessages([]);
+                            return;
+                        }
+
+                        incomingMsg.content = displayContent;
+
+                        setMessages((prev) => {
+                            const lastMsg = prev[prev.length - 1];
+
+                            // [SYNC FIX] Deduplication Logic
+                            const isDuplicate = lastMsg
+                                && lastMsg.content === incomingMsg.content
+                                && lastMsg.role === incomingMsg.role;
+
+                            if (isDuplicate) {
+                                return prev;
+                            }
+
+                            return [...prev, incomingMsg];
+                        })
                     }
-                }
-
-                // [FIX] Handling <ACTION>CLEAR_CHAT</ACTION> from Realtime
-                if (displayContent.includes("<ACTION>CLEAR_CHAT</ACTION>")) {
-                    console.log("🧹 Received Global Clear Command via Realtime");
-                    setMessages([]);
-                    return;
-                }
-
-                incomingMsg.content = displayContent;
-
-                setMessages((prev) => {
-                    const lastMsg = prev[prev.length - 1];
-
-                    // [SYNC FIX] Deduplication Logic
-                    // We check if the incoming message is identical to the last one.
-                    // This handles the case where we added the USER message optimistically, 
-                    // and then receive the exact same message from Realtime.
-                    const isDuplicate = lastMsg
-                        && lastMsg.content === incomingMsg.content
-                        && lastMsg.role === incomingMsg.role;
-
-                    // If it's a duplicate, we ignore the Realtime event (we already have it locally)
-                    if (isDuplicate) {
-                        console.log("Duplicate message detected (Optimistic vs Realtime), skipping.");
-                        return prev;
-                    }
-
-                    return [...prev, incomingMsg];
-                })
-            }
         }
-    })
+            })
 
     // Load History from Supabase
     React.useEffect(() => {
@@ -256,8 +250,6 @@ export function ChatInterface({
                 if (finalContent || data.image_url) {
                     // [SYNC FIX] We do NOT manually add the AI response to state here.
                     // We rely 100% on the Realtime subscription to receive the 'INSERT' event.
-                    // This prevents race conditions and duplicates between API response and Realtime.
-                    // It also ensures that what you see is confirmed saved in the DB.
                     console.log("✅ Message sent, waiting for Realtime sync...");
                 }
             }
@@ -356,23 +348,41 @@ export function ChatInterface({
 
             {/* Debug Inspector Dialog */}
             <Dialog open={debugOpen} onOpenChange={setDebugOpen}>
-                <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+                <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2"><Brain className="h-5 w-5 text-purple-500" /> S.A.M. Neural Inspector</DialogTitle>
-                        <DialogDescription>Analysis of the AI's reasoning for this turn.</DialogDescription>
+                        <DialogDescription>Full analysis of AI reasoning and state updates.</DialogDescription>
                     </DialogHeader>
                     <ScrollArea className="flex-1 p-4 border rounded-md bg-muted/20">
                         {currentDebugInfo && (
                             <div className="space-y-6">
                                 <div>
-                                    <h4 className="font-bold text-sm text-blue-400 mb-2">RAG Context (Knowledge Retrieved)</h4>
+                                    <h4 className="font-bold text-sm text-blue-400 mb-2">🧠 RAG Context (Knowledge Retrieved)</h4>
                                     <pre className="text-xs whitespace-pre-wrap bg-primary/5 p-2 rounded border border-primary/10 font-mono text-muted-foreground">
                                         {currentDebugInfo.rag_context || "No specific context retrieved (General Knowledge used)."}
                                     </pre>
                                 </div>
+
                                 <div className="border-t pt-4">
-                                    <h4 className="font-bold text-sm text-green-400 mb-2">System Prompt Construction</h4>
-                                    <pre className="text-xs whitespace-pre-wrap text-muted-foreground font-mono">
+                                    <h4 className="font-bold text-sm text-yellow-400 mb-2">⚡ State Updates (JSON)</h4>
+                                    <pre className="text-xs whitespace-pre-wrap bg-yellow-500/10 p-2 rounded border border-yellow-500/20 font-mono text-muted-foreground overflow-x-auto">
+                                        {currentDebugInfo.raw_response && currentDebugInfo.raw_response.includes("<UPDATE>")
+                                            ? currentDebugInfo.raw_response.match(/<UPDATE>([\s\S]*?)<\/UPDATE>/)?.[1]
+                                            : "No State Update triggered."
+                                        }
+                                    </pre>
+                                </div>
+
+                                <div className="border-t pt-4">
+                                    <h4 className="font-bold text-sm text-green-400 mb-2">💬 Raw AI Response</h4>
+                                    <pre className="text-xs whitespace-pre-wrap text-muted-foreground font-mono bg-black/20 p-2 rounded">
+                                        {currentDebugInfo.raw_response}
+                                    </pre>
+                                </div>
+
+                                <div className="border-t pt-4">
+                                    <h4 className="font-bold text-sm text-purple-400 mb-2">🏗️ System Prompt Construction</h4>
+                                    <pre className="text-xs whitespace-pre-wrap text-muted-foreground font-mono max-h-60 overflow-y-auto bg-black/20 p-2 rounded">
                                         {currentDebugInfo.system_prompt_preview}
                                     </pre>
                                 </div>
