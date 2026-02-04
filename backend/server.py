@@ -45,7 +45,7 @@ def read_root():
 
 @app.get("/api/version")
 def get_version():
-    return {"version": "1.0.1", "deployed_at": "2026-02-03 T21:15:00 UTC", "fix": "AI Persistence v2"}
+    return {"version": "1.0.2", "deployed_at": "2026-02-04", "fix": "Admin Debug Tracing"}
 
 @app.post("/api/chat")
 async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token)):
@@ -55,7 +55,8 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
     """
     try:
         user_id = user.get('sub', 'unknown_user')
-        print(f"DEBUG CHAT REQUEST: {request.message} from {user_id}")
+        msg_clean = request.message.strip()
+        print(f"DEBUG CHAT REQUEST: '{request.message}' (cleaned: '{msg_clean}') from {user_id}")
         
         # [PHASE 13] PERSISTENCE LAYER - SAVE USER MESSAGE
         cid = None
@@ -81,11 +82,13 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
             print(f"WARNING: User insert failed: {db_e}")
 
         # [PHASE 11] ADMIN COMMAND INTERCEPTOR
-        if request.message.strip().startswith("/"):
+        if msg_clean.startswith("/"):
+            print(f"DEBUG: Detected Admin Command '{msg_clean}'")
             try:
                 from app.services.admin import AdminService
                 # Pass user_id so admin commands affect THIS user
                 admin_response = AdminService.handle_command(request.message, user_id)
+                print(f"DEBUG: Admin Response: {admin_response[:50]}...")
                 return {
                     "response": admin_response,
                     "image_url": None
@@ -97,7 +100,8 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                     "response": f"ADMIN ERROR: {str(e)}",
                     "image_url": None
                 }
-
+        
+        print("DEBUG: proceeding to AI generation...")
         response = sam_brain.generate_response(
             request.message, 
             request.history,
