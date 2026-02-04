@@ -495,7 +495,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                             <div className="space-y-2">
                                 <Label>Inventory (Gear & Equipment)</Label>
                                 {Array.isArray(formData.status.inventory) ? (
-                                    <div className="border rounded-xl overflow-hidden max-h-40 overflow-y-auto">
+                                    <div className="border rounded-xl overflow-hidden h-64 overflow-y-auto">
                                         <div className="grid grid-cols-12 bg-muted p-2 text-xs font-bold uppercase text-muted-foreground sticky top-0">
                                             <div className="col-span-7">Item</div>
                                             <div className="col-span-2 text-center">Qty</div>
