@@ -93,13 +93,21 @@ export function ChatInterface({
 
                 setMessages((prev) => {
                     const lastMsg = prev[prev.length - 1];
-                    // Simple de-dupe to prevent double echo if we just sent it
+
+                    // [SYNC FIX] Deduplication Logic
+                    // We check if the incoming message is identical to the last one.
+                    // This handles the case where we added the USER message optimistically, 
+                    // and then receive the exact same message from Realtime.
                     const isDuplicate = lastMsg
                         && lastMsg.content === incomingMsg.content
-                        && lastMsg.role === incomingMsg.role
-                        && (incomingMsg.timestamp.getTime() - new Date(lastMsg.timestamp).getTime() < 2000);
+                        && lastMsg.role === incomingMsg.role;
 
-                    if (isDuplicate) return prev;
+                    // If it's a duplicate, we ignore the Realtime event (we already have it locally)
+                    if (isDuplicate) {
+                        console.log("Duplicate message detected (Optimistic vs Realtime), skipping.");
+                        return prev;
+                    }
+
                     return [...prev, incomingMsg];
                 })
             }
@@ -245,17 +253,12 @@ export function ChatInterface({
                     setTimeout(() => window.location.reload(), 2000);
                 }
 
-                const assistantMsg: Message = {
-                    role: "assistant",
-                    content: finalContent,
-                    imageUrl: data.image_url,
-                    debugInfo: data.debug_info, // Save Debug Info
-                    timestamp: new Date()
-                }
-
-                // Only add message if content remains (e.g. not just a silent action)
                 if (finalContent || data.image_url) {
-                    setMessages(prev => [...prev, assistantMsg])
+                    // [SYNC FIX] We do NOT manually add the AI response to state here.
+                    // We rely 100% on the Realtime subscription to receive the 'INSERT' event.
+                    // This prevents race conditions and duplicates between API response and Realtime.
+                    // It also ensures that what you see is confirmed saved in the DB.
+                    console.log("✅ Message sent, waiting for Realtime sync...");
                 }
             }
 
