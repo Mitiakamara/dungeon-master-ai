@@ -1,5 +1,5 @@
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 from app.services.tools.compendium_tools import ALL_TOOLS
 from app.services.tools.game_mechanics import MECHANIC_TOOLS
 import os
