@@ -421,6 +421,35 @@ export function ChatInterface({
         }
     }
 
+    // [PHASE 16] Visualizer for DM Rolls
+    const renderMessageContent = (content: string) => {
+        // Split by the tag, keeping the delimiter
+        const parts = content.split(/(<DM_ROLL>[\s\S]*?<\/DM_ROLL>)/g);
+
+        return parts.map((part, index) => {
+            if (part.startsWith("<DM_ROLL>")) {
+                try {
+                    // Extract JSON
+                    const jsonStr = part.replace(/<\/?DM_ROLL>/g, "");
+                    const data = JSON.parse(jsonStr);
+
+                    return (
+                        <span key={index} className="inline-flex items-center gap-1.5 bg-black/40 text-purple-300 border border-purple-500/30 px-2 py-1 rounded-md text-xs font-mono mx-1 my-1 select-none">
+                            <span className="text-lg">🎲</span>
+                            <span className="font-semibold text-purple-100">{data.result}</span>
+                            <span className="text-muted-foreground">({data.roll})</span>
+                            <span className="mx-1 text-purple-500/50">|</span>
+                            <span className="italic text-purple-200">{data.reason}</span>
+                        </span>
+                    );
+                } catch (e) {
+                    return <span key={index} className="text-red-500 text-xs">[Invlaid Roll Data]</span>;
+                }
+            }
+            return <span key={index}>{part}</span>;
+        });
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
@@ -450,7 +479,7 @@ export function ChatInterface({
                                     {msg.role === "user" ? (selectedCharacter?.name || "You") : "S.A.M."}
                                 </div>
                                 <div className={`text-sm leading-relaxed whitespace-pre-wrap ${msg.role === "assistant" ? "text-foreground" : "bg-primary text-primary-foreground px-3 py-2 rounded-lg"}`}>
-                                    {msg.content}
+                                    {renderMessageContent(msg.content)}
                                 </div>
                                 {msg.imageUrl && (
                                     <div className="mt-2 rounded-lg overflow-hidden border">
