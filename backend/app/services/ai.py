@@ -1,6 +1,7 @@
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from app.services.tools.compendium_tools import ALL_TOOLS
+from app.services.tools.game_mechanics import MECHANIC_TOOLS
 import os
 from dotenv import load_dotenv
 from supabase import create_client
@@ -17,6 +18,7 @@ class AIHelper:
             raise ValueError("GOOGLE_API_KEY not found in environment")
             
         # Initialize the Brain (Gemini Flash Latest)
+        # Low temperature for rule adherence
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-flash-latest",
             temperature=0.7,
@@ -24,8 +26,8 @@ class AIHelper:
             convert_system_message_to_human=True 
         )
         
-        # Bind Tools for S.A.M.
-        self.llm_with_tools = self.llm.bind_tools(ALL_TOOLS)
+        # Bind Tools for S.A.M. (Compendium + Game Mechanics)
+        self.llm_with_tools = self.llm.bind_tools(ALL_TOOLS + MECHANIC_TOOLS)
         
         # Initialize Retriever (Memory) - Google Embeddings
         self.embeddings = GoogleGenerativeAIEmbeddings(
@@ -66,11 +68,11 @@ class AIHelper:
            - Stop and wait for the user's input. Do not resolve the round until you have their roll.
            - Only after they roll (or a SYSTEM EVENT provides the roll), proceed with the turn order.
 
-        4. **PLAYER STATE UPDATES (MANDATORY):**
-           - If the narrative implies damage or healing, you **MUST** mathematically apply it and output the update tag.
-           - **Example:** "You take 5 damage." -> You must calculate (Current HP - 5) and output the tag.
-           - Format: `<UPDATE>{{"status": {{"hp_current": NEW_VALUE}}}}</UPDATE>`
-           - Place this tag at the very end of your response.
+        4. **HP UPDATES (MANDATORY TOOL USE):**
+           - **NEVER** calculate Player HP changes in your head. You are bad at math.
+           - **MUST USE TOOL:** Calls `apply_damage(current, amount)` or `apply_healing(current, amount, max)`.
+           - **OUTPUT:** The tool will provide the correct math and the `<UPDATE>` tag. You just pass it along.
+           - **Example:** User takes 5 damage. Call `apply_damage`. Tool returns "New HP: 10 <UPDATE>...". You output that.
 
         5. **PROGRESSION & REWARDS (CRITICAL):**
            - **XP (Experience Points):** 
