@@ -198,7 +198,7 @@ class AIHelper:
                     print(f"Executing Tool: {tool_name} | Args: {tool_args}")
                     
                     # Find tool by name
-                    selected_tool = next((t for t in ALL_TOOLS if t.name == tool_name), None)
+                    selected_tool = next((t for t in ALL_TOOLS + MECHANIC_TOOLS if t.name == tool_name), None)
                     
                     if selected_tool:
                         try:
