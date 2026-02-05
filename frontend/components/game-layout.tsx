@@ -37,28 +37,70 @@ export default function GameLayout() {
             // Only update if it matches our selected character
             if (selectedCharacter && newChar.id === selectedCharacter.id) {
                 // Merge status updates safely
-                setSelectedCharacter((prev: any) => ({
-                    ...prev,
-                    ...newChar,
-                    status: {
-                        ...prev.status,
-                        ...(newChar.status || {})
-                    }
-                }))
+                setSelectedCharacter((prev: any) => {
+                    const updated = {
+                        ...prev,
+                        ...newChar,
+                        status: {
+                            ...prev.status,
+                            ...(newChar.status || {})
+                        }
+                    };
+
+                    // [FIX] Update Storage Immediately to prevent Desync
+                    localStorage.setItem("selectedCharacter", JSON.stringify(updated));
+
+                    return updated;
+                })
             }
         }
     })
 
-    // Persistence: Load on mount
+    // Persistence & Fresh Data: Load on mount
     React.useEffect(() => {
-        const saved = localStorage.getItem("selectedCharacter")
-        if (saved) {
+        const loadCharacter = async () => {
+            const savedStr = localStorage.getItem("selectedCharacter")
+            if (!savedStr) return
+
+            let savedChar: any = null
             try {
-                setSelectedCharacter(JSON.parse(saved))
+                savedChar = JSON.parse(savedStr)
             } catch (e) {
-                console.error("Failed to recover session character", e)
+                console.error("Failed to parse local character", e)
+                return
+            }
+
+            if (!savedChar?.id) return
+
+            // 1. Initial Load from Local (Instant UI)
+            setSelectedCharacter(savedChar)
+
+            // 2. Fetch Fresh Data from Backend (Source of Truth)
+            // This fixes "Ghost HP" after server-side resets
+            try {
+                const supabase = createClient()
+                const { data: { session } } = await supabase.auth.getSession()
+
+                if (session?.access_token) {
+                    const res = await fetch(`/api/characters/${savedChar.id}`, {
+                        headers: {
+                            Authorization: `Bearer ${session.access_token}`
+                        }
+                    })
+
+                    if (res.ok) {
+                        const freshChar = await res.json()
+                        console.log("🔄 Synced Fresh Character Data:", freshChar)
+                        setSelectedCharacter(freshChar)
+                        localStorage.setItem("selectedCharacter", JSON.stringify(freshChar))
+                    }
+                }
+            } catch (err) {
+                console.warn("Using local cache only (Server unreachable)", err)
             }
         }
+
+        loadCharacter()
     }, [])
 
     const handleSelectCharacter = (char: any) => {
