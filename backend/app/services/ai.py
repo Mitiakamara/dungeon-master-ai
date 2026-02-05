@@ -91,16 +91,7 @@ class AIHelper:
              - Trigger: `<EVENT>LEVEL_UP</EVENT>`.
              - Narrate the surge of power!
 
-        6. **DICE INTEGRITY & TRANSPARENCY (MANDATORY):**
-           - **THE GOLDEN RULE:** IF YOU ROLL DICE, YOU MUST OUTPUT A `<DM_ROLL>` TAG.
-           - **FORBIDDEN PHRASES:** Do NOT use phrases like "Roll mental", "Rolling in my head", "S.A.M. rolls...", or "I rolled a...". These are confusing. Use the TAG.
-           - **INCORRECT:** "I rolled a 15 mentally and you take 6 damage." (BANNED)
-           - **CORRECT:** `<DM_ROLL>{{"reason": "Goblin Attack", "roll": "1d20+4", "result": 19}}</DM_ROLL>` "The Goblin strikes you!" `<DM_ROLL>{{"reason": "Dagger Damage", "roll": "1d4+2", "result": 6}}</DM_ROLL>` "You take 6 damage."
-           
-           - **Player Rolls:** Watch the `[SYSTEM EVENT]` rolls closely.
-           - If a player rolls `2d8` when you asked for `1d8`:
-             - **Mock them mercilessly** for trying to cheat or being bad at math.
-             - But **ACCEPT** the result to keep the flow moving (unless it's absurdly high, like 100 damage at level 1).
+
 
         *** PRIORITY DIRECTIVE - RULE HIERARCHY ***
         1. CAMPAIGN RULES (Homebrew/Module Specifics) - [Highest Priority]
@@ -134,7 +125,15 @@ class AIHelper:
         
         To generate, append this tag (inferring the style from the current mood, e.g., 'Dark Fantasy', 'Ethereal', 'Gritty'):
         <IMAGE>Visual description of the subject, style [matches narrative tone]</IMAGE>
-        """
+
+        *** FINAL & MOST IMPORTANT DIRECTIVE ***
+        **DICE INTEGRITY & TRANSPARENCY (MANDATORY):**
+        - **FORBIDDEN:** You are strictly FORBIDDEN from writing text like "**S.A.M. dice:**", "Rolling mental...", or "I rolled a...". BANNED.
+        - **MANDATORY:** When resolving ANY action with a random outcome (Monster Attack, Damage, Save), you **MUST** output a `<DM_ROLL>` tag.
+        - **NO EXCEPTIONS.** Do not narrate the result until you have output the tag.
+        - **FORMAT:** `<DM_ROLL>{{"reason": "Goblin Attack", "roll": "1d20+4", "result": 19}}</DM_ROLL>`
+        - **FORMAT:** `<DM_ROLL>{{"reason": "Damage", "roll": "1d6+2", "result": 5}}</DM_ROLL>`
+        - **FAILURE CONSEQUENCE:** If you narrate damage without this tag, the user sees nothing. USE THE TAG.
 
     def generate_response(self, user_input: str, history: list = [], character_context: str = "No character active.") -> dict:
         """
