@@ -193,10 +193,14 @@ class AIHelper:
             # 3. Gemini Inference (With Tools)
             ai_msg = self.llm_with_tools.invoke(messages)
             
-            # Check for Tool Calls
-            if ai_msg.tool_calls:
+            MAX_TOOL_ITERATIONS = 3
+            tool_iterations = 0
+
+            # Loop for multi-step tool execution (e.g. Search -> Calc -> Answer)
+            while ai_msg.tool_calls and tool_iterations < MAX_TOOL_ITERATIONS:
+                tool_iterations += 1
                 messages.append(ai_msg) # Add request to history
-                print(f"Tool Calls Detected: {len(ai_msg.tool_calls)}")
+                print(f"Tool Calls Detected (Iter {tool_iterations}): {len(ai_msg.tool_calls)}")
                 
                 for tool_call in ai_msg.tool_calls:
                     tool_name = tool_call["name"]
@@ -220,7 +224,7 @@ class AIHelper:
                     # Add result to history
                     messages.append(ToolMessage(tool_call_id=tool_id, content=str(tool_output)))
                 
-                # Second Pass: AI sees tool output and answers
+                # Next Pass: AI sees tool output and answers (or calls another tool)
                 ai_msg = self.llm_with_tools.invoke(messages)
             
             ai_response = ai_msg.content
