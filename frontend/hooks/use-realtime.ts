@@ -1,6 +1,4 @@
-"use client"
-
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -26,6 +24,13 @@ export function useRealtime({
     const supabase = createClient()
     const router = useRouter()
 
+    // [FIX] Use Ref to avoid stale closures without re-subscribing
+    const onDataRef = useRef(onData)
+
+    useEffect(() => {
+        onDataRef.current = onData
+    }, [onData])
+
     useEffect(() => {
         if (!enabled) return
 
@@ -43,7 +48,10 @@ export function useRealtime({
                 },
                 (payload: any) => {
                     console.log(`⚡ Realtime Event [${table}]:`, payload)
-                    onData(payload)
+                    // Call the latest callback
+                    if (onDataRef.current) {
+                        onDataRef.current(payload)
+                    }
                 }
             )
             .subscribe((status: any) => {
