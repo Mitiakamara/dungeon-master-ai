@@ -134,6 +134,7 @@ class AIHelper:
         - **FORMAT:** `<DM_ROLL>{{"reason": "Goblin Attack", "roll": "1d20+4", "result": 19}}</DM_ROLL>`
         - **FORMAT:** `<DM_ROLL>{{"reason": "Damage", "roll": "1d6+2", "result": 5}}</DM_ROLL>`
         - **FAILURE CONSEQUENCE:** If you narrate damage without this tag, the user sees nothing. USE THE TAG.
+        """
 
     def generate_response(self, user_input: str, history: list = [], character_context: str = "No character active.") -> dict:
         """
