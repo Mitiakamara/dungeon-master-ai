@@ -357,7 +357,7 @@ export function ChatInterface({
                 body: JSON.stringify({
                     message: contentToSend,
                     character_context: charContext,
-                    history: messages.slice(-5).map(m => m.content)
+                    history: messages.slice(-5).map(m => ({ role: m.role, content: m.content }))
                 })
             })
 

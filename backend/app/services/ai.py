@@ -182,8 +182,18 @@ class AIHelper:
             ]
             
             # Add conversation history
+            # Add conversation history (Correctly attributed)
             for msg in history:
-                messages.append(HumanMessage(content=msg))
+                if isinstance(msg, dict):
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if role == "user":
+                        messages.append(HumanMessage(content=content))
+                    elif role == "assistant":
+                        messages.append(AIMessage(content=content))
+                else:
+                    # Fallback for old string-only history (treat as user)
+                    messages.append(HumanMessage(content=str(msg)))
                 
             messages.append(HumanMessage(content=user_input))
             
