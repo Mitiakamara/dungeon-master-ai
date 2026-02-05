@@ -109,45 +109,53 @@ export function ChatInterface({
                 // 2. Parse LOOT (Wallet & Inventory)
                 displayContent = displayContent.replace(/<LOOT>([\s\S]*?)<\/LOOT>/g, (match, jsonStr) => {
                     try {
-                        const loot = JSON.parse(jsonStr);
-                        console.log("💰 Processing Loot:", loot);
+                        const lootData = JSON.parse(jsonStr);
+                        console.log("💰 Processing Loot Data:", lootData);
 
-                        const qty = loot.qty || 1;
-                        let itemDisplay = `${qty}x ${loot.item}`;
-                        const lowerItem = loot.item.toLowerCase();
-                        let isCurrency = false;
+                        // [FIX] Support both Single Object AND Array of Objects
+                        const lootItems = Array.isArray(lootData) ? lootData : [lootData];
+                        const displayParts: string[] = [];
 
-                        // Currency Logic
-                        if (lowerItem.includes("cobre") || lowerItem.includes("copper") || lowerItem === "cp") {
-                            localStatus.wallet.cp = (localStatus.wallet.cp || 0) + qty;
-                            isCurrency = true;
-                            itemDisplay = `${qty} CP`;
-                        } else if (lowerItem.includes("plata") || lowerItem.includes("silver") || lowerItem === "sp") {
-                            localStatus.wallet.sp = (localStatus.wallet.sp || 0) + qty;
-                            isCurrency = true;
-                            itemDisplay = `${qty} SP`;
-                        } else if (lowerItem.includes("oro") || lowerItem.includes("gold") || lowerItem === "gp") {
-                            localStatus.wallet.gp = (localStatus.wallet.gp || 0) + qty;
-                            isCurrency = true;
-                            itemDisplay = `${qty} GP`;
-                        }
+                        lootItems.forEach((loot: any) => {
+                            const qty = loot.qty || 1;
+                            const itemDisplay = `${qty}x ${loot.item}`;
+                            const lowerItem = (loot.item || "").toLowerCase();
+                            let isCurrency = false;
 
-                        // Inventory Logic
-                        if (!isCurrency) {
-                            localStatus.inventory.push({
-                                item: loot.item,
-                                qty: qty,
-                                weight: loot.weight || 0,
-                                notes: "Looted"
+                            // Currency Logic
+                            if (lowerItem.includes("cobre") || lowerItem.includes("copper") || lowerItem === "cp") {
+                                localStatus.wallet.cp = (localStatus.wallet.cp || 0) + qty;
+                                isCurrency = true;
+                                displayParts.push(`${qty} CP`);
+                            } else if (lowerItem.includes("plata") || lowerItem.includes("silver") || lowerItem === "sp") {
+                                localStatus.wallet.sp = (localStatus.wallet.sp || 0) + qty;
+                                isCurrency = true;
+                                displayParts.push(`${qty} SP`);
+                            } else if (lowerItem.includes("oro") || lowerItem.includes("gold") || lowerItem === "gp") {
+                                localStatus.wallet.gp = (localStatus.wallet.gp || 0) + qty;
+                                isCurrency = true;
+                                displayParts.push(`${qty} GP`);
+                            }
+
+                            // Inventory Logic
+                            if (!isCurrency) {
+                                localStatus.inventory.push({
+                                    item: loot.item,
+                                    qty: qty,
+                                    weight: loot.weight || 0,
+                                    notes: "Looted"
+                                });
+                                displayParts.push(itemDisplay);
+                            }
+                            hasStateChanges = true;
+                        });
+
+                        if (displayParts.length > 0) {
+                            toast.success(`🎁 Loot Found: ${displayParts.join(", ")}`, {
+                                duration: 4000,
+                                className: "bg-green-600 text-white border-none"
                             });
                         }
-
-                        hasStateChanges = true;
-
-                        toast.success(`🎁 Loot Found: ${itemDisplay}`, {
-                            duration: 4000,
-                            className: "bg-green-600 text-white border-none"
-                        });
                         return "";
                     } catch (e) {
                         console.error("Loot Parse Error:", e);
