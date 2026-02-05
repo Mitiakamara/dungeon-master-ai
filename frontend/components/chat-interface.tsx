@@ -82,23 +82,62 @@ export function ChatInterface({
                     }
                 }
 
-                // [PHASE 15] Parse LOOT, XP, EVENTS
-                const lootRegex = /<LOOT>(.*?)<\/LOOT>/g;
-                let lootMatch;
-                while ((lootMatch = lootRegex.exec(displayContent)) !== null) {
+                // [PHASE 15] Parse LOOT & Apply to State
+                // [FIX] Use replace callback for robust removal and newline support
+                displayContent = displayContent.replace(/<LOOT>([\s\S]*?)<\/LOOT>/g, (match, jsonStr) => {
                     try {
-                        const lootJson = JSON.parse(lootMatch[1]);
-                        const itemStr = `${lootJson.qty || 1}x ${lootJson.item}`;
-                        toast.success(`🎁 Loot Found: ${itemStr}`);
+                        const loot = JSON.parse(jsonStr);
+                        console.log("💰 Processing Loot:", loot);
 
-                        // We assume the strict <UPDATE> tag handles the actual DB insertion, 
-                        // this is just for the visual Pop-up.
-                    } catch {
-                        // Fallback for simple text Loot
-                        toast.success(`🎁 Loot Found: ${lootMatch[1]}`);
+                        const qty = loot.qty || 1;
+                        let itemDisplay = `${qty}x ${loot.item}`;
+
+                        // 1. Check for Currency
+                        const lowerItem = loot.item.toLowerCase();
+                        let isCurrency = false;
+
+                        // Copy current wallet or init default from selectedCharacter
+                        const currentStatus = selectedCharacter?.status || {};
+                        const newWallet = currentStatus.wallet ? { ...currentStatus.wallet } : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+
+                        if (lowerItem.includes("cobre") || lowerItem.includes("copper") || lowerItem === "cp") {
+                            newWallet.cp = (newWallet.cp || 0) + qty;
+                            isCurrency = true;
+                            itemDisplay = `${qty} CP`;
+                        } else if (lowerItem.includes("plata") || lowerItem.includes("silver") || lowerItem === "sp") {
+                            newWallet.sp = (newWallet.sp || 0) + qty;
+                            isCurrency = true;
+                            itemDisplay = `${qty} SP`;
+                        } else if (lowerItem.includes("oro") || lowerItem.includes("gold") || lowerItem === "gp") {
+                            newWallet.gp = (newWallet.gp || 0) + qty;
+                            isCurrency = true;
+                            itemDisplay = `${qty} GP`;
+                        }
+
+                        // Apply Update
+                        if (onCharacterUpdate && selectedCharacter) {
+                            if (isCurrency) {
+                                onCharacterUpdate({ status: { ...currentStatus, wallet: newWallet } });
+                            } else {
+                                // Add to Inventory
+                                const currentInv = Array.isArray(currentStatus.inventory) ? [...currentStatus.inventory] : [];
+                                const newInv = [...currentInv, { item: loot.item, qty: qty, weight: 0, notes: "Looted" }];
+                                onCharacterUpdate({ status: { ...currentStatus, inventory: newInv } });
+                            }
+                        }
+
+                        toast.success(`🎁 Loot Found: ${itemDisplay}`, {
+                            duration: 4000,
+                            className: "bg-green-600 text-white border-none"
+                        });
+                        return ""; // Remove tag from display
+                    } catch (e) {
+                        console.error("Loot Parse Error:", e);
+                        return ""; // Remove malformed tag
                     }
-                    displayContent = displayContent.replace(lootMatch[0], "").trim();
-                }
+                });
+
+                displayContent = displayContent.trim();
 
                 const xpRegex = /<XP_GAIN>(.*?)<\/XP_GAIN>/g;
                 let xpMatch;
