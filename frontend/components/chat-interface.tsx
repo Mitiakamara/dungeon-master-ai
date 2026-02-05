@@ -276,12 +276,26 @@ export function ChatInterface({
     }, [messages])
 
     // Handle External Events (Dice Rolls)
+    // Prevent Infinite Loops by tracking processed events
+    const [processedEvent, setProcessedEvent] = React.useState<string | null>(null)
+
     React.useEffect(() => {
-        if (externalEvent && !isLoading) {
-            handleSendMessage(null, externalEvent)
-            if (onEventHandled) onEventHandled()
+        // 1. Process New Event
+        if (externalEvent && !isLoading && externalEvent !== processedEvent) {
+            console.log("🎲 Handling External Event:", externalEvent);
+            setProcessedEvent(externalEvent); // Mark as processed immediately
+
+            handleSendMessage(null, externalEvent);
+
+            // Clear in parent
+            if (onEventHandled) onEventHandled();
         }
-    }, [externalEvent, isLoading])
+
+        // 2. Reset Logic (When parent clears event, we clear our tracker)
+        if (!externalEvent && processedEvent) {
+            setProcessedEvent(null);
+        }
+    }, [externalEvent, isLoading, processedEvent, onEventHandled])
 
     const handleSendMessage = async (e: React.FormEvent | null, overrideContent?: string) => {
         if (e) e.preventDefault()
