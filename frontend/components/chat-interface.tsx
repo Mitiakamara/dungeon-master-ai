@@ -11,6 +11,7 @@ import { authenticatedFetch } from "@/lib/api"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useRealtime } from "@/hooks/use-realtime"
+
 interface Message {
     role: "user" | "assistant" | "system"
     content: string
@@ -63,27 +64,49 @@ export function ChatInterface({
                     timestamp: new Date(payload.created_at)
                 }
 
-                // Check for updates in the content
-                const updateRegex = /<UPDATE>([\s\S]*?)<\/UPDATE>/;
-                const match = incomingMsg.content.match(updateRegex);
+                // ---------------------------------------------------------
+                // [FIX] State Accumulation to prevent Race Conditions
+                // ---------------------------------------------------------
+                // We must perform all logic on a local copy of the status, then send 1 atomic update.
+                const rawStatus = selectedCharacter?.status || {};
+
+                // Deep Copy mutable fields
+                let localStatus: any = {
+                    ...rawStatus,
+                    wallet: rawStatus.wallet ? { ...rawStatus.wallet } : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+                    inventory: Array.isArray(rawStatus.inventory) ? [...rawStatus.inventory] : [],
+                    // Copy other fields as needed (hp_current, etc handled by update tag)
+                };
+                let hasStateChanges = false;
 
                 let displayContent = incomingMsg.content;
 
-                if (match && match[1]) {
+                // 1. Check for <UPDATE> (Generic Stats like HP)
+                const updateRegex = /<UPDATE>([\s\S]*?)<\/UPDATE>/;
+                const updateMatch = displayContent.match(updateRegex);
+
+                if (updateMatch && updateMatch[1]) {
                     try {
-                        const updateData = JSON.parse(match[1]);
+                        const updateData = JSON.parse(updateMatch[1]);
                         console.log("⚡ Auto-Applying State Update:", updateData);
-                        if (onCharacterUpdate) {
-                            onCharacterUpdate(updateData);
+
+                        // Merge status updates into localStatus
+                        if (updateData.status) {
+                            localStatus = { ...localStatus, ...updateData.status };
+                            hasStateChanges = true;
+                        } else {
+                            // If updateData is NOT wrapped in status
+                            localStatus = { ...localStatus, ...updateData };
+                            hasStateChanges = true;
                         }
-                        displayContent = incomingMsg.content.replace(match[0], "").trim();
+
+                        displayContent = displayContent.replace(updateMatch[0], "").trim();
                     } catch (e) {
                         console.error("Failed to parse Update Tag:", e);
                     }
                 }
 
-                // [PHASE 15] Parse LOOT & Apply to State
-                // [FIX] Use replace callback for robust removal and newline support
+                // 2. Parse LOOT (Wallet & Inventory)
                 displayContent = displayContent.replace(/<LOOT>([\s\S]*?)<\/LOOT>/g, (match, jsonStr) => {
                     try {
                         const loot = JSON.parse(jsonStr);
@@ -91,61 +114,63 @@ export function ChatInterface({
 
                         const qty = loot.qty || 1;
                         let itemDisplay = `${qty}x ${loot.item}`;
-
-                        // 1. Check for Currency
                         const lowerItem = loot.item.toLowerCase();
                         let isCurrency = false;
 
-                        // Copy current wallet or init default from selectedCharacter
-                        const currentStatus = selectedCharacter?.status || {};
-                        const newWallet = currentStatus.wallet ? { ...currentStatus.wallet } : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
-
+                        // Currency Logic
                         if (lowerItem.includes("cobre") || lowerItem.includes("copper") || lowerItem === "cp") {
-                            newWallet.cp = (newWallet.cp || 0) + qty;
+                            localStatus.wallet.cp = (localStatus.wallet.cp || 0) + qty;
                             isCurrency = true;
                             itemDisplay = `${qty} CP`;
                         } else if (lowerItem.includes("plata") || lowerItem.includes("silver") || lowerItem === "sp") {
-                            newWallet.sp = (newWallet.sp || 0) + qty;
+                            localStatus.wallet.sp = (localStatus.wallet.sp || 0) + qty;
                             isCurrency = true;
                             itemDisplay = `${qty} SP`;
                         } else if (lowerItem.includes("oro") || lowerItem.includes("gold") || lowerItem === "gp") {
-                            newWallet.gp = (newWallet.gp || 0) + qty;
+                            localStatus.wallet.gp = (localStatus.wallet.gp || 0) + qty;
                             isCurrency = true;
                             itemDisplay = `${qty} GP`;
                         }
 
-                        // Apply Update
-                        if (onCharacterUpdate && selectedCharacter) {
-                            if (isCurrency) {
-                                onCharacterUpdate({ status: { ...currentStatus, wallet: newWallet } });
-                            } else {
-                                // Add to Inventory
-                                const currentInv = Array.isArray(currentStatus.inventory) ? [...currentStatus.inventory] : [];
-                                const newInv = [...currentInv, { item: loot.item, qty: qty, weight: 0, notes: "Looted" }];
-                                onCharacterUpdate({ status: { ...currentStatus, inventory: newInv } });
-                            }
+                        // Inventory Logic
+                        if (!isCurrency) {
+                            localStatus.inventory.push({
+                                item: loot.item,
+                                qty: qty,
+                                weight: loot.weight || 0,
+                                notes: "Looted"
+                            });
                         }
+
+                        hasStateChanges = true;
 
                         toast.success(`🎁 Loot Found: ${itemDisplay}`, {
                             duration: 4000,
                             className: "bg-green-600 text-white border-none"
                         });
-                        return ""; // Remove tag from display
+                        return "";
                     } catch (e) {
                         console.error("Loot Parse Error:", e);
-                        return ""; // Remove malformed tag
+                        return "";
                     }
                 });
 
                 displayContent = displayContent.trim();
 
+                // 3. Parse XP
                 const xpRegex = /<XP_GAIN>(.*?)<\/XP_GAIN>/g;
                 let xpMatch;
                 while ((xpMatch = xpRegex.exec(displayContent)) !== null) {
-                    toast.info(`✨ +${xpMatch[1]} XP`);
+                    const xpAmount = parseInt(xpMatch[1]);
+                    if (!isNaN(xpAmount)) {
+                        localStatus.xp = (localStatus.xp || 0) + xpAmount;
+                        hasStateChanges = true;
+                        toast.info(`✨ +${xpAmount} XP`);
+                    }
                     displayContent = displayContent.replace(xpMatch[0], "").trim();
                 }
 
+                // 4. Handle Level Up
                 if (displayContent.includes("<EVENT>LEVEL_UP</EVENT>")) {
                     toast.warning("🆙 LEVEL UP! YOU FEEL UNSTOPPABLE!", {
                         duration: 5000,
@@ -154,7 +179,7 @@ export function ChatInterface({
                     displayContent = displayContent.replace("<EVENT>LEVEL_UP</EVENT>", "").trim();
                 }
 
-                if (!displayContent.trim() && match) {
+                if (!displayContent.trim() && (hasStateChanges || updateMatch)) {
                     // Fallback if AI only sent an update tag and no text (rare, but happens)
                     displayContent = "*(S.A.M. te mira fijamente mientras las leyes de la física se reajustan...)*";
                 }
@@ -166,7 +191,18 @@ export function ChatInterface({
                     return;
                 }
 
+                if (displayContent.includes("<ACTION>REFRESH_CHARACTERS</ACTION>")) {
+                    displayContent = displayContent.replace("<ACTION>REFRESH_CHARACTERS</ACTION>", "").trim();
+                    setTimeout(() => window.location.reload(), 2000);
+                }
+
                 incomingMsg.content = displayContent;
+
+                // [FINAL COMMIT] Apply ALL Atomic Updates
+                if (hasStateChanges && onCharacterUpdate && selectedCharacter) {
+                    console.log("💾 Persisting Combined Updates (Atomic):", localStatus);
+                    onCharacterUpdate({ status: localStatus });
+                }
 
                 setMessages((prev) => {
                     const lastMsg = prev[prev.length - 1];
