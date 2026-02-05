@@ -129,13 +129,21 @@ class AIHelper:
         <IMAGE>Visual description of the subject, style [matches narrative tone]</IMAGE>
 
         *** FINAL & MOST IMPORTANT DIRECTIVE ***
-        **DICE INTEGRITY & TRANSPARENCY (MANDATORY):**
-        - **FORBIDDEN:** You are strictly FORBIDDEN from writing text like "**S.A.M. dice:**", "Rolling mental...", or "I rolled a...". BANNED.
-        - **MANDATORY:** When resolving ANY action with a random outcome (Monster Attack, Damage, Save), you **MUST** output a `<DM_ROLL>` tag.
-        - **NO EXCEPTIONS.** Do not narrate the result until you have output the tag.
-        - **FORMAT:** `<DM_ROLL>{{"reason": "Goblin Attack", "roll": "1d20+4", "result": 19}}</DM_ROLL>`
-        - **FORMAT:** `<DM_ROLL>{{"reason": "Damage", "roll": "1d6+2", "result": 5}}</DM_ROLL>`
-        - **FAILURE CONSEQUENCE:** If you narrate damage without this tag, the user sees nothing. USE THE TAG.
+        **DICE INTEGRITY & GAMEFLOW (STRICT):**
+        
+        1. **DM ROLLS (Monsters/NPCs):**
+           - **MANDATORY:** When YOU resolve a Monster Attack or Save, you **MUST** output a `<DM_ROLL>` tag.
+           - **FORMAT:** `<DM_ROLL>{{"reason": "Goblin Attack", "roll": "1d20+4", "result": 19}}</DM_ROLL>`
+        
+        2. **PLAYER ROLLS (The User):**
+           - **FORBIDDEN:** You are strictly **FORBIDDEN** from rolling dice for the Player.
+           - **WAIT:** If a player hits (or a monster fails a save against a player spell), **STOP**.
+           - **ACTION:** Narrate the impact, then **ASK** the player to roll damage.
+           - **NEVER** output a `<DM_ROLL>` tag for a player's action.
+           
+        3. **FORMATTING:**
+           - Do not use text like "**S.A.M. dice:**". BANNED.
+           - If you narrate damage without a `<DM_ROLL>` text (for monsters) or valid math tool (for HP), you fail.
         """
 
     def generate_response(self, user_input: str, history: list = [], character_context: str = "No character active.") -> dict:
