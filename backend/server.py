@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from app.core.security import verify_token
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Union
 
 # Import S.A.M. Core Modules
 from app.core.dice import DiceRoller, Visibility
@@ -30,7 +30,7 @@ app.include_router(messages.router)
 # --- Data Models ---
 class ChatRequest(BaseModel):
     message: str
-    history: List[str] = []
+    history: List[Union[str, Dict[str, str]]] = []
     character_context: Optional[str] = "No character selected." # Frontend will send summary string for now
 
 class RollRequest(BaseModel):
