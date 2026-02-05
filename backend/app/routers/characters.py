@@ -130,7 +130,9 @@ def list_user_characters(user_id: str, user: dict = Depends(verify_token)):
 @router.patch("/{character_id}", response_model=CharacterResponse)
 def update_character(character_id: str, updates: CharacterUpdate, user: dict = Depends(verify_token)):
     # Verify ownership before update
-    # Verify ownership before update
+    print(f"DEBUG: PATCH /characters/{character_id} called by {user['sub']}")
+    print(f"DEBUG: Payload: {updates.model_dump(exclude_unset=True)}")
+
     # Fetch existing first (Get status for merging)
     existing = supabase.table("characters").select("user_id, status").eq("id", character_id).execute()
     if not existing.data:
@@ -147,13 +149,18 @@ def update_character(character_id: str, updates: CharacterUpdate, user: dict = D
     # Deep Merge 'status' if present (Prevents wiping other status fields like hp_max)
     if "status" in data:
         current_status = current_record.get("status") or {}
+        print(f"DEBUG: Current Status: {current_status}")
         # Simple top-level merge is sufficient for now (hp_current overwrites old, others kept)
         merged_status = {**current_status, **data["status"]}
         data["status"] = merged_status
+        print(f"DEBUG: Merged Status: {merged_status}")
         
     response = supabase.table("characters").update(data).eq("id", character_id).execute()
     if not response.data:
+        print(f"DEBUG: Update Failed! Response: {response}")
         raise HTTPException(status_code=404, detail="Update failed")
+    
+    print(f"DEBUG: Update Success. New Data: {response.data[0]}")
     return response.data[0]
 
 @router.delete("/{character_id}")
