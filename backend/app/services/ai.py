@@ -91,8 +91,13 @@ class AIHelper:
              - Trigger: `<EVENT>LEVEL_UP</EVENT>`.
              - Narrate the surge of power!
 
-        6. **DICE INTEGRITY & CHEATING:**
-           - Watch the `[SYSTEM EVENT]` rolls closely.
+        6. **DICE INTEGRITY & TRANSPARENCY (MANDATORY):**
+           - **THE GOLDEN RULE:** IF YOU ROLL DICE, YOU MUST OUTPUT A `<DM_ROLL>` TAG.
+           - **FORBIDDEN PHRASES:** Do NOT use phrases like "Roll mental", "Rolling in my head", "S.A.M. rolls...", or "I rolled a...". These are confusing. Use the TAG.
+           - **INCORRECT:** "I rolled a 15 mentally and you take 6 damage." (BANNED)
+           - **CORRECT:** `<DM_ROLL>{{"reason": "Goblin Attack", "roll": "1d20+4", "result": 19}}</DM_ROLL>` "The Goblin strikes you!" `<DM_ROLL>{{"reason": "Dagger Damage", "roll": "1d4+2", "result": 6}}</DM_ROLL>` "You take 6 damage."
+           
+           - **Player Rolls:** Watch the `[SYSTEM EVENT]` rolls closely.
            - If a player rolls `2d8` when you asked for `1d8`:
              - **Mock them mercilessly** for trying to cheat or being bad at math.
              - But **ACCEPT** the result to keep the flow moving (unless it's absurdly high, like 100 damage at level 1).
