@@ -149,6 +149,9 @@ class AdminService:
                         # Optional: Reset other things like "conditions"?
                         # status["conditions"] = [] 
                         
+                        # Reset Money
+                        status["money"] = {"cp": 0, "sp": 0, "ep": 0, "gp": 0, "pp": 0}
+                        
                         # Update DB
                         supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
                         count += 1

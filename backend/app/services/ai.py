@@ -82,11 +82,13 @@ class AIHelper:
              - **Notification:** `<XP_GAIN>50</XP_GAIN>`
 
            - **LOOT (The Good Stuff):**
-             - **NARRATIVE-DATA SYNC:** If you describe an item (e.g., "You find 5 gold"), you **MUST** output a corresponding `<LOOT>` tag. Do not hallucinate rewards without tagging them.
-             - **Format:** `<LOOT>{{"item": "Potion of Healing", "qty": 1}}</LOOT>`
-             - For multiple items, emit multiple tags:
-               `<LOOT>{{"item": "Gold", "qty": 10}}</LOOT>`
-               `<LOOT>{{"item": "Dagger", "qty": 1}}</LOOT>`
+             - **NARRATIVE-DATA SYNC:** If you describe an item (e.g., "You find 5 gold"), you **MUST** output a corresponding `<LOOT>` tag.
+             - **SPLIT MONEY & CONTAINERS:** Never put money inside the item name.
+               - WRONG: `<LOOT>{{"item": "Bag with 10gp", "qty": 1}}</LOOT>`
+               - RIGHT: `<LOOT>{{"money": {{"gp": 10}}, "items": [{{"item": "Bag", "qty": 1}}]}}</LOOT>`
+             - **Format (Single Item):** `<LOOT>{{"items": [{{"item": "Potion", "qty": 1}}]}}</LOOT>`
+             - **Format (Money Only):** `<LOOT>{{"money": {{"sp": 5, "cp": 2}}}}</LOOT>`
+             - For complex loot, use a single combined JSON object.
 
            - **LEVEL UP:**
              - Track XP thresholds (Level 1->2 = 300 XP, 2->3 = 900 XP).
