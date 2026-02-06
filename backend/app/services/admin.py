@@ -162,7 +162,13 @@ class AdminService:
             # (In a real app, this might be campaign_id scoped)
             if user_id:
                 try:
-                    supabase.table("messages").delete().eq("user_id", user_id).execute()
+                    print(f"DEBUG: Attempting to reset history for user_id: {user_id}")
+                    delete_res = supabase.table("messages").delete().eq("user_id", user_id).execute()
+                    print(f"DEBUG: Reset History Result - Data: {len(delete_res.data) if delete_res.data else 0} rows deleted.")
+                    
+                    if not delete_res.data:
+                         print("WARNING: No messages were deleted. Check RLS or user_id match.")
+                         
                 except Exception as del_err:
                      print(f"Warning: Failed to delete user messages: {del_err}")
 

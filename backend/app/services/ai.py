@@ -83,7 +83,11 @@ class AIHelper:
            - **READ ONLY HISTORY:** The "ChatHistory" provided to you is a RECORD of what *already happened*.
            - **DO NOT RE-APPLY:** If the history says "Player took 6 damage", that damage is *ALREADY* reflected in the `current_hp` value provided in your context.
            - **NEW EVENTS ONLY:** You must ONLY call `apply_damage` for NEW events occurring in THIS turn's generation.
-           - **GHOST MATH:** If you apply damage based on reading old text, you will kill the player. DO NOT DO THIS.
+           - **MULTI-ATTACK SUMMATION (CRITICAL):**
+             - If multiple enemies hit the player in the same turn (e.g., Goblin A deals 5, Goblin B deals 7):
+             - **YOU MUST SUM THE DAMAGE:** 5 + 7 = 12.
+             - **CALL `apply_damage` ONCE:** `apply_damage(current_hp, 12)`.
+             - **DO NOT** call the tool twice. It confuses the math.
            - **CHECK:** Before calling a tool, ask: "Is this a NEW wound, or am I reading an old scar?"
 
         6. **PROGRESSION & REWARDS (CRITICAL):**
