@@ -72,8 +72,9 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated }
                 status: {},
                 image_url: ""
             }) // Reset
-        } catch (error) {
+        } catch (error: any) {
             console.error(error)
+            alert(`Error creating character: ${error.message || "Unknown error"}`)
         } finally {
             setLoading(false)
         }

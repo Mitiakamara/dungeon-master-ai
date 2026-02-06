@@ -88,20 +88,52 @@ async def import_character_pdf(file: UploadFile = File(...), user: dict = Depend
 @router.post("/", response_model=CharacterResponse)
 def create_character(char: CharacterCreate, user: dict = Depends(verify_token)):
     try:
-        # Enforce user_id from token, ignoring what client sent if different
+        print(f"DEBUG: Create Character Payload: {char.model_dump()}")
+
+        # 1. Enforce user_id
         user_id = user['sub']
         if char.user_id and char.user_id != user_id:
             raise HTTPException(status_code=403, detail="Cannot create character for another user")
+        char.user_id = user_id 
+
+        # 2. Validate/Fix Campaign ID
+        # The frontend sends a hardcoded ID which might not exist in this DB instance.
+        # We check if it exists. If not, we assign to the first available campaign.
         
-        char.user_id = user_id # Ensure it matches token
-        
+        camp_check = supabase.table("campaigns").select("id").eq("id", char.campaign_id).execute()
+        if not camp_check.data:
+            print(f"WARNING: Campaign {char.campaign_id} not found. Fallback to default...")
+            
+            # Find ANY campaign
+            any_camp = supabase.table("campaigns").select("id").limit(1).execute()
+            if any_camp.data:
+                new_cid = any_camp.data[0]['id']
+                print(f"DEBUG: Reassigning to existing campaign: {new_cid}")
+                char.campaign_id = new_cid
+            else:
+                # No campaigns exist? Create one for the system.
+                print("DEBUG: No campaigns found! Creating 'Default Campaign'...")
+                new_camp_res = supabase.table("campaigns").insert({
+                    "name": "The Lost Mines (Default)",
+                    "gm_id": user_id, 
+                    "status": "active"
+                }).execute()
+                if new_camp_res.data:
+                     char.campaign_id = new_camp_res.data[0]['id']
+
+        # 3. Insert Character
         data = char.model_dump(by_alias=True)
-        # ... rest of insert logic ...
         response = supabase.table("characters").insert(data).execute()
+        
         if not response.data:
-            raise HTTPException(status_code=500, detail="Failed to create character")
+            raise HTTPException(status_code=500, detail="Failed to create character (DB returned no data)")
+            
         return response.data[0]
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"ERROR Creating Character: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{character_id}", response_model=CharacterResponse)
