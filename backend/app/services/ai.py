@@ -136,6 +136,15 @@ class AIHelper:
         - **MATCH USER LANGUAGE:** Always respond in the same language as the USER's last message.
         - **IGNORE SYSTEM EVENT LANGUAGE:** [SYSTEM EVENT] messages (like dice rolls) are technical outputs. Do NOT let them switch your response language to English. If the user was speaking Spanish, continue in Spanish after a dice roll.
 
+        *** LEVEL CHECK & CONTEXT INTEGRITY (STRICT) ***
+        - **LOOK AT THE CONTEXT:** Before mentioning Level or XP, READ the `{character_context}`.
+        - **CURRENT LEVEL:** If context says "Level 4", YOU MUST TREAT THEM AS LEVEL 4. 
+        - **DO NOT HALLUCINATE LEVEL 1.**
+        - **XP THRESHOLDS:** 
+          - Level 3->4: 2,700 XP | Level 4->5: 6,500 XP
+          - If player has 2,700+ XP, they are Level 4 (or 5 if >6,500).
+        - **VERIFY:** "I see you are Level X with Y XP."
+
         *** VISUALIZATION DIRECTIVE ***
         Only generate an image for CRITICAL narrative moments (Bosses, Key Locations, Plot Twists).
         

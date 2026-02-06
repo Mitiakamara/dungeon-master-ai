@@ -71,9 +71,20 @@ export function ChatInterface({
                 const rawStatus = selectedCharacter?.status || {};
 
                 // Deep Copy mutable fields
+                // [FIX] Lazy Migration: wallet -> money
+                // If backend sent 'wallet' (legacy), use it if 'money' is empty.
+                const legacyWallet = rawStatus.wallet || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+                const newMoney = rawStatus.money || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+
+                // If money is all zeros/empty, but legacyWallet has coins, perform migration
+                const hasMoney = Object.values(newMoney).some(v => typeof v === 'number' && v > 0);
+                const hasLegacy = Object.values(legacyWallet).some(v => typeof v === 'number' && v > 0);
+
+                const finalMoney = (!hasMoney && hasLegacy) ? { ...legacyWallet } : { ...newMoney };
+
                 let localStatus: any = {
                     ...rawStatus,
-                    money: rawStatus.money ? { ...rawStatus.money } : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+                    money: finalMoney,
                     inventory: Array.isArray(rawStatus.inventory) ? [...rawStatus.inventory] : [],
                     // Copy other fields as needed (hp_current, etc handled by update tag)
                 };
