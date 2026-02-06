@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { LogOut, Plus, Settings, User, Dices, ShieldCheck } from "lucide-react"
+import { LogOut, Plus, Settings, User, Dices, ShieldCheck, Menu } from "lucide-react"
 import { ProfileMenu } from "@/components/profile-menu"
 import { DiceTray } from "@/components/dice-tray"
 import { ChatInterface } from "@/components/chat-interface"
@@ -18,6 +18,10 @@ import Link from "next/link"
 import { useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRealtime } from "@/hooks/use-realtime"
+
+import { SidebarLeft } from "@/components/sidebar-left"
+import { SidebarRight } from "@/components/sidebar-right"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
 export default function GameLayout() {
     const [createOpen, setCreateOpen] = useState(false)
@@ -150,39 +154,53 @@ export default function GameLayout() {
     }
 
     return (
-        <div className="flex h-screen w-full overflow-hidden bg-background">
-            {/* --- LEFT SIDEBAR: Characters & Nav --- */}
-            <aside className="flex w-64 flex-col border-r bg-muted/20">
-                <div className="flex h-14 items-center border-b px-4 gap-1">
-                    <span className="font-bold text-sm mr-auto">S.A.M. Dashboard</span>
+        <div className="flex flex-col md:flex-row h-screen w-full overflow-hidden bg-background">
 
-                    <Link href="/admin" title="Admin / God Mode">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-purple-400">
-                            <ShieldCheck className="h-4 w-4" />
+            {/* --- MOBILE HEADER (Visible only on small screens) --- */}
+            <header className="flex md:hidden h-14 items-center justify-between border-b px-4 bg-muted/40 shrink-0">
+
+                {/* 1. Left Menu Sheet */}
+                <Sheet>
+                    <SheetTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                            <Menu className="h-5 w-5" />
                         </Button>
-                    </Link>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="p-0 w-[300px]">
+                        <SidebarLeft
+                            refreshKey={refreshKey}
+                            onSelectCharacter={handleSelectCharacter}
+                            selectedId={selectedCharacter?.id}
+                        />
+                    </SheetContent>
+                </Sheet>
 
-                    <div className="scale-90">
-                        <Commlink />
-                    </div>
+                <div className="font-bold text-sm">S.A.M. Mobile</div>
 
-                    <div className="scale-90">
-                        <ModeToggle />
-                    </div>
-                </div>
+                {/* 2. Right Dice Sheet */}
+                <Sheet>
+                    <SheetTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                            <Dices className="h-5 w-5" />
+                        </Button>
+                    </SheetTrigger>
+                    <SheetContent side="right" className="p-0 w-[300px]">
+                        <SidebarRight onRoll={(msg) => setRollEvent(msg)} />
+                    </SheetContent>
+                </Sheet>
+            </header>
 
-                {/* Character List */}
-                <CharacterList
-                    key={refreshKey}
+            {/* --- DESKTOP LEFT SIDEBAR (Hidden on mobile) --- */}
+            <aside className="hidden md:flex w-64 flex-col border-r bg-muted/20 shrink-0">
+                <SidebarLeft
+                    refreshKey={refreshKey}
                     onSelectCharacter={handleSelectCharacter}
                     selectedId={selectedCharacter?.id}
                 />
-
-                {/* User Footer - MOVED TO RIGHT SIDEBAR */}
             </aside>
 
             {/* --- CENTER: Chat Area --- */}
-            <main className="flex flex-1 flex-col overflow-hidden">
+            <main className="flex flex-1 flex-col overflow-hidden relative">
                 <ChatInterface
                     selectedCharacter={selectedCharacter}
                     externalEvent={rollEvent}
@@ -191,16 +209,9 @@ export default function GameLayout() {
                 />
             </main>
 
-            {/* --- RIGHT SIDEBAR: Tools & Dice --- */}
-            <aside className="w-72 border-l bg-muted/20 p-4 hidden xl:flex flex-col">
-                <div className="flex-1">
-                    <DiceTray onRoll={(msg) => setRollEvent(msg)} />
-                </div>
-
-                <div className="mt-4 pt-4 border-t">
-                    <div className="text-xs font-semibold text-muted-foreground mb-2 px-2">Player</div>
-                    <ProfileMenu />
-                </div>
+            {/* --- DESKTOP RIGHT SIDEBAR (Hidden on mobile) --- */}
+            <aside className="hidden xl:flex w-72 flex-col border-l bg-muted/20 shrink-0">
+                <SidebarRight onRoll={(msg) => setRollEvent(msg)} />
             </aside>
 
             <CharacterCreateDialog
