@@ -58,15 +58,25 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         msg_clean = request.message.strip()
         print(f"DEBUG CHAT REQUEST: '{request.message}' (cleaned: '{msg_clean}') from {user_id}")
         
-        # [PHASE 13] PERSISTENCE LAYER - SAVE USER MESSAGE
+        # [PHASE 18] MULTIPLAYER ROUTING
         cid = None
         try:
-             # Fallback: Find first campaign for user (gm_id)
-            camps = sam_brain.supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
-            if camps.data:
-                cid = camps.data[0]['id']
-        except Exception:
-            pass
+            # 1. Player Mode: Check if User has a Character in a Campaign
+            # We take the first character found (MVP). In future, frontend could send specific campaign_id.
+            chars = sam_brain.supabase.table("characters").select("campaign_id").eq("user_id", user_id).limit(1).execute()
+            if chars.data and chars.data[0].get('campaign_id'):
+                 cid = chars.data[0]['campaign_id']
+                 print(f"DEBUG: Found Campaign ID: {cid} via Character (Player Mode)")
+            
+            # 2. GM Mode: Fallback to Campaign Ownership
+            if not cid:
+                camps = sam_brain.supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
+                if camps.data:
+                    cid = camps.data[0]['id']
+                    print(f"DEBUG: Found Campaign ID: {cid} via GM Ownership")
+                    
+        except Exception as e:
+            print(f"WARNING: Campaign Lookup Failed: {e}")
 
         try:
             user_payload = {
