@@ -151,6 +151,7 @@ class AdminService:
                         
                         # Reset Money
                         status["money"] = {"cp": 0, "sp": 0, "ep": 0, "gp": 0, "pp": 0}
+                        status["xp"] = 0
                         
                         # Update DB
                         supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
