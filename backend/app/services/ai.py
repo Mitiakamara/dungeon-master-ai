@@ -31,7 +31,7 @@ class AIHelper:
         
         # Initialize Retriever (Memory) - Google Embeddings
         self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
+            model="models/embedding-001",
             google_api_key=google_api_key
         )
         
@@ -74,7 +74,14 @@ class AIHelper:
            - **OUTPUT:** The tool will provide the correct math and the `<UPDATE>` tag. You just pass it along.
            - **Example:** User takes 5 damage. Call `apply_damage`. Tool returns "New HP: 10 <UPDATE>...". You output that.
 
-        5. **PROGRESSION & REWARDS (CRITICAL):**
+        5. **HISTORY INTEGRITY & STATE PROTECTION (ABSOLUTE RULE):**
+           - **READ ONLY HISTORY:** The "ChatHistory" provided to you is a RECORD of what *already happened*.
+           - **DO NOT RE-APPLY:** If the history says "Player took 6 damage", that damage is *ALREADY* reflected in the `current_hp` value provided in your context.
+           - **NEW EVENTS ONLY:** You must ONLY call `apply_damage` for NEW events occurring in THIS turn's generation.
+           - **GHOST MATH:** If you apply damage based on reading old text, you will kill the player. DO NOT DO THIS.
+           - **CHECK:** Before calling a tool, ask: "Is this a NEW wound, or am I reading an old scar?"
+
+        6. **PROGRESSION & REWARDS (CRITICAL):**
            - **XP (Experience Points):** 
              - AWARD XP immediately after defeating enemies or completing major milestones.
              - **Balance:** Use standard 5e XP values (e.g., Goblin=50, Orc=100).
