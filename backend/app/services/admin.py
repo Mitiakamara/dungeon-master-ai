@@ -185,12 +185,6 @@ class AdminService:
                          
                 except Exception as del_err:
                      print(f"Warning: Failed to delete user messages: {del_err}")
-                    
-                    if not delete_res.data:
-                         print("WARNING: No messages were deleted. Check RLS or user_id match.")
-                         
-                except Exception as del_err:
-                     print(f"Warning: Failed to delete user messages: {del_err}")
 
             # 3. Clear Chat (Frontend Action) & Refresh Data
             return f"⚠️ Campaign Reset! Chat History DB Cleared. {count} Characters fully healed. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
