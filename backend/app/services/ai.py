@@ -29,9 +29,8 @@ class AIHelper:
         # Bind Tools for S.A.M. (Compendium + Game Mechanics)
         self.llm_with_tools = self.llm.bind_tools(ALL_TOOLS + MECHANIC_TOOLS)
         
-        # Initialize Retriever (Memory) - Google Embeddings
         self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             google_api_key=google_api_key
         )
         
@@ -253,6 +252,10 @@ class AIHelper:
                 ai_msg = self.llm_with_tools.invoke(messages)
             
             ai_response = ai_msg.content
+            
+            # FAIL-SAFE: If AI returns empty content (e.g. tool loop failed or safety block), prevent "Mute"
+            if not ai_response or (isinstance(ai_response, str) and not ai_response.strip()):
+                 ai_response = "*(S.A.M. stares at you blankly, then taps the microphone.)* 'Is this thing on? My neural pathways jammed. Say that again?' (System Error: Empty AI Response)"
             
             # DEBUG LOGGING (Temporary)
             with open("debug_log.txt", "a", encoding="utf-8") as f:
