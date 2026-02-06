@@ -1,4 +1,5 @@
 from langchain_core.tools import tool
+from typing import List, Dict, Optional, Union
 
 @tool
 def apply_damage(current_hp: int, damage_amount: int) -> str:
@@ -37,14 +38,14 @@ def apply_healing(current_hp: int, heal_amount: int, max_hp: int) -> str:
     return f"Calculation: {current_hp} + {heal_amount} = {new_hp} (Max: {max_hp}). <UPDATE>{{\"status\": {{\"hp_current\": {new_hp}}}}}</UPDATE>"
 
 @tool
-def give_loot(money: dict = None, items: list = None) -> str:
+def give_loot(money: Optional[Dict[str, int]] = None, items: Optional[List[Dict[str, Union[str, int]]]] = None) -> str:
     """
     Generates a structured loot drop.
     USE THIS TOOL whenever the player finds items or money.
     
     Args:
         money: Dictionary of currency, e.g., {'gp': 10, 'sp': 5}.
-        items: List of item dictionaries, e.g., [{'item': 'Potion', 'qty': 1}].
+        items: List of item dictionaries. EACH item MUST have 'item' (str) and 'qty' (int). Example: [{'item': 'Potion', 'qty': 1}].
         
     Returns:
         The formatted <LOOT> tag for the frontend.
