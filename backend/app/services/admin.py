@@ -158,13 +158,33 @@ class AdminService:
                         count += 1
             
             # 2. DELETE CHAT HISTORY from Database
-            # We delete all messages where user_id matches the GM/User
-            # (In a real app, this might be campaign_id scoped)
+            # STRATEGY: Delete by Campaign ID (clears all players), then fallback to User ID (clears orphans)
+            
+            # Find Campaign ID owned by this User (GM)
+            camp_res = supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
+            
+            messages_deleted = 0
+            
+            if camp_res.data:
+                cid = camp_res.data[0]['id']
+                print(f"DEBUG: Resetting Campaign ID: {cid}")
+                # Delete ALL messages in this campaign (User A + User B + AI)
+                del_camp = supabase.table("messages").delete().eq("campaign_id", cid).execute()
+                if del_camp.data:
+                    messages_deleted += len(del_camp.data)
+                    print(f"DEBUG: Deleted {len(del_camp.data)} campaign messages.")
+            
+            # Fallback / Cleanup: Delete messages owned by this user (legacy/orphans)
             if user_id:
                 try:
-                    print(f"DEBUG: Attempting to reset history for user_id: {user_id}")
-                    delete_res = supabase.table("messages").delete().eq("user_id", user_id).execute()
-                    print(f"DEBUG: Reset History Result - Data: {len(delete_res.data) if delete_res.data else 0} rows deleted.")
+                    print(f"DEBUG: Cleanup orphan history for user_id: {user_id}")
+                    del_user = supabase.table("messages").delete().eq("user_id", user_id).execute()
+                    if del_user.data:
+                         messages_deleted += len(del_user.data)
+                         print(f"DEBUG: Deleted {len(del_user.data)} orphan messages.")
+                         
+                except Exception as del_err:
+                     print(f"Warning: Failed to delete user messages: {del_err}")
                     
                     if not delete_res.data:
                          print("WARNING: No messages were deleted. Check RLS or user_id match.")
