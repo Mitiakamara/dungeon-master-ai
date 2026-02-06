@@ -73,7 +73,7 @@ export function ChatInterface({
                 // Deep Copy mutable fields
                 let localStatus: any = {
                     ...rawStatus,
-                    wallet: rawStatus.wallet ? { ...rawStatus.wallet } : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+                    money: rawStatus.money ? { ...rawStatus.money } : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
                     inventory: Array.isArray(rawStatus.inventory) ? [...rawStatus.inventory] : [],
                     // Copy other fields as needed (hp_current, etc handled by update tag)
                 };
@@ -121,8 +121,8 @@ export function ChatInterface({
                             if (lootData.money) {
                                 ['cp', 'sp', 'ep', 'gp', 'pp'].forEach(currency => {
                                     if (lootData.money[currency]) {
-                                        localStatus.wallet[currency as keyof typeof localStatus.wallet] =
-                                            (localStatus.wallet[currency as keyof typeof localStatus.wallet] || 0) + lootData.money[currency];
+                                        localStatus.money[currency as keyof typeof localStatus.money] =
+                                            (localStatus.money[currency as keyof typeof localStatus.money] || 0) + lootData.money[currency];
                                         displayParts.push(`${lootData.money[currency]} ${currency.toUpperCase()}`);
                                     }
                                 });
