@@ -168,13 +168,33 @@ class AdminService:
             if camp_res.data:
                 cid = camp_res.data[0]['id']
                 print(f"DEBUG: Resetting Campaign ID: {cid}")
-                # Delete ALL messages in this campaign (User A + User B + AI)
+                
+                # 1. Delete by Campaign ID (The Happy Path)
                 del_camp = supabase.table("messages").delete().eq("campaign_id", cid).execute()
                 if del_camp.data:
                     messages_deleted += len(del_camp.data)
                     print(f"DEBUG: Deleted {len(del_camp.data)} campaign messages.")
-            
-            # Fallback / Cleanup: Delete messages owned by this user (legacy/orphans)
+
+                # 2. Deep Clean: Delete by User IDs of players in this campaign (The Old/Orphan Path)
+                # This catches messages sent before Phase 18 (when campaign_id was NULL)
+                try:
+                    players = supabase.table("characters").select("user_id").eq("campaign_id", cid).execute()
+                    if players.data:
+                        player_ids = [p['user_id'] for p in players.data if p.get('user_id')]
+                        # Add GM to list just to be safe
+                        if user_id and user_id not in player_ids:
+                            player_ids.append(user_id)
+                        
+                        if player_ids:
+                             print(f"DEBUG: Deep cleaning history for players: {player_ids}")
+                             del_players = supabase.table("messages").delete().in_("user_id", player_ids).execute()
+                             if del_players.data:
+                                 messages_deleted += len(del_players.data)
+                                 print(f"DEBUG: Deep Cleaned {len(del_players.data)} player messages.")
+                except Exception as deep_err:
+                    print(f"WARNING: Deep clean failed: {deep_err}")
+
+            # Fallback / Cleanup: Delete messages owned by this user (if not caught above)
             if user_id:
                 try:
                     print(f"DEBUG: Cleanup orphan history for user_id: {user_id}")
