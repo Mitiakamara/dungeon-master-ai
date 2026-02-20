@@ -1,0 +1,316 @@
+[
+  {
+    "name": "Leather armor",
+    "type": "Light Armor",
+    "rarity": "Common",
+    "description": "Standard light armor provided as starting equipment for Warlocks.",
+    "properties": {
+      "AC": "11 + Dex modifier",
+      "cost": "10 gp",
+      "weight": "10 lb"
+    }
+  },
+  {
+    "name": "Sickle",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "description": "A simple weapon provided as starting equipment for Warlocks.",
+    "properties": {
+      "damage": "1d4 slashing",
+      "cost": "1 gp",
+      "weight": "2 lb",
+      "properties": [
+        "Light"
+      ]
+    }
+  },
+  {
+    "name": "Dagger",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "description": "A simple weapon provided as starting equipment for Warlocks.",
+    "properties": {
+      "damage": "1d4 piercing",
+      "cost": "2 gp",
+      "weight": "1 lb",
+      "properties": [
+        "Finesse",
+        "Light",
+        "Thrown (range 20/60)"
+      ]
+    }
+  },
+  {
+    "name": "Orb",
+    "type": "Arcane Focus",
+    "rarity": "Common",
+    "description": "An arcane focus used for casting spells.",
+    "properties": {
+      "cost": "20 gp",
+      "weight": "3 lb"
+    }
+  },
+  {
+    "name": "Book (Occult Lore)",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "A book containing occult lore, provided as starting equipment for Warlocks.",
+    "properties": {
+      "cost": "25 gp",
+      "weight": "5 lb"
+    }
+  },
+  {
+    "name": "Scholar's Pack",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "A standard adventurer's pack containing a backpack, a book of lore, an ink bottle, an ink pen, 10 sheets of parchment, a little bag of sand, and a small knife.",
+    "properties": {
+      "cost": "40 gp",
+      "weight": "10 lb (contents vary)"
+    }
+  },
+  {
+    "name": "Book of Shadows",
+    "type": "Pact Item (Gear)",
+    "rarity": "Common",
+    "description": "A book conjured by a Warlock who chose the Pact of the Tome. It contains eldritch magic that only the Warlock can access. If the book is lost, the Warlock can conjure a new one during a Short or Long Rest.",
+    "properties": {
+      "attunement": "Warlock (Pact of the Tome)",
+      "effect": "Allows the Warlock to learn two cantrips from any class's spell list. These cantrips count as Warlock spells for you.",
+      "replacement": "Can be conjured again at the end of a Short or Long Rest if lost."
+    }
+  },
+  {
+    "name": "Dagger",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "description": "A small, easily concealed blade.",
+    "properties": {
+      "damage": "1d4 piercing",
+      "cost": "2gp",
+      "weight": "1lb",
+      "properties": [
+        "Finesse",
+        "Light",
+        "Thrown (range 20/60)"
+      ]
+    }
+  },
+  {
+    "name": "Quarterstaff",
+    "type": "Simple Melee Weapon / Arcane Focus",
+    "rarity": "Common",
+    "description": "A sturdy wooden staff, often used as an arcane focus.",
+    "properties": {
+      "damage": "1d6 bludgeoning",
+      "cost": "0.2gp",
+      "weight": "4lb",
+      "properties": [
+        "Versatile (1d8)"
+      ]
+    }
+  },
+  {
+    "name": "Robes",
+    "type": "Clothing",
+    "rarity": "Common",
+    "description": "Standard clothing worn by a Wizard.",
+    "properties": {}
+  },
+  {
+    "name": "Spellbook",
+    "type": "Arcane Gear",
+    "rarity": "Common",
+    "description": "A book containing the spells a wizard knows, essential for preparing and casting spells.",
+    "properties": {}
+  },
+  {
+    "name": "Scholar's Pack",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "A standard adventuring pack suitable for a scholar, containing various useful supplies.",
+    "properties": {}
+  },
+  {
+    "name": "Spellbook",
+    "type": "Gear/Container",
+    "rarity": "Common",
+    "description": "A unique repository for a wizard's spells. It is a Tiny object that weighs 3 pounds, contains 100 pages, and can be read only by the wizard or someone they identify. Used for preparing and copying spells.",
+    "properties": {
+      "weight": "3lb",
+      "pages": 100
+    }
+  },
+  {
+    "name": "Dagger",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Criminal background (2 included).",
+    "properties": {
+      "damage": "1d4 piercing",
+      "cost": "2gp",
+      "weight": "1lb",
+      "properties": [
+        "Finesse",
+        "Light",
+        "Thrown (range 20/60)"
+      ]
+    }
+  },
+  {
+    "name": "Spear",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Soldier background.",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "1gp",
+      "weight": "3lb",
+      "properties": [
+        "Thrown (range 20/60)",
+        "Versatile (1d8)"
+      ]
+    }
+  },
+  {
+    "name": "Shortbow",
+    "type": "Simple Ranged Weapon",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Soldier background.",
+    "properties": {
+      "damage": "1d6 piercing",
+      "cost": "25gp",
+      "weight": "2lb",
+      "properties": [
+        "Ammunition (range 80/320)",
+        "Two-Handed"
+      ]
+    }
+  },
+  {
+    "name": "Staff",
+    "type": "Simple Melee Weapon",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Sage background. Typically functions as a Quarterstaff.",
+    "properties": {
+      "damage": "1d6 bludgeoning",
+      "cost": "2sp",
+      "weight": "4lb",
+      "properties": [
+        "Versatile (1d8)"
+      ]
+    }
+  },
+  {
+    "name": "Arrows",
+    "type": "Ammunition",
+    "rarity": "Common",
+    "description": "A bundle of arrows provided with the Shortbow for the Soldier background.",
+    "properties": {
+      "count": "20",
+      "cost": "1gp (for 20)",
+      "weight": "1lb (for 20)"
+    }
+  },
+  {
+    "name": "Calligrapher's Supplies",
+    "type": "Artisan's Tools",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Acolyte and Sage backgrounds.",
+    "properties": {}
+  },
+  {
+    "name": "Holy Symbol",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Acolyte background.",
+    "properties": {}
+  },
+  {
+    "name": "Parchment",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Sheets of writing material. Acolyte receives 10 sheets, Sage receives 8 sheets.",
+    "properties": {}
+  },
+  {
+    "name": "Book",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "A generic book. Acolyte receives a book of prayers; Sage receives a book concerning history.",
+    "properties": {}
+  },
+  {
+    "name": "Dark Common Clothes",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "A set of dark common clothes provided as starting equipment for the Criminal background.",
+    "properties": {}
+  },
+  {
+    "name": "Pouch",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Criminal background.",
+    "properties": {
+      "count": "2"
+    }
+  },
+  {
+    "name": "Traveler's Clothes",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Criminal and Soldier backgrounds.",
+    "properties": {}
+  },
+  {
+    "name": "Crowbar",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Criminal background.",
+    "properties": {}
+  },
+  {
+    "name": "Thieves' Tools",
+    "type": "Tools",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Criminal background.",
+    "properties": {}
+  },
+  {
+    "name": "Robe",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Sage background.",
+    "properties": {}
+  },
+  {
+    "name": "Rapper's Supplies",
+    "type": "Tools",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Sage background.",
+    "properties": {}
+  },
+  {
+    "name": "Gaming Set",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "An unspecified type of gaming set provided as starting equipment for the Soldier background.",
+    "properties": {}
+  },
+  {
+    "name": "Healer's Kit",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Soldier background.",
+    "properties": {}
+  },
+  {
+    "name": "Quiver",
+    "type": "Gear",
+    "rarity": "Common",
+    "description": "Provided as starting equipment for the Soldier background.",
+    "properties": {}
+  }
+]

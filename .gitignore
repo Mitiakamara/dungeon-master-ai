@@ -4,6 +4,7 @@ pnpm-lock.yaml
 yarn.lock
 package-lock.json
 venv/
+.venv/
 .env
 
 # OS

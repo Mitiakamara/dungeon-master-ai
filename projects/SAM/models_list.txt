@@ -1,0 +1,3 @@
+
+Listing available models:
+- models/gemini-embedding-001 (Supported methods: ['embedContent', 'countTextTokens', 'countTokens', 'asyncBatchEmbedContent'])
