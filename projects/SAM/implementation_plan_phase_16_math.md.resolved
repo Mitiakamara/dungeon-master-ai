@@ -1,0 +1,36 @@
+# Implementation Plan - Phase 16B: Math Integrity (Tool-Assisted State)
+
+## Goal
+Eliminate "Ghost Math" errors (e.g., 31 - 16 = 3) by offloading HP calculations to deterministic Python tools.
+
+## User Review Required
+> [!IMPORTANT]
+> This changes how S.A.M. handles damage. Instead of mentally tracking it, **S.A.M. MUST call a tool**.
+> This might slightly increase latency (tool call roundtrip) but guarantess accuracy.
+
+## Proposed Changes
+
+### Backend Logic
+1.  **Create `backend/app/services/tools/game_mechanics.py`**
+    *   `apply_damage(current_hp: int, amount: int) -> str`
+    *   `apply_healing(current_hp: int, amount: int) -> str`
+    *   Both return the formatted `<UPDATE>` tag string (e.g., "New HP: 15. <UPDATE>...").
+
+2.  **Update [backend/app/services/ai.py](file:///C:/Users/FranciscoGetFinanced/Dropbox/Antigravity/dungeon-master-ai/backend/app/services/ai.py)**
+    *   Import and bind `game_mechanics` tools.
+    *   Update System Prompt:
+        *   "When applying damage/healing, YOU MUST USE THE TOOLS `apply_damage` or `apply_healing`."
+        *   "Do NOT calculate HP in your head."
+
+## Verification Plan
+
+### Automated
+*   None (Requires LLM interaction).
+
+### Manual Verification
+1.  **Scenario**: User takes damage.
+2.  **Action**: User says: "I hit the goblin." -> S.A.M. Hits back.
+3.  **Observation**:
+    *   S.A.M. output should show `<DM_ROLL>` (from previous fix).
+    *   S.A.M. should invoke `apply_damage`.
+    *   Final response should have correct Math (e.g. 31 - 6 = 25).

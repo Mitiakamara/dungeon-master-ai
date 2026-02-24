@@ -1,0 +1,74 @@
+# Propuesta de Arquitectura: S.A.M. (Storytelling AI Master)
+
+> [!NOTE]
+> Este documento ha sido actualizado para priorizar una estrategia de "Costo 0" o muy bajo costo para el prototipo, utilizando la capas gratuitas (Free Tiers) de servicios modernos.
+
+## 1. Hosting y Despliegue (Estrategia "Free Tier")
+
+Para cumplir con el requerimiento de bajo costo y compatibilidad con tu dominio de Wix, esta es la combinación ganadora:
+
+### A. Frontend: **Vercel** (Recomendado) o Netlify
+
+* **Costo:** $0/mes (Hobby Tier).
+* **Por qué:** Vercel está optimizado para Next.js. El despliegue es automático desde GitHub.
+* **Dominio Wix:** Soportan dominios personalizados (CNAME) en el plan gratuito. Solo apuntarás los DNS de Wix a Vercel.
+
+### B. Backend: **Render.com** (Tu elección)
+
+* **Costo:** $0/mes (Free Tier).
+* **Consideración:** El servicio gratuito de Render "duerme" tras 15 min de inactividad, causando un retraso de 30-50s en la primera petición.
+  * *Solución:* Para un prototipo es aceptable. Si molesta, hay servicios como "cron-job.org" (gratis) para mantenerlo despierto haciendo "pings".
+* **Alternativa:** **Vercel Serverless Functions** (Python). Tienen límites de tiempo de ejecución (10s en plan free), lo cual puede ser justo para respuestas largas de IA, pero es totalmente gratis y no duerme. *Recomiendo empezar con Render para mayor flexibilidad con WebSockets.*
+
+### C. Base de Datos (Relacional + Vectorial): **Supabase**
+
+* **Costo:** $0/mes (Plan Free: 500MB de datos).
+* **Por qué:** Es un "todo en uno". Te da:
+    1. **PostgreSQL** completo.
+    2. **Autenticación** (Usuarios, Login con Google ya integrado).
+    3. **pgvector**: Soporte nativo para Búsqueda Vectorial (Vital para RAG/IA) sin pagar extra por Pinecone.
+    4. **Realtime**: Capacidad de escuchar cambios en la BD, útil para el chat.
+
+### D. La IA (LLM): **Google Gemini API (Actual)**
+
+* **Costo:** Gratuito (Free Tier muy generoso).
+* **Modelo Actual: Gemini 1.5/2.0 Flash.**
+  * **Por qué:** Es multimodales (lee PDFs e imágenes nativamente), tiene una ventana de contexto masiva (1 millón de tokens, ideal para leer manuales enteros de D&D), y es extremadamente rápido.
+  * **Groq / Llama 3:** Evaluado, pero Gemini ofrece mejor manejo de RAG (PDFs) sin costo.
+  * **OpenAI (GPT-4o):** Soporte preparado, pero desactivado por defecto para mantener el costo en $0.
+
+## 2. Diagrama de Flujo Actualizado
+
+```mermaid
+graph TD
+    User[Jugador (Web/Móvil)] -->|HTTPS| Frontend[Vercel (Next.js)]
+    User -->|Wix DNS| Frontend
+    Frontend -->|API/WS| Backend[Render (FastAPI)]
+    Backend -->|Auth & Data| DB[(Supabase PostgreSQL)]
+    Backend -->|Vector Search| DB
+    Backend -->|Inference| LLM[Groq / Gemini API (Free)]
+```
+
+## 3. Hoja de Ruta Sugerida (Ajustada)
+
+### Fase 1: Setup Gratuito
+
+1. Crear repo en GitHub (gratis).
+2. Crear proyecto en **Supabase**: Configurar tablas y *pgvector*.
+3. Desplegar "Hola Mundo" en **Render** (Python) y **Vercel** (Next.js).
+4. Conectar dominio de Wix a Vercel.
+
+### Fase 2: Desarrollo del Core
+
+1. Implementar Login con Google usando **Supabase Auth** (es casi automático).
+2. Ingestar reglas SRD en Supabase (Vectores).
+3. Conectar Backend a **Google Gemini API** (Flash) para generar texto e imágenes gratis y rápido.
+
+### Fase 3: UX y Partida
+
+1. Chat en tiempo real.
+2. Persistencia de personajes en Supabase.
+
+## ¿Por qué Supabase + Render?
+
+Separamos las preocupaciones. Render se encarga de procesar la lógica pesada de la IA (Python) y mantener la conexión WebSocket abierta. Supabase nos regala la base de datos, la autenticación y la búsqueda vectorial en una sola capa gratuita muy robusta.
