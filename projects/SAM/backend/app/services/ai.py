@@ -99,12 +99,18 @@ class AIHelper:
 
            - **LOOT (The Good Stuff):**
              - **NARRATIVE-DATA SYNC:** If you describe an item (e.g., "You find 5 gold"), you **MUST** output a corresponding `<LOOT>` tag.
+             - **TAG INTEGRITY (ABSOLUTE RULE):**
+               - ALWAYS output BOTH the opening `<LOOT>` AND closing `</LOOT>` tags. NEVER omit either one.
+               - NEVER split a `<LOOT>...</LOOT>` block across multiple lines or paragraphs.
+               - The JSON inside MUST be valid, complete, and parseable. No truncated strings or missing braces.
+               - Output the ENTIRE tag on ONE line: `<LOOT>{{...}}</LOOT>`
+               - EVERY item object MUST have an `"item"` field (the name string). NEVER omit it.
              - **SPLIT MONEY & CONTAINERS:** Never put money inside the item name.
                - WRONG: `<LOOT>{{"item": "Bag with 10gp", "qty": 1}}</LOOT>`
                - RIGHT: `<LOOT>{{"money": {{"gp": 10}}, "items": [{{"item": "Bag", "qty": 1}}]}}</LOOT>`
              - **Format (Single Item):** `<LOOT>{{"items": [{{"item": "Potion", "qty": 1}}]}}</LOOT>`
              - **Format (Money Only):** `<LOOT>{{"money": {{"sp": 5, "cp": 2}}}}</LOOT>`
-             - For complex loot, use a single combined JSON object.
+             - **Format (Combined):** `<LOOT>{{"money": {{"gp": 10}}, "items": [{{"item": "Sword", "qty": 1}}]}}</LOOT>`
 
            - **LEVEL UP:**
              - Track XP thresholds (Level 1->2 = 300 XP, 2->3 = 900 XP).

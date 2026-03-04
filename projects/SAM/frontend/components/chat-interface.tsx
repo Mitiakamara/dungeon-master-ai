@@ -12,6 +12,26 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useRealtime } from "@/hooks/use-realtime"
 
+// Helper: Attempt to repair truncated JSON from malformed AI tags
+function repairJson(str: string): string {
+    str = str.replace(/```json/g, '').replace(/```/g, '').trim()
+    let braces = 0, brackets = 0, inString = false, escape = false
+    for (const ch of str) {
+        if (escape) { escape = false; continue }
+        if (ch === '\\') { escape = true; continue }
+        if (ch === '"') { inString = !inString; continue }
+        if (inString) continue
+        if (ch === '{') braces++
+        if (ch === '}') braces--
+        if (ch === '[') brackets++
+        if (ch === ']') brackets--
+    }
+    if (inString) str += '"'
+    while (brackets > 0) { str += ']'; brackets-- }
+    while (braces > 0) { str += '}'; braces-- }
+    return str
+}
+
 interface Message {
     role: "user" | "assistant" | "system"
     content: string
@@ -140,7 +160,7 @@ export function ChatInterface({
                             }
                             // 2. Items
                             if (lootData.items && Array.isArray(lootData.items)) {
-                                lootData.items.forEach((itemObj: any) => {
+                                lootData.items.filter((itemObj: any) => itemObj.item).forEach((itemObj: any) => {
                                     localStatus.inventory.push({
                                         item: itemObj.item,
                                         qty: itemObj.qty || 1,
@@ -203,6 +223,52 @@ export function ChatInterface({
                         return "";
                     }
                 });
+
+                // 2b. Fallback: Recover orphaned </LOOT> (AI dropped opening tag)
+                while (displayContent.includes('</LOOT>')) {
+                    const closingIdx = displayContent.indexOf('</LOOT>')
+                    const beforeClose = displayContent.substring(0, closingIdx)
+                    const jsonStart = beforeClose.lastIndexOf('{')
+                    if (jsonStart !== -1) {
+                        let jsonStr = beforeClose.substring(jsonStart)
+                        try {
+                            jsonStr = repairJson(jsonStr)
+                            const lootData = JSON.parse(jsonStr)
+                            console.log("🔧 Recovered orphan LOOT:", lootData)
+                            if (lootData.money || lootData.items) {
+                                if (lootData.money) {
+                                    (['cp', 'sp', 'ep', 'gp', 'pp'] as const).forEach(currency => {
+                                        if (lootData.money[currency]) {
+                                            localStatus.money[currency] =
+                                                (localStatus.money[currency] || 0) + lootData.money[currency]
+                                        }
+                                    })
+                                }
+                                if (lootData.items && Array.isArray(lootData.items)) {
+                                    lootData.items.filter((itemObj: any) => itemObj.item).forEach((itemObj: any) => {
+                                        localStatus.inventory.push({
+                                            item: itemObj.item,
+                                            qty: itemObj.qty || 1,
+                                            weight: itemObj.weight || 0,
+                                            notes: "Looted"
+                                        })
+                                    })
+                                }
+                                hasStateChanges = true
+                                toast.success("🎁 Loot Recovered!", { duration: 3000 })
+                            }
+                            displayContent = displayContent.substring(0, jsonStart) + displayContent.substring(closingIdx + 7)
+                        } catch (e) {
+                            console.warn("Orphan LOOT recovery failed:", e)
+                            displayContent = displayContent.replace('</LOOT>', '')
+                        }
+                    } else {
+                        displayContent = displayContent.replace('</LOOT>', '')
+                    }
+                }
+
+                // 2c. Clean any remaining stray LOOT tags
+                displayContent = displayContent.replace(/<\/?LOOT>/g, '')
 
                 displayContent = displayContent.trim();
 
