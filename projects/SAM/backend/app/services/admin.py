@@ -143,73 +143,41 @@ class AdminService:
             if res.data:
                 for char in res.data:
                     status = char.get("status", {})
-                    # Only reset if we know max HP
                     if status and "hp_max" in status:
                         status["hp_current"] = status["hp_max"]
-                        # Optional: Reset other things like "conditions"?
-                        # status["conditions"] = [] 
-                        
-                        # Reset Money
                         status["money"] = {"cp": 0, "sp": 0, "ep": 0, "gp": 0, "pp": 0}
                         status["xp"] = 0
-                        
-                        # Update DB
                         supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
                         count += 1
-            
-            # 2. DELETE CHAT HISTORY from Database
-            # STRATEGY: Delete by Campaign ID (clears all players), then fallback to User ID (clears orphans)
-            
-            # Find Campaign ID owned by this User (GM)
-            camp_res = supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
-            
+
+            # 2. DELETE ALL MESSAGES — 3-pass strategy
             messages_deleted = 0
-            
+
+            # Pass 1: Delete by campaign_id if GM owns a campaign
+            camp_res = supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
             if camp_res.data:
                 cid = camp_res.data[0]['id']
-                print(f"DEBUG: Resetting Campaign ID: {cid}")
-                
-                # 1. Delete by Campaign ID (The Happy Path)
-                del_camp = supabase.table("messages").delete().eq("campaign_id", cid).execute()
-                if del_camp.data:
-                    messages_deleted += len(del_camp.data)
-                    print(f"DEBUG: Deleted {len(del_camp.data)} campaign messages.")
+                del1 = supabase.table("messages").delete().eq("campaign_id", cid).execute()
+                if del1.data:
+                    messages_deleted += len(del1.data)
 
-                # 2. Deep Clean 1: Delete by User IDs of players currently in this campaign
-                try:
-                    players = supabase.table("characters").select("user_id").eq("campaign_id", cid).execute()
-                    if players.data:
-                        player_ids = [p['user_id'] for p in players.data if p.get('user_id')]
-                        if user_id and user_id not in player_ids:
-                            player_ids.append(user_id)
-                        
-                        if player_ids:
-                             del_players = supabase.table("messages").delete().in_("user_id", player_ids).execute()
-                             if del_players.data:
-                                 messages_deleted += len(del_players.data)
-                except Exception as deep_err:
-                    print(f"WARNING: Deep clean 1 failed: {deep_err}")
-                
-                # 3. Deep Clean 2: Wipe any message with NULL campaign_id (legacy orphans from multiplayer testing)
-                try:
-                     del_nulls = supabase.table("messages").delete().is_("campaign_id", "null").execute()
-                     if del_nulls.data:
-                         messages_deleted += len(del_nulls.data)
-                         print(f"DEBUG: Cleaned {len(del_nulls.data)} NULL campaign_id messages.")
-                except Exception as null_err:
-                     print(f"WARNING: NULL cleanup failed: {null_err}")
+            # Pass 2: Delete orphan messages with NULL campaign_id (always runs)
+            del2 = supabase.table("messages").delete().is_("campaign_id", "null").execute()
+            if del2.data:
+                messages_deleted += len(del2.data)
 
-            # Fallback / Cleanup 4: Delete messages owned by this user explicitly
-            if user_id:
-                try:
-                    del_user = supabase.table("messages").delete().eq("user_id", user_id).execute()
-                    if del_user.data:
-                         messages_deleted += len(del_user.data)
-                except Exception as del_err:
-                     print(f"WARNING: Cleanup user history failed: {del_err}")
+            # Pass 3: Nuclear fallback — if messages still remain, wipe everything
+            # TODO: scope to campaign_id when multi-campaign is live
+            remaining = supabase.table("messages").select("id", count="exact").execute()
+            if remaining.count and remaining.count > 0:
+                print(f"WARNING: {remaining.count} orphan messages found. Executing full wipe.")
+                supabase.table("messages").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+                messages_deleted += remaining.count
 
-            # 3. Clear Chat (Frontend Action) & Refresh Data
-            return f"⚠️ Campaign Reset! Chat History DB Cleared. {count} Characters fully healed. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
+            return f"⚠️ Campaign Reset! {count} characters healed. {messages_deleted} messages deleted. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
+
         except Exception as e:
+            import traceback
+            print(f"RESET ERROR: {traceback.format_exc()}")
             return f"❌ Reset Error: {e}"
 

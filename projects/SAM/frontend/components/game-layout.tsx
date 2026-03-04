@@ -185,7 +185,7 @@ export default function GameLayout() {
                         </Button>
                     </SheetTrigger>
                     <SheetContent side="right" className="p-0 w-[300px]">
-                        <SidebarRight onRoll={(msg) => setRollEvent(msg)} />
+                        <SidebarRight onRoll={(msg) => setRollEvent(msg)} characterName={selectedCharacter?.name} />
                     </SheetContent>
                 </Sheet>
             </header>
@@ -211,7 +211,7 @@ export default function GameLayout() {
 
             {/* --- DESKTOP RIGHT SIDEBAR (Hidden on mobile) --- */}
             <aside className="hidden xl:flex w-72 flex-col border-l bg-muted/20 shrink-0">
-                <SidebarRight onRoll={(msg) => setRollEvent(msg)} />
+                <SidebarRight onRoll={(msg) => setRollEvent(msg)} characterName={selectedCharacter?.name} />
             </aside>
 
             <CharacterCreateDialog

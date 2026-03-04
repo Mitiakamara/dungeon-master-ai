@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dices, Minus, Plus } from "lucide-react"
 
-export function DiceTray({ onRoll }: { onRoll?: (msg: string) => void }) {
+export function DiceTray({ onRoll, characterName }: { onRoll?: (msg: string) => void, characterName?: string }) {
     const [multiplier, setMultiplier] = React.useState(1)
 
     const adjustMultiplier = (delta: number) => {
@@ -23,8 +23,9 @@ export function DiceTray({ onRoll }: { onRoll?: (msg: string) => void }) {
         }
 
         // This message is what goes to the Chat/AI
-        // Format: [SYSTEM EVENT] I rolled 2d20 and got 25 (15, 10).
-        const msg = `[SYSTEM EVENT] Player rolled ${multiplier}d${sides}. Result: ${total} (Rolls: ${rolls.join(', ')}).`
+        // Format: [SYSTEM EVENT] Gandalf rolled 2d20 and got 25 (15, 10).
+        const rollerName = characterName || "Unknown Player";
+        const msg = `[SYSTEM EVENT] ${rollerName} rolled ${multiplier}d${sides}. Result: ${total} (Rolls: ${rolls.join(', ')}).`
         if (onRoll) onRoll(msg);
     }
 

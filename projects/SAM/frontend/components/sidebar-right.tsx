@@ -6,13 +6,14 @@ import { ProfileMenu } from "@/components/profile-menu"
 
 interface SidebarRightProps {
     onRoll: (msg: string) => void
+    characterName?: string
 }
 
-export function SidebarRight({ onRoll }: SidebarRightProps) {
+export function SidebarRight({ onRoll, characterName }: SidebarRightProps) {
     return (
         <div className="flex flex-col h-full bg-muted/20 border-l p-4">
             <div className="flex-1 overflow-y-auto">
-                <DiceTray onRoll={onRoll} />
+                <DiceTray onRoll={onRoll} characterName={characterName} />
             </div>
 
             <div className="mt-4 pt-4 border-t flex-shrink-0">
