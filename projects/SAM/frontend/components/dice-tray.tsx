@@ -2,31 +2,51 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Dices, Minus, Plus } from "lucide-react"
+import { Dices, Minus, Plus, Loader2 } from "lucide-react"
+import { authenticatedFetch } from "@/lib/api"
 
 export function DiceTray({ onRoll, characterName }: { onRoll?: (msg: string) => void, characterName?: string }) {
     const [multiplier, setMultiplier] = React.useState(1)
+    const [rolling, setRolling] = React.useState(false)
 
     const adjustMultiplier = (delta: number) => {
         setMultiplier(prev => Math.max(1, prev + delta))
     }
 
-    const handleRoll = (sides: number) => {
-        // Simple client-side roll for now
-        let total = 0;
-        const rolls = [];
-        for (let i = 0; i < multiplier; i++) {
-            const val = Math.floor(Math.random() * sides) + 1;
-            rolls.push(val);
-            total += val;
-        }
-
-        // This message is what goes to the Chat/AI
-        // Format: [SYSTEM EVENT] Gandalf rolled 2d20 and got 25 (15, 10).
+    const handleRoll = async (sides: number) => {
+        setRolling(true)
         const rollerName = characterName || "Unknown Player";
-        const msg = `[SYSTEM EVENT] ${rollerName} rolled ${multiplier}d${sides}. Result: ${total} (Rolls: ${rolls.join(', ')}).`
-        if (onRoll) onRoll(msg);
+        const expression = `${multiplier}d${sides}`;
+
+        try {
+            // Roll via backend (secrets.randbelow — cryptographically secure)
+            const res = await authenticatedFetch("/api/roll", {
+                method: "POST",
+                body: JSON.stringify({ expression, visibility: "public" }),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const { rolls, total } = data.result;
+                const msg = `[SYSTEM EVENT] ${rollerName} rolled ${expression}. Result: ${total} (Rolls: ${rolls.join(', ')}).`;
+                if (onRoll) onRoll(msg);
+            } else {
+                throw new Error("Backend roll failed");
+            }
+        } catch {
+            // Fallback to client-side if backend unreachable
+            let total = 0;
+            const rolls = [];
+            for (let i = 0; i < multiplier; i++) {
+                const val = Math.floor(Math.random() * sides) + 1;
+                rolls.push(val);
+                total += val;
+            }
+            const msg = `[SYSTEM EVENT] ${rollerName} rolled ${expression}. Result: ${total} (Rolls: ${rolls.join(', ')}).`;
+            if (onRoll) onRoll(msg);
+        } finally {
+            setRolling(false)
+        }
     }
 
     return (
@@ -67,8 +87,9 @@ export function DiceTray({ onRoll, characterName }: { onRoll?: (msg: string) => 
                         variant="outline"
                         className="h-20 flex-col hover:border-primary hover:bg-primary/5 transition-all"
                         onClick={() => handleRoll(sides)}
+                        disabled={rolling}
                     >
-                        <span className="text-2xl font-bold">d{sides}</span>
+                        {rolling ? <Loader2 className="h-6 w-6 animate-spin" /> : <span className="text-2xl font-bold">d{sides}</span>}
                         <span className="text-xs text-muted-foreground mt-1">
                             {multiplier}d{sides}
                         </span>
