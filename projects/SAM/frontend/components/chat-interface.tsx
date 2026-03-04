@@ -32,6 +32,20 @@ function repairJson(str: string): string {
     return str
 }
 
+// Strip machine-readable tags from message content for clean display
+function stripSystemTags(content: string): string {
+    return content
+        .replace(/<LOOT>[\s\S]*?<\/LOOT>/g, '')
+        .replace(/<UPDATE>[\s\S]*?<\/UPDATE>/g, '')
+        .replace(/<XP_GAIN>[\s\S]*?<\/XP_GAIN>/g, '')
+        .replace(/<EVENT>[\s\S]*?<\/EVENT>/g, '')
+        .replace(/<ACTION>[\s\S]*?<\/ACTION>/g, '')
+        .replace(/<IMAGE>[\s\S]*?<\/IMAGE>/g, '')
+        .replace(/<\/?LOOT>/g, '')
+        .replace(/<\/?UPDATE>/g, '')
+        .trim()
+}
+
 interface Message {
     role: "user" | "assistant" | "system"
     content: string
@@ -355,7 +369,7 @@ export function ChatInterface({
             if (data) {
                 const history: Message[] = data.map((msg: any) => ({
                     role: msg.role as "user" | "assistant" | "system",
-                    content: msg.content,
+                    content: stripSystemTags(msg.content),
                     timestamp: new Date(msg.created_at),
                     imageUrl: msg.image_url,
                     debugInfo: msg.metadata // Assuming metadata stores extra info if any
@@ -530,7 +544,9 @@ export function ChatInterface({
 
     // [PHASE 16] Visualizer for DM Rolls
     const renderMessageContent = (content: string) => {
-        // Split by the tag, keeping the delimiter
+        // Safety net: strip any machine tags that survived processing
+        content = stripSystemTags(content)
+        // Split by the tag, keeping the delimiter (DM_ROLL has its own visual renderer)
         const parts = content.split(/(<DM_ROLL>[\s\S]*?<\/DM_ROLL>)/g);
 
         return parts.map((part, index) => {
