@@ -171,6 +171,7 @@ export default function GameLayout() {
                             refreshKey={refreshKey}
                             onSelectCharacter={handleSelectCharacter}
                             selectedId={selectedCharacter?.id}
+                            campaignId={selectedCharacter?.campaign_id}
                         />
                     </SheetContent>
                 </Sheet>
@@ -196,6 +197,7 @@ export default function GameLayout() {
                     refreshKey={refreshKey}
                     onSelectCharacter={handleSelectCharacter}
                     selectedId={selectedCharacter?.id}
+                    campaignId={selectedCharacter?.campaign_id}
                 />
             </aside>
 

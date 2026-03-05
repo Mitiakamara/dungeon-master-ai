@@ -3,18 +3,22 @@
 import * as React from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ShieldCheck } from "lucide-react"
+import { ShieldCheck, Upload } from "lucide-react"
 import { ModeToggle } from "@/components/mode-toggle"
 import { Commlink } from "@/components/commlink/commlink-dialog"
 import { CharacterList } from "@/components/character-list"
+import { CampaignModuleUpload } from "@/components/campaign-module-upload"
 
 interface SidebarLeftProps {
     refreshKey: number
     onSelectCharacter: (char: any) => void
     selectedId?: string
+    campaignId?: string
 }
 
-export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId }: SidebarLeftProps) {
+export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId }: SidebarLeftProps) {
+    const [uploadOpen, setUploadOpen] = React.useState(false)
+
     return (
         <div className="flex flex-col h-full bg-muted/20 border-r">
             {/* Header Area */}
@@ -44,6 +48,27 @@ export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId }: Sideb
                     selectedId={selectedId}
                 />
             </div>
+
+            {/* Upload Module Button */}
+            {campaignId && (
+                <div className="p-3 border-t flex-shrink-0">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setUploadOpen(true)}
+                        className="w-full justify-start gap-2 text-muted-foreground"
+                    >
+                        <Upload className="h-4 w-4" />
+                        Cargar modulo PDF
+                    </Button>
+                </div>
+            )}
+
+            <CampaignModuleUpload
+                campaignId={campaignId || ""}
+                open={uploadOpen}
+                onOpenChange={setUploadOpen}
+            />
         </div>
     )
 }
