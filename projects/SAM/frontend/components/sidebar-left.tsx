@@ -14,9 +14,10 @@ interface SidebarLeftProps {
     onSelectCharacter: (char: any) => void
     selectedId?: string
     campaignId?: string
+    isGM?: boolean
 }
 
-export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId }: SidebarLeftProps) {
+export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId, isGM }: SidebarLeftProps) {
     const [uploadOpen, setUploadOpen] = React.useState(false)
 
     return (
@@ -49,8 +50,8 @@ export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaig
                 />
             </div>
 
-            {/* Upload Module Button */}
-            {campaignId && (
+            {/* Upload Module Button (GM only) */}
+            {isGM && campaignId && (
                 <div className="p-3 border-t flex-shrink-0">
                     <Button
                         variant="ghost"

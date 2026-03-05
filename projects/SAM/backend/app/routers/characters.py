@@ -16,17 +16,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Models ---
-
-load_dotenv()
-
-router = APIRouter(prefix="/api/characters", tags=["characters"])
-
-# Supabase Auth & Client
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# --- Models ---
 class ActiveEffect(BaseModel):
     name: str
     duration: Optional[int] = None # Turns

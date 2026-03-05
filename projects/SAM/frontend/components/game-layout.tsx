@@ -29,6 +29,26 @@ export default function GameLayout() {
 
     const [selectedCharacter, setSelectedCharacter] = useState<any>(null)
     const [rollEvent, setRollEvent] = useState<string | null>(null)
+    const [isGM, setIsGM] = useState(false)
+
+    // Check if current user is GM of the active campaign
+    React.useEffect(() => {
+        const checkGM = async () => {
+            if (!selectedCharacter?.campaign_id) { setIsGM(false); return }
+            try {
+                const supabase = createClient()
+                const { data: { user } } = await supabase.auth.getUser()
+                if (!user) return
+                const { data } = await supabase
+                    .from('campaigns')
+                    .select('gm_id')
+                    .eq('id', selectedCharacter.campaign_id)
+                    .single()
+                setIsGM(data?.gm_id === user.id)
+            } catch { setIsGM(false) }
+        }
+        checkGM()
+    }, [selectedCharacter?.campaign_id])
 
     // [PHASE 13] Realtime Character Updates
     useRealtime({
@@ -172,6 +192,7 @@ export default function GameLayout() {
                             onSelectCharacter={handleSelectCharacter}
                             selectedId={selectedCharacter?.id}
                             campaignId={selectedCharacter?.campaign_id}
+                            isGM={isGM}
                         />
                     </SheetContent>
                 </Sheet>
