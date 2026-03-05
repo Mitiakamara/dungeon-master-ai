@@ -35,17 +35,31 @@ export default function GameLayout() {
     // Check if current user is GM of the active campaign (via backend to avoid RLS issues)
     React.useEffect(() => {
         const checkGM = async () => {
-            if (!selectedCharacter?.campaign_id) { setIsGM(false); return }
+            if (!selectedCharacter?.campaign_id) {
+                console.log("🔑 GM Check: No campaign_id on character")
+                setIsGM(false)
+                return
+            }
             try {
                 const supabase = createClient()
                 const { data: { user } } = await supabase.auth.getUser()
-                if (!user) return
+                if (!user) { console.log("🔑 GM Check: No user"); return }
+
+                console.log("🔑 GM Check: Fetching campaign", selectedCharacter.campaign_id)
                 const res = await authenticatedFetch(`/api/campaigns/${selectedCharacter.campaign_id}`)
                 if (res.ok) {
                     const campaign = await res.json()
-                    setIsGM(campaign.gm_id === user.id)
-                } else { setIsGM(false) }
-            } catch { setIsGM(false) }
+                    const match = campaign.gm_id === user.id
+                    console.log("🔑 GM Check:", { gm_id: campaign.gm_id, user_id: user.id, isGM: match })
+                    setIsGM(match)
+                } else {
+                    console.log("🔑 GM Check: API returned", res.status)
+                    setIsGM(false)
+                }
+            } catch (err) {
+                console.error("🔑 GM Check failed:", err)
+                setIsGM(false)
+            }
         }
         checkGM()
     }, [selectedCharacter?.campaign_id])
@@ -219,6 +233,7 @@ export default function GameLayout() {
                     onSelectCharacter={handleSelectCharacter}
                     selectedId={selectedCharacter?.id}
                     campaignId={selectedCharacter?.campaign_id}
+                    isGM={isGM}
                 />
             </aside>
 
