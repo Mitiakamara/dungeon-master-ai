@@ -17,6 +17,7 @@ import { Commlink } from "@/components/commlink/commlink-dialog"
 import Link from "next/link"
 import { useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { authenticatedFetch } from "@/lib/api"
 import { useRealtime } from "@/hooks/use-realtime"
 
 import { SidebarLeft } from "@/components/sidebar-left"
@@ -31,7 +32,7 @@ export default function GameLayout() {
     const [rollEvent, setRollEvent] = useState<string | null>(null)
     const [isGM, setIsGM] = useState(false)
 
-    // Check if current user is GM of the active campaign
+    // Check if current user is GM of the active campaign (via backend to avoid RLS issues)
     React.useEffect(() => {
         const checkGM = async () => {
             if (!selectedCharacter?.campaign_id) { setIsGM(false); return }
@@ -39,12 +40,11 @@ export default function GameLayout() {
                 const supabase = createClient()
                 const { data: { user } } = await supabase.auth.getUser()
                 if (!user) return
-                const { data } = await supabase
-                    .from('campaigns')
-                    .select('gm_id')
-                    .eq('id', selectedCharacter.campaign_id)
-                    .single()
-                setIsGM(data?.gm_id === user.id)
+                const res = await authenticatedFetch(`/api/campaigns/${selectedCharacter.campaign_id}`)
+                if (res.ok) {
+                    const campaign = await res.json()
+                    setIsGM(campaign.gm_id === user.id)
+                } else { setIsGM(false) }
             } catch { setIsGM(false) }
         }
         checkGM()
