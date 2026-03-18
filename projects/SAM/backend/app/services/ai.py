@@ -31,7 +31,8 @@ class AIHelper:
         
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-001",
-            google_api_key=google_api_key
+            google_api_key=google_api_key,
+            output_dimensionality=768
         )
         
         self.supabase = create_client(supabase_url, supabase_key)

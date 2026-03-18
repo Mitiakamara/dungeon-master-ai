@@ -71,7 +71,8 @@ class IngestionService:
             # 6. Vectorize & Store
             embeddings = GoogleGenerativeAIEmbeddings(
                 model="models/gemini-embedding-001",
-                google_api_key=GOOGLE_API_KEY
+                google_api_key=GOOGLE_API_KEY,
+                output_dimensionality=768
             )
             
             SupabaseVectorStore.from_documents(
