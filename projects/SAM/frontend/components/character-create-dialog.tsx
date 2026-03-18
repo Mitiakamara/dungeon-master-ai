@@ -20,9 +20,10 @@ interface CharacterCreateDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     onCharacterCreated: () => void
+    campaignId?: string
 }
 
-export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated }: CharacterCreateDialogProps) {
+export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, campaignId }: CharacterCreateDialogProps) {
     const [loading, setLoading] = useState(false)
     const [formData, setFormData] = useState({
         name: "",
@@ -50,7 +51,7 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated }
             const payload = {
                 ...formData,
                 user_id: user.id,
-                campaign_id: "d71c97be-d54f-40e6-89ad-2b6bd32371d6", // Default "Solo Adventure" Campaign
+                campaign_id: campaignId || "d71c97be-d54f-40e6-89ad-2b6bd32371d6", // Use active campaign or fallback to Solo Adventure
             }
 
             const res = await authenticatedFetch("/api/characters/", {
@@ -196,8 +197,8 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated }
                                     <span>✅ PDF Data Loaded (Inventory, Spells, Traits)</span>
                                 </div>
                             )}
-                            <Button type="submit" disabled={loading}>
-                                {loading ? "Creating..." : "Create Character"}
+                            <Button type="submit" disabled={loading || !campaignId}>
+                                {loading ? "Creating..." : !campaignId ? "Select a Campaign First" : "Create Character"}
                             </Button>
                         </DialogFooter>
                     </form>

@@ -12,7 +12,7 @@ import { formatDistanceToNow } from "date-fns"
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
-export function Commlink() {
+export function Commlink({ campaignId }: { campaignId?: string }) {
     const [open, setOpen] = useState(false)
     const [messages, setMessages] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
@@ -60,7 +60,7 @@ export function Commlink() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    campaign_id: "FIXME_CAMPAIGN_ID", // We need context!
+                    campaign_id: campaignId || "",
                     receiver_id: recipientId,
                     content,
                     subject

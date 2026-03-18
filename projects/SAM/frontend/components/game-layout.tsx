@@ -31,13 +31,18 @@ export default function GameLayout() {
     const [selectedCharacter, setSelectedCharacter] = useState<any>(null)
     const [rollEvent, setRollEvent] = useState<string | null>(null)
     const [isGM, setIsGM] = useState(false)
+    const [campaignName, setCampaignName] = useState<string>("")
 
-    // Check if current user is GM of the active campaign (via backend to avoid RLS issues)
+    // Derived campaign ID from selected character
+    const campaignId = selectedCharacter?.campaign_id || ""
+
+    // Fetch campaign info (name + GM check) when campaign changes
     React.useEffect(() => {
-        const checkGM = async () => {
-            if (!selectedCharacter?.campaign_id) {
+        const fetchCampaignInfo = async () => {
+            if (!campaignId) {
                 console.log("🔑 GM Check: No campaign_id on character")
                 setIsGM(false)
+                setCampaignName("")
                 return
             }
             try {
@@ -45,24 +50,27 @@ export default function GameLayout() {
                 const { data: { user } } = await supabase.auth.getUser()
                 if (!user) { console.log("🔑 GM Check: No user"); return }
 
-                console.log("🔑 GM Check: Fetching campaign", selectedCharacter.campaign_id)
-                const res = await authenticatedFetch(`/api/campaigns/${selectedCharacter.campaign_id}`)
+                console.log("🔑 GM Check: Fetching campaign", campaignId)
+                const res = await authenticatedFetch(`/api/campaigns/${campaignId}`)
                 if (res.ok) {
                     const campaign = await res.json()
                     const match = campaign.gm_id === user.id
                     console.log("🔑 GM Check:", { gm_id: campaign.gm_id, user_id: user.id, isGM: match })
                     setIsGM(match)
+                    setCampaignName(campaign.name || "")
                 } else {
                     console.log("🔑 GM Check: API returned", res.status)
                     setIsGM(false)
+                    setCampaignName("")
                 }
             } catch (err) {
                 console.error("🔑 GM Check failed:", err)
                 setIsGM(false)
+                setCampaignName("")
             }
         }
-        checkGM()
-    }, [selectedCharacter?.campaign_id])
+        fetchCampaignInfo()
+    }, [campaignId])
 
     // [PHASE 13] Realtime Character Updates
     useRealtime({
@@ -241,6 +249,8 @@ export default function GameLayout() {
             <main className="flex flex-1 flex-col overflow-hidden relative">
                 <ChatInterface
                     selectedCharacter={selectedCharacter}
+                    campaignId={campaignId}
+                    campaignName={campaignName}
                     externalEvent={rollEvent}
                     onEventHandled={() => setRollEvent(null)}
                     onCharacterUpdate={handleCharacterUpdate}
@@ -256,6 +266,7 @@ export default function GameLayout() {
                 open={createOpen}
                 onOpenChange={setCreateOpen}
                 onCharacterCreated={() => setRefreshKey(prev => prev + 1)}
+                campaignId={campaignId}
             />
         </div>
     )

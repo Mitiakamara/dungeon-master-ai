@@ -16,7 +16,7 @@ S.A.M. es una aplicación web que actúa como Dungeon Master virtual impulsado p
 | Backend | FastAPI (Python 3) | Render |
 | Base de datos | Supabase PostgreSQL + pgvector | Supabase Cloud |
 | LLM | Google Gemini Flash (via LangChain) | Google Cloud |
-| Embeddings | gemini-embedding-001 (768 dims, truncated) | Google Cloud |
+| Embeddings | gemini-embedding-001 (768 dims) via native `genai.embed_content()` SDK | Google Cloud |
 | Auth | Supabase JWT + RLS | Supabase |
 
 ## 3. Historial de Cambios
@@ -77,6 +77,34 @@ c3e9102 Fix: Pass isGM prop to desktop sidebar (was only on mobile)
 c7f38cf Fix: GM check via backend API instead of direct Supabase query
 757450e Fix: PDF upload GM-only + clean duplicate code in characters.py
 513ef5c Feat: Campaign module PDF upload + update project docs
+```
+
+### Sesión 18 Mar 2026 (cont.) — Refactor Embeddings + Análisis Multiplayer
+
+**Refactorización mayor: LangChain embeddings → SDK nativo de Google**
+
+Descubrimiento: `langchain-google-genai==2.0.10` ignora silenciosamente el parámetro `output_dimensionality`, siempre retorna 3072 dims aunque se pida 768. Esto causaba error `expected 768 dimensions, not 3072` al insertar en Supabase.
+
+**Solución:** Reemplazar `GoogleGenerativeAIEmbeddings` con `genai.embed_content()` (SDK nativo) en todo el código runtime:
+
+1. **`ingestion.py`** — Refactorizado de `SupabaseVectorStore.from_documents()` a `genai.embed_content()` + `supabase.table("documents").insert()` directo. Batch processing de 100 chunks.
+2. **`ai.py`** — RAG query ahora usa `genai.embed_content()` con `task_type="retrieval_query"` en vez de `embeddings.embed_query()`.
+3. **`compendium_tools.py`** — Reemplazado `GoogleGenerativeAIEmbeddings(model="text-embedding-004")` con `genai.embed_content(model="gemini-embedding-001")`. Las 3 funciones (search_spells/monsters/items) actualizadas.
+
+**Dependencias:**
+- `langchain-openai` eliminado (no se usaba)
+- `google-generativeai>=0.8,<0.9` pinneado (compatible con `langchain-google-genai==2.0.10`)
+- `langchain-google-genai` se mantiene para `ChatGoogleGenerativeAI` (LLM, no embeddings)
+
+**Nota:** Scripts en `app/scripts/` (seeders) aún usan el modelo viejo — no son runtime, se actualizarán cuando se re-seedee el compendio.
+
+**Análisis multiplayer completado** — Se identificaron 7 gaps críticos (ver sección 5).
+
+### Commits en main (18 Mar 2026, cont.)
+```
+8654092 Refactor: Replace LangChain embeddings with native Google SDK (768d) in ingestion, AI, and compendium tools
+7b57fd9 Fix: Pin LangChain + Google AI dependencies to compatible versions
+a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 ```
 
 ## 4. Estado Actual — Marzo 2026

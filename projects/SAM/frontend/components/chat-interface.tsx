@@ -56,11 +56,15 @@ interface Message {
 
 export function ChatInterface({
     selectedCharacter,
+    campaignId,
+    campaignName,
     externalEvent,
     onEventHandled,
     onCharacterUpdate
 }: {
     selectedCharacter: any,
+    campaignId?: string,
+    campaignName?: string,
     externalEvent?: string | null,
     onEventHandled?: () => void,
     onCharacterUpdate?: (updates: any) => void
@@ -74,10 +78,12 @@ export function ChatInterface({
     const [debugOpen, setDebugOpen] = React.useState(false)
     const [currentDebugInfo, setCurrentDebugInfo] = React.useState<any>(null)
 
-    // [PHASE 13] REALTIME SUBSCRIPTION
+    // [PHASE 13] REALTIME SUBSCRIPTION — filtered by campaign
     useRealtime({
         table: 'messages',
         event: '*',
+        filter: campaignId ? `campaign_id=eq.${campaignId}` : undefined,
+        enabled: !!campaignId,
         onData: (newItem: any) => {
 
             // Handle DELETE (Reset)
@@ -351,13 +357,23 @@ export function ChatInterface({
         }
     })
 
-    // Load History from Supabase
+    // Load History from Supabase — filtered by campaign, re-fetches on campaign change
     React.useEffect(() => {
+        if (!campaignId) {
+            setMessages([{
+                role: "assistant",
+                content: "Select a character to begin your adventure.",
+                timestamp: new Date()
+            }])
+            return
+        }
+
         const fetchHistory = async () => {
             const supabase = createClient()
             const { data, error } = await supabase
                 .from('messages')
                 .select('*')
+                .eq('campaign_id', campaignId)
                 .order('created_at', { ascending: true })
                 .limit(100)
 
@@ -372,10 +388,9 @@ export function ChatInterface({
                     content: stripSystemTags(msg.content),
                     timestamp: new Date(msg.created_at),
                     imageUrl: msg.image_url,
-                    debugInfo: msg.metadata // Assuming metadata stores extra info if any
+                    debugInfo: msg.metadata
                 }))
 
-                // If history is empty, show welcome message
                 if (history.length === 0) {
                     setMessages([{
                         role: "assistant",
@@ -388,8 +403,10 @@ export function ChatInterface({
             }
         }
 
+        // Clear messages before fetching new campaign's history
+        setMessages([])
         fetchHistory()
-    }, []);
+    }, [campaignId]);
 
     // Scroll effect
     React.useEffect(() => {
@@ -577,7 +594,7 @@ export function ChatInterface({
         <div className="flex flex-col h-full">
             {/* Header */}
             <header className="flex h-14 items-center gap-4 border-b bg-muted/40 px-6 shrink-0">
-                <h1 className="text-lg font-semibold">Campaña: La Mina Perdida</h1>
+                <h1 className="text-lg font-semibold">{campaignName ? `Campaign: ${campaignName}` : "S.A.M."}</h1>
                 <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
                     <span className={`flex h-2 w-2 rounded-full ${isLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`} />
                     S.A.M. {isLoading ? "Thinking..." : "Active"}

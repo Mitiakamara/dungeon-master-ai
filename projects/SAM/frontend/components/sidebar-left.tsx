@@ -33,7 +33,7 @@ export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaig
                 </Link>
 
                 <div className="scale-90">
-                    <Commlink />
+                    <Commlink campaignId={campaignId || ""} />
                 </div>
 
                 <div className="scale-90">
