@@ -16,7 +16,7 @@ S.A.M. es una aplicación web que actúa como Dungeon Master virtual impulsado p
 | Backend | FastAPI (Python 3) | Render |
 | Base de datos | Supabase PostgreSQL + pgvector | Supabase Cloud |
 | LLM | Google Gemini Flash (via LangChain) | Google Cloud |
-| Embeddings | text-embedding-004 (1536 dims) | Google Cloud |
+| Embeddings | gemini-embedding-001 (768 dims, truncated) | Google Cloud |
 | Auth | Supabase JWT + RLS | Supabase |
 
 ## 3. Historial de Cambios
@@ -53,6 +53,32 @@ faa3ea1 Fix: Ultimate Deep Clean Reset
 f9a4a9a Initial commit
 ```
 
+### Sesión 18 Mar 2026
+
+**Features implementados:**
+1. **Upload módulos PDF de campaña** — Nuevo componente `campaign-module-upload.tsx`: dialog con drag/drop, validación tipo/tamaño, 4 estados (idle/uploading/success/error), muestra chunk count al completar. Botón "Cargar modulo PDF" en sidebar izquierdo, solo visible para el GM. (commit `513ef5c`)
+
+**Bug Fixes implementados:**
+1. **GM-only upload** — Upload restringido al GM de la campaña. Implementado via `isGM` state en `game-layout.tsx` que verifica propiedad de campaña. (commit `757450e`)
+2. **GM check via backend API** — Query directa a Supabase fallaba por RLS. Cambiado a `authenticatedFetch('/api/campaigns/{id}')` que usa service role key en backend. (commit `c7f38cf`)
+3. **isGM prop faltante en desktop** — El prop `isGM` solo se pasaba al sidebar mobile, no al desktop. Botón nunca aparecía en pantalla completa. Agregado `isGM={isGM}` al SidebarLeft de desktop. (commit `c3e9102`)
+4. **Modelo de embeddings obsoleto** — `ingestion.py` usaba `text-embedding-004` (removido por Google). Actualizado a `gemini-embedding-001`. (commit `77311c1`)
+5. **Dimensiones de embeddings** — `gemini-embedding-001` genera 3072 dims por defecto pero la BD usa `vector(768)`. Agregado `output_dimensionality=768` en `ai.py` (RAG queries) e `ingestion.py` (vectorización de PDFs). (commit `0d14f2b`)
+6. **Código duplicado en characters.py** — Bloque duplicado de `load_dotenv()`, router, y Supabase client eliminado. (commit `757450e`)
+
+**Debugging realizado:**
+- Console logging (`🔑 GM Check:`) agregado al `checkGM` effect para diagnosticar problemas de visibilidad del botón de upload en producción
+
+### Commits en main (18 Mar 2026)
+```
+0d14f2b Fix: Set output_dimensionality=768 for gemini-embedding-001
+77311c1 Fix: Update embedding model in ingestion service to gemini-embedding-001
+c3e9102 Fix: Pass isGM prop to desktop sidebar (was only on mobile)
+c7f38cf Fix: GM check via backend API instead of direct Supabase query
+757450e Fix: PDF upload GM-only + clean duplicate code in characters.py
+513ef5c Feat: Campaign module PDF upload + update project docs
+```
+
 ## 4. Estado Actual — Marzo 2026
 
 ### Lo que funciona
@@ -66,11 +92,12 @@ f9a4a9a Initial commit
 - DM rolls visualizados (chips morados)
 - Compendio D&D 5e con búsqueda semántica (spells, monsters, items)
 - RAG sobre módulos PDF de campaña
+- Upload PDF de módulos de campaña (GM-only, con vectorización)
 - Checkpoints (save/load/reset/list)
 - Mensajería privada (commlink) — parcial
 - Realtime sync via Supabase WebSocket
 
-### Completitud: ~70-75%
+### Completitud: ~75-80%
 
 ## 5. Análisis Multiplayer
 
@@ -102,11 +129,12 @@ f9a4a9a Initial commit
 
 ## 6. Próximos Pasos Prioritarios
 
-1. **Multiplayer MVP** — filtro de mensajes + selector de campaña + roster
-2. **Admin Dashboard** — controles GM funcionales
-3. **Upload módulos PDF** — UI frontend (backend ya listo)
+1. **Probar upload PDF end-to-end** — verificar que el PDF se vectoriza y SAM lo usa como contexto RAG
+2. **Multiplayer MVP** — filtro de mensajes + selector de campaña + roster
+3. **Admin Dashboard** — controles GM funcionales
 4. **Tests** — al menos smoke tests para el gameplay loop
 5. **Mobile responsive** — verificar y pulir layout en móvil
+6. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 04 Mar 2026*
+*Última actualización: 18 Mar 2026*

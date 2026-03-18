@@ -1,10 +1,11 @@
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 from app.services.tools.compendium_tools import ALL_TOOLS
 from app.services.tools.game_mechanics import MECHANIC_TOOLS
 import os
 from dotenv import load_dotenv
 from supabase import create_client
+import google.generativeai as genai
 
 load_dotenv()
 
@@ -29,12 +30,9 @@ class AIHelper:
         # Bind Tools for S.A.M. (Compendium + Game Mechanics)
         self.llm_with_tools = self.llm.bind_tools(ALL_TOOLS + MECHANIC_TOOLS)
         
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001",
-            google_api_key=google_api_key,
-            output_dimensionality=768
-        )
-        
+        # Configure native Google SDK for embeddings (768 dims, server-side truncation)
+        genai.configure(api_key=google_api_key)
+
         self.supabase = create_client(supabase_url, supabase_key)
         
         # Define S.A.M. Persona
@@ -189,7 +187,13 @@ class AIHelper:
              # 1. Retrieve relevant rules/lore (Manual RPC)
              # NOTE: We actully prefer Tools now, but we keep this for general "Campaign Lore"
             try:
-                query_vector = self.embeddings.embed_query(user_input)
+                embed_response = genai.embed_content(
+                    model="models/gemini-embedding-001",
+                    content=user_input,
+                    output_dimensionality=768,
+                    task_type="retrieval_query",
+                )
+                query_vector = embed_response["embedding"]
                 response = self.supabase.rpc(
                     "match_documents", 
                     {

@@ -1,14 +1,13 @@
 import os
+import json
 import tempfile
-import shutil
 from typing import List
 from dotenv import load_dotenv
 from supabase import create_client, Client
+import google.generativeai as genai
 
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredEPubLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import SupabaseVectorStore
 
 load_dotenv()
 
@@ -21,15 +20,20 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("Missing Supabase credentials")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+genai.configure(api_key=GOOGLE_API_KEY)
+
+EMBED_MODEL = "models/gemini-embedding-001"
+EMBED_DIMS = 768
+EMBED_BATCH_SIZE = 100  # Max texts per embed_content call
 
 class IngestionService:
     @staticmethod
     async def ingest_campaign_module(file_bytes: bytes, filename: str, campaign_id: str) -> dict:
         """
         Ingests a campaign module (PDF/EPUB) into the 'documents' table.
-        Tags it with {"campaign_id": campaign_id, "source": filename}.
+        Uses Google's native SDK for embeddings (768 dims) and direct Supabase inserts.
         """
-        
+
         # 1. Determine Extension
         ext = os.path.splitext(filename)[1].lower()
         if ext not in [".pdf", ".epub"]:
@@ -47,9 +51,9 @@ class IngestionService:
                 loader = PyPDFLoader(tmp_path)
             elif ext == ".epub":
                 loader = UnstructuredEPubLoader(tmp_path)
-            
+
             docs = loader.load()
-            
+
             if not docs:
                 return {"status": "empty", "chunks": 0}
 
@@ -62,27 +66,41 @@ class IngestionService:
             chunks = text_splitter.split_documents(docs)
             print(f"Split {filename} into {len(chunks)} chunks.")
 
-            # 5. Add Metadata
-            for chunk in chunks:
-                chunk.metadata["source"] = filename
-                chunk.metadata["campaign_id"] = campaign_id
-                chunk.metadata["type"] = "campaign_module"
+            # 5. Build texts and metadata
+            texts = [chunk.page_content for chunk in chunks]
+            metadata = {
+                "source": filename,
+                "campaign_id": campaign_id,
+                "type": "campaign_module"
+            }
 
-            # 6. Vectorize & Store
-            embeddings = GoogleGenerativeAIEmbeddings(
-                model="models/gemini-embedding-001",
-                google_api_key=GOOGLE_API_KEY,
-                output_dimensionality=768
-            )
-            
-            SupabaseVectorStore.from_documents(
-                documents=chunks,
-                embedding=embeddings,
-                client=supabase,
-                table_name="documents",
-                query_name="match_documents" 
-            )
-            
+            # 6. Embed in batches using native Google SDK
+            all_embeddings = []
+            for i in range(0, len(texts), EMBED_BATCH_SIZE):
+                batch = texts[i:i + EMBED_BATCH_SIZE]
+                response = genai.embed_content(
+                    model=EMBED_MODEL,
+                    content=batch,
+                    output_dimensionality=EMBED_DIMS,
+                    task_type="retrieval_document",
+                )
+                all_embeddings.extend(response["embedding"])
+                print(f"Embedded batch {i // EMBED_BATCH_SIZE + 1} ({len(batch)} chunks)")
+
+            # 7. Insert into Supabase in batches
+            rows = []
+            for idx, text in enumerate(texts):
+                rows.append({
+                    "content": text,
+                    "metadata": json.dumps(metadata),
+                    "embedding": all_embeddings[idx],
+                })
+
+            for i in range(0, len(rows), EMBED_BATCH_SIZE):
+                batch = rows[i:i + EMBED_BATCH_SIZE]
+                supabase.table("documents").insert(batch).execute()
+                print(f"Inserted batch {i // EMBED_BATCH_SIZE + 1} ({len(batch)} rows)")
+
             return {"status": "success", "chunks": len(chunks), "file": filename}
 
         except Exception as e:

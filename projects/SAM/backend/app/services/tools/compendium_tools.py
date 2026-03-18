@@ -2,7 +2,7 @@
 from langchain_core.tools import tool
 from supabase import Client
 import os
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import google.generativeai as genai
 
 # Note: We need a Supabase Client instance.
 # Ideally, we inject dependencies, but for tools, we might need a global or closure.
@@ -14,8 +14,15 @@ def get_supabase() -> Client:
     key = os.getenv("SUPABASE_KEY")
     return create_client(url, key)
 
-def get_embeddings():
-    return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=os.getenv("GOOGLE_API_KEY"))
+def embed_query(text: str) -> list:
+    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+    response = genai.embed_content(
+        model="models/gemini-embedding-001",
+        content=text,
+        output_dimensionality=768,
+        task_type="retrieval_query",
+    )
+    return response["embedding"]
 
 @tool
 def search_spells(query: str) -> str:
@@ -25,9 +32,8 @@ def search_spells(query: str) -> str:
     """
     try:
         supabase = get_supabase()
-        embeddings = get_embeddings()
-        vector = embeddings.embed_query(query)
-        
+        vector = embed_query(query)
+
         # Call the RPC function defined in Postgres
         res = supabase.rpc("match_compendium", {
             "query_embedding": vector,
@@ -55,9 +61,8 @@ def search_monsters(query: str) -> str:
     """
     try:
         supabase = get_supabase()
-        embeddings = get_embeddings()
-        vector = embeddings.embed_query(query)
-        
+        vector = embed_query(query)
+
         res = supabase.rpc("match_compendium", {
             "query_embedding": vector,
             "match_threshold": 0.5,
@@ -83,9 +88,8 @@ def search_items(query: str) -> str:
     """
     try:
         supabase = get_supabase()
-        embeddings = get_embeddings()
-        vector = embeddings.embed_query(query)
-        
+        vector = embed_query(query)
+
         res = supabase.rpc("match_compendium", {
             "query_embedding": vector,
             "match_threshold": 0.5,
