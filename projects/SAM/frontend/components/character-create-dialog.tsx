@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
     Dialog,
@@ -16,6 +16,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { createClient } from "@/lib/supabase/client"
 import { authenticatedFetch } from "@/lib/api"
 
+interface Campaign {
+    id: string
+    name: string
+    description?: string
+    status: string
+}
+
 interface CharacterCreateDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
@@ -25,6 +32,9 @@ interface CharacterCreateDialogProps {
 
 export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, campaignId }: CharacterCreateDialogProps) {
     const [loading, setLoading] = useState(false)
+    const [campaigns, setCampaigns] = useState<Campaign[]>([])
+    const [campaignsLoading, setCampaignsLoading] = useState(false)
+    const [selectedCampaignId, setSelectedCampaignId] = useState(campaignId || "")
     const [formData, setFormData] = useState({
         name: "",
         race: "",
@@ -37,6 +47,31 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, 
     })
 
     const supabase = createClient()
+
+    // Fetch campaigns when dialog opens
+    useEffect(() => {
+        if (!open) return
+        const fetchCampaigns = async () => {
+            setCampaignsLoading(true)
+            try {
+                const res = await authenticatedFetch("/api/campaigns/")
+                if (res.ok) {
+                    const data = await res.json()
+                    setCampaigns(data)
+                }
+            } catch (e) {
+                console.error("Failed to fetch campaigns:", e)
+            } finally {
+                setCampaignsLoading(false)
+            }
+        }
+        fetchCampaigns()
+    }, [open])
+
+    // Sync selectedCampaignId when prop changes
+    useEffect(() => {
+        if (campaignId) setSelectedCampaignId(campaignId)
+    }, [campaignId])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -51,7 +86,7 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, 
             const payload = {
                 ...formData,
                 user_id: user.id,
-                campaign_id: campaignId || "d71c97be-d54f-40e6-89ad-2b6bd32371d6", // Use active campaign or fallback to Solo Adventure
+                campaign_id: selectedCampaignId,
             }
 
             const res = await authenticatedFetch("/api/characters/", {
@@ -161,7 +196,26 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, 
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <div className="grid gap-4 py-4">
-                            {/* Existing Form Fields */}
+                            {/* Campaign Selector */}
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="campaign" className="text-right">Campaign</Label>
+                                {campaignsLoading ? (
+                                    <span className="col-span-3 text-sm text-muted-foreground animate-pulse">Loading campaigns...</span>
+                                ) : (
+                                    <select
+                                        id="campaign"
+                                        value={selectedCampaignId}
+                                        onChange={(e) => setSelectedCampaignId(e.target.value)}
+                                        className="col-span-3 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                    >
+                                        <option value="">-- Select a Campaign --</option>
+                                        {campaigns.map((c) => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+
                             <div className="grid grid-cols-4 items-center gap-4">
                                 <Label className="text-right">Avatar</Label>
                                 <div className="col-span-3 flex items-center gap-4">
@@ -197,8 +251,8 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, 
                                     <span>✅ PDF Data Loaded (Inventory, Spells, Traits)</span>
                                 </div>
                             )}
-                            <Button type="submit" disabled={loading || !campaignId}>
-                                {loading ? "Creating..." : !campaignId ? "Select a Campaign First" : "Create Character"}
+                            <Button type="submit" disabled={loading || !selectedCampaignId}>
+                                {loading ? "Creating..." : !selectedCampaignId ? "Select a Campaign First" : "Create Character"}
                             </Button>
                         </DialogFooter>
                     </form>
