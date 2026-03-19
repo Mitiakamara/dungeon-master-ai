@@ -47,6 +47,7 @@ function stripSystemTags(content: string): string {
 }
 
 interface Message {
+    id?: string
     role: "user" | "assistant" | "system"
     content: string
     imageUrl?: string
@@ -109,6 +110,7 @@ export function ChatInterface({
                 const payload = newItem.new
 
                 const incomingMsg: Message = {
+                    id: payload.id,
                     role: payload.role as "user" | "assistant" | "system",
                     content: payload.content,
                     imageUrl: payload.image_url,
@@ -353,15 +355,20 @@ export function ChatInterface({
                 }
 
                 setMessages((prev) => {
-                    const lastMsg = prev[prev.length - 1];
-
-                    // [SYNC FIX] Deduplication Logic
-                    const isDuplicate = lastMsg
-                        && lastMsg.content === incomingMsg.content
-                        && lastMsg.role === incomingMsg.role;
-
-                    if (isDuplicate) {
+                    // [MULTIPLAYER FIX] ID-based deduplication
+                    // If a message with this DB id already exists, skip it
+                    if (incomingMsg.id && prev.some(m => m.id === incomingMsg.id)) {
                         return prev;
+                    }
+
+                    // If this is my own message returning via Realtime, replace the optimistic (no-id) version
+                    if (incomingMsg.senderId && incomingMsg.senderId === currentUserId) {
+                        const optimisticIdx = prev.findIndex(m => !m.id && m.content === incomingMsg.content && m.senderId === currentUserId)
+                        if (optimisticIdx !== -1) {
+                            const updated = [...prev]
+                            updated[optimisticIdx] = incomingMsg
+                            return updated
+                        }
                     }
 
                     return [...prev, incomingMsg];
@@ -397,6 +404,7 @@ export function ChatInterface({
 
             if (data) {
                 const history: Message[] = data.map((msg: any) => ({
+                    id: msg.id,
                     role: msg.role as "user" | "assistant" | "system",
                     content: stripSystemTags(msg.content),
                     timestamp: new Date(msg.created_at),
