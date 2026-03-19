@@ -130,6 +130,39 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 4b4c318 Feat: Multiplayer MVP — filter messages by campaign, dynamic header, fix commlink and character creation
 ```
 
+### Sesión 19 Mar 2026
+
+**Features implementados:**
+1. **Multiplayer MVP** — Mensajes filtrados por `campaign_id` en `fetchHistory()` y Realtime. Header dinámico con nombre de campaña real. Selector de campañas en dialog de crear personaje (fetch desde `GET /api/campaigns/`). Commlink usa `campaignId` real. Character creation usa campaña activa.
+2. **Atribución de mensajes multiplayer** — `sender_id` populado en backend al insertar mensajes del usuario (extraído del JWT). Mensajes propios a la derecha, otros jugadores a la izquierda con burbuja azul y nombre del personaje, SAM (`sender_id === null`) a la izquierda con estilo original.
+3. **PDF upload end-to-end** — Fix schema `documents.id` de `bigint` a `uuid`. Refactor embeddings a SDK nativo de Google (`genai.embed_content()` con `output_dimensionality=768`). Pipeline completo: PDF → chunks → embeddings 768d → Supabase → RAG → SAM responde con contexto del módulo.
+4. **Dependencias pineadas** — `langchain==0.3.25`, `langchain-community==0.3.21`, `langchain-google-genai==2.0.10`, `google-generativeai>=0.8,<0.9`. Eliminada `langchain-openai` (no usada).
+
+**Bug Fixes implementados:**
+1. **Schema `documents.id`** — Cambiado de `bigint` a `uuid` en Supabase (fix del error `Invalid input syntax for type bigint`).
+2. **Embeddings 3072→768** — `GoogleGenerativeAIEmbeddings` de LangChain 2.0.10 ignora `output_dimensionality`. Reemplazado con SDK nativo en `ingestion.py`, `ai.py`, y `compendium_tools.py`.
+3. **Perfil faltante para usuarios nuevos** — FK violation al crear personaje. Fix manual en Supabase (`INSERT profiles`). Pendiente: auto-creación de perfil.
+4. **Deduplicación de mensajes** — Refactorizada para usar `id` de BD en vez de comparar contenido del último mensaje. Mensajes optimistic (sin `id`) se reemplazan cuando llega el INSERT de Realtime con el mismo `content` y `sender_id`. Mensajes de otros jugadores/SAM se verifican por `id` antes de agregar.
+
+**Playtest multiplayer realizado:**
+- 2 jugadores (Baol Gortsh + Fekas) en misma campaña "Solo Adventure"
+- Mensajes se ven en ambas pantallas con atribución correcta
+- SAM responde a ambos jugadores en contexto
+- Dados funcionan desde ambas cuentas
+- Bug pendiente: mensajes duplicados intermitentes en pantalla del sender
+
+**Bugs conocidos (no resueltos):**
+- Error intermitente `thought_signature` de Gemini API — no reproducible localmente, probablemente transitorio de Google
+- Mensajes duplicados en pantalla del sender — deduplicación mejorada pero no 100% eliminada
+- Auto-creación de perfil para usuarios nuevos — requiere trigger en Supabase o endpoint dedicado
+
+### Commits en main (19 Mar 2026)
+```
+4da41c7 Fix: Robust message deduplication using DB ids — fixes duplicate messages in multiplayer
+09c7f66 Feat: Multiplayer message attribution — sender_id, character names, distinct player bubbles
+4211de3 Feat: Campaign selector in character creation dialog for multiplayer join
+```
+
 ## 4. Estado Actual — Marzo 2026
 
 ### Lo que funciona
@@ -148,8 +181,11 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 - Mensajería privada (commlink) — usa campaignId real
 - Realtime sync via Supabase WebSocket (filtrado por campaña)
 - **Multiplayer MVP:** mensajes filtrados por campaign_id, header dinámico, re-fetch al cambiar campaña
+- **Multiplayer atribución:** sender_id en backend, burbujas diferenciadas por jugador (azul + nombre personaje), SAM con estilo original
+- **Selector de campaña:** dropdown en dialog de crear personaje, fetch de campañas disponibles via API
+- **Deduplicación robusta:** basada en id de BD, reemplazo de mensajes optimistic
 
-### Completitud: ~80-85%
+### Completitud: ~85-90%
 
 ## 5. Análisis Multiplayer
 
@@ -172,7 +208,7 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 ### Gaps pendientes para multiplayer completo
 | Gap | Detalle | Archivo |
 |-----|---------|---------|
-| **Sin selector de campaña** | No hay UI para elegir campaña (auto-detect por personaje) | `sidebar-left.tsx` |
+| ~~**Sin selector de campaña**~~ | ✅ Resuelto: dropdown en `character-create-dialog.tsx` | `4211de3` |
 | **Sin roster de jugadores** | No se ve quién más está en la campaña | — |
 | **Sin membership table** | No hay concepto formal de "jugadores en campaña" | schema |
 | **Sin presence indicators** | No se ve quién está online | — |
@@ -181,8 +217,8 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 
 ## 6. Próximos Pasos Prioritarios
 
-1. **Probar upload PDF end-to-end** — verificar que el PDF se vectoriza y SAM lo usa como contexto RAG
-2. **Multiplayer completo** — selector de campaña, roster de jugadores, membership table, presence indicators, commlink recipients
+1. ~~**Probar upload PDF end-to-end**~~ — ✅ Completado: pipeline PDF → chunks → embeddings 768d → Supabase → RAG funcional
+2. **Multiplayer completo** — roster de jugadores, membership table, presence indicators, commlink recipients
 3. **Campaign join/invite** — sistema de invitación por código o link
 4. **Admin Dashboard** — controles GM funcionales
 5. **Tests** — al menos smoke tests para el gameplay loop
@@ -190,4 +226,4 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 18 Mar 2026*
+*Última actualización: 19 Mar 2026*
