@@ -52,6 +52,8 @@ interface Message {
     imageUrl?: string
     debugInfo?: any
     timestamp: Date
+    senderId?: string | null
+    senderName?: string
 }
 
 export function ChatInterface({
@@ -72,11 +74,20 @@ export function ChatInterface({
     const [messages, setMessages] = React.useState<Message[]>([])
     const [input, setInput] = React.useState("")
     const [isLoading, setIsLoading] = React.useState(false)
+    const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
     const bottomRef = React.useRef<HTMLDivElement>(null)
 
     // Debug Inspector State
     const [debugOpen, setDebugOpen] = React.useState(false)
     const [currentDebugInfo, setCurrentDebugInfo] = React.useState<any>(null)
+
+    // Get current user ID on mount
+    React.useEffect(() => {
+        const supabase = createClient()
+        supabase.auth.getUser().then(({ data: { user } }: { data: { user: any } }) => {
+            if (user) setCurrentUserId(user.id)
+        })
+    }, [])
 
     // [PHASE 13] REALTIME SUBSCRIPTION — filtered by campaign
     useRealtime({
@@ -101,7 +112,9 @@ export function ChatInterface({
                     role: payload.role as "user" | "assistant" | "system",
                     content: payload.content,
                     imageUrl: payload.image_url,
-                    timestamp: new Date(payload.created_at)
+                    timestamp: new Date(payload.created_at),
+                    senderId: payload.sender_id || null,
+                    senderName: payload.metadata?.character_name || "Player",
                 }
 
                 // ---------------------------------------------------------
@@ -388,7 +401,9 @@ export function ChatInterface({
                     content: stripSystemTags(msg.content),
                     timestamp: new Date(msg.created_at),
                     imageUrl: msg.image_url,
-                    debugInfo: msg.metadata
+                    debugInfo: msg.role === "assistant" ? msg.metadata : undefined,
+                    senderId: msg.sender_id || null,
+                    senderName: msg.metadata?.character_name || "Player",
                 }))
 
                 if (history.length === 0) {
@@ -441,7 +456,7 @@ export function ChatInterface({
         const contentToSend = overrideContent || input
         if (!contentToSend.trim() || isLoading) return
 
-        const userMsg: Message = { role: "user", content: contentToSend, timestamp: new Date() }
+        const userMsg: Message = { role: "user", content: contentToSend, timestamp: new Date(), senderId: currentUserId, senderName: selectedCharacter?.name || "You" }
 
         setMessages(prev => [...prev, userMsg])
         if (!overrideContent) setInput("")
@@ -559,6 +574,11 @@ export function ChatInterface({
         }
     }
 
+    // Determine message ownership for multiplayer alignment
+    const isMyMessage = (msg: Message) => msg.senderId != null && msg.senderId === currentUserId
+    const isOtherPlayer = (msg: Message) => msg.senderId != null && msg.senderId !== currentUserId
+    // SAM messages: senderId is null
+
     // [PHASE 16] Visualizer for DM Rolls
     const renderMessageContent = (content: string) => {
         // Safety net: strip any machine tags that survived processing
@@ -604,21 +624,43 @@ export function ChatInterface({
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
                 <div className="flex flex-col gap-6 pb-4">
-                    {messages.map((msg, index) => (
+                    {messages.map((msg, index) => {
+                        const mine = isMyMessage(msg)
+                        const otherPlayer = isOtherPlayer(msg)
+
+                        // Avatar and name logic
+                        let avatarFallback = "AI"
+                        let avatarSrc = "/avatars/sam_logo.png"
+                        let displayName = "S.A.M."
+                        let bubbleClass = "text-foreground" // SAM default
+
+                        if (mine) {
+                            avatarFallback = selectedCharacter?.name?.[0]?.toUpperCase() || "U"
+                            avatarSrc = selectedCharacter?.image_url || ""
+                            displayName = selectedCharacter?.name || "You"
+                            bubbleClass = "bg-primary text-primary-foreground px-3 py-2 rounded-lg"
+                        } else if (otherPlayer) {
+                            avatarFallback = msg.senderName?.[0]?.toUpperCase() || "P"
+                            avatarSrc = ""
+                            displayName = msg.senderName || "Player"
+                            bubbleClass = "bg-blue-500/20 text-foreground border border-blue-500/30 px-3 py-2 rounded-lg"
+                        }
+
+                        return (
                         <div
                             key={index}
-                            className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse text-right" : ""}`}
+                            className={`flex gap-4 ${mine ? "flex-row-reverse text-right" : ""}`}
                         >
-                            <Avatar className={`h-10 w-10 border-2 ${msg.role === "assistant" ? "border-primary" : "border-muted"}`}>
-                                <AvatarFallback>{msg.role === "user" ? (selectedCharacter?.name?.[0]?.toUpperCase() || "U") : "AI"}</AvatarFallback>
-                                <AvatarImage src={msg.role === "assistant" ? "/avatars/sam_logo.png" : selectedCharacter?.image_url} />
+                            <Avatar className={`h-10 w-10 border-2 ${mine ? "border-muted" : otherPlayer ? "border-blue-500/50" : "border-primary"}`}>
+                                <AvatarFallback>{avatarFallback}</AvatarFallback>
+                                <AvatarImage src={avatarSrc} />
                             </Avatar>
 
-                            <div className={`grid gap-1 max-w-[80%] ${msg.role === "user" ? "justify-items-end" : ""}`}>
-                                <div className="font-semibold text-sm text-muted-foreground">
-                                    {msg.role === "user" ? (selectedCharacter?.name || "You") : "S.A.M."}
+                            <div className={`grid gap-1 max-w-[80%] ${mine ? "justify-items-end" : ""}`}>
+                                <div className={`font-semibold text-sm ${otherPlayer ? "text-blue-400" : "text-muted-foreground"}`}>
+                                    {displayName}
                                 </div>
-                                <div className={`text-sm leading-relaxed whitespace-pre-wrap ${msg.role === "assistant" ? "text-foreground" : "bg-primary text-primary-foreground px-3 py-2 rounded-lg"}`}>
+                                <div className={`text-sm leading-relaxed whitespace-pre-wrap ${bubbleClass}`}>
                                     {renderMessageContent(msg.content)}
                                 </div>
                                 {msg.imageUrl && (
@@ -643,7 +685,8 @@ export function ChatInterface({
                                 )}
                             </div>
                         </div>
-                    ))}
+                        )
+                    })}
                 </div>
                 {/* Invisible anchor for auto-scroll */}
                 <div ref={bottomRef} className="h-px w-full" />

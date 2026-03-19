@@ -60,13 +60,15 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         
         # [PHASE 18] MULTIPLAYER ROUTING
         cid = None
+        char_name = "Player"
         try:
             # 1. Player Mode: Check if User has a Character in a Campaign
             # We take the first character found (MVP). In future, frontend could send specific campaign_id.
-            chars = sam_brain.supabase.table("characters").select("campaign_id").eq("user_id", user_id).limit(1).execute()
+            chars = sam_brain.supabase.table("characters").select("campaign_id, name").eq("user_id", user_id).limit(1).execute()
             if chars.data and chars.data[0].get('campaign_id'):
                  cid = chars.data[0]['campaign_id']
-                 print(f"DEBUG: Found Campaign ID: {cid} via Character (Player Mode)")
+                 char_name = chars.data[0].get('name', 'Player')
+                 print(f"DEBUG: Found Campaign ID: {cid} via Character '{char_name}' (Player Mode)")
             
             # 2. GM Mode: Fallback to Campaign Ownership
             if not cid:
@@ -83,10 +85,12 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 "role": "user",
                 "content": request.message,
                 "user_id": user_id,
+                "sender_id": user_id,
+                "metadata": {"character_name": char_name},
             }
             if cid:
                 user_payload["campaign_id"] = cid
-            
+
             sam_brain.supabase.table("messages").insert(user_payload).execute()
         except Exception as db_e:
             print(f"WARNING: User insert failed: {db_e}")

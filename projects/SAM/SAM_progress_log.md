@@ -107,6 +107,29 @@ Descubrimiento: `langchain-google-genai==2.0.10` ignora silenciosamente el pará
 a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 ```
 
+### Sesión 18 Mar 2026 (cont.) — Multiplayer MVP Frontend
+
+**Implementación: Filtrado por campaña y propagación de campaignId**
+
+1. **`game-layout.tsx`** — `campaignId` derivado de `selectedCharacter.campaign_id`. `campaignName` obtenido del API (`/api/campaigns/{id}`), reutilizando el fetch existente del GM check. Ambos propagados como props a `ChatInterface`, `CharacterCreateDialog`, y `Commlink` (via `SidebarLeft`).
+
+2. **`chat-interface.tsx`** — Nuevos props: `campaignId`, `campaignName`.
+   - `fetchHistory()` ahora filtra con `.eq('campaign_id', campaignId)`. Si no hay campaignId, muestra "Select a character to begin your adventure."
+   - `useRealtime` filtrado: `filter: 'campaign_id=eq.{campaignId}'`, `enabled: !!campaignId`. Solo escucha mensajes de la campaña activa.
+   - Re-fetch automático al cambiar de campaña (limpia mensajes + carga nuevos).
+   - Header dinámico: muestra `Campaign: {name}` o "S.A.M." si no hay campaña.
+
+3. **`commlink-dialog.tsx`** — Recibe `campaignId` como prop. `"FIXME_CAMPAIGN_ID"` reemplazado con el prop real.
+
+4. **`character-create-dialog.tsx`** — Recibe `campaignId` como prop. UUID hardcodeado reemplazado (mantiene fallback al UUID de Solo Adventure si no hay campaña activa). Botón "Create Character" deshabilitado si no hay campaignId, muestra "Select a Campaign First".
+
+5. **`sidebar-left.tsx`** — Pasa `campaignId` al componente `Commlink`.
+
+### Commits en main (18 Mar 2026, cont.)
+```
+4b4c318 Feat: Multiplayer MVP — filter messages by campaign, dynamic header, fix commlink and character creation
+```
+
 ## 4. Estado Actual — Marzo 2026
 
 ### Lo que funciona
@@ -122,47 +145,49 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 - RAG sobre módulos PDF de campaña
 - Upload PDF de módulos de campaña (GM-only, con vectorización)
 - Checkpoints (save/load/reset/list)
-- Mensajería privada (commlink) — parcial
-- Realtime sync via Supabase WebSocket
+- Mensajería privada (commlink) — usa campaignId real
+- Realtime sync via Supabase WebSocket (filtrado por campaña)
+- **Multiplayer MVP:** mensajes filtrados por campaign_id, header dinámico, re-fetch al cambiar campaña
 
-### Completitud: ~75-80%
+### Completitud: ~80-85%
 
 ## 5. Análisis Multiplayer
 
 ### Infraestructura existente
 - `messages` table tiene `campaign_id` FK (NOT NULL)
 - Backend auto-detecta campaña via personaje del usuario o propiedad GM
-- Supabase Realtime entrega mensajes a todos los conectados
+- Supabase Realtime filtrado por `campaign_id` (cada jugador solo ve su campaña)
 - RLS policies en todas las tablas
+- `campaignId` propagado a todos los componentes que lo necesitan
 
-### Gaps críticos para multiplayer
+### Gaps resueltos (sesión 18 Mar 2026)
+| Gap | Fix | Commit |
+|-----|-----|--------|
+| Sin filtro de campaña en chat | `.eq('campaign_id', campaignId)` en fetchHistory + filter en useRealtime | `4b4c318` |
+| Commlink hardcodeado | Recibe `campaignId` como prop | `4b4c318` |
+| Character creation hardcodea UUID | Recibe `campaignId` como prop (fallback a Solo Adventure) | `4b4c318` |
+| Header hardcodeado | Dinámico: `Campaign: {name}` desde API | `4b4c318` |
+| Sin re-fetch al cambiar campaña | `useEffect` con `campaignId` dependency limpia + recarga | `4b4c318` |
+
+### Gaps pendientes para multiplayer completo
 | Gap | Detalle | Archivo |
 |-----|---------|---------|
-| **Sin filtro de campaña en chat** | `fetchHistory()` carga TODOS los mensajes sin `.eq('campaign_id')` | `chat-interface.tsx` |
-| **Sin selector de campaña** | No hay UI para elegir campaña | `sidebar-left.tsx` |
+| **Sin selector de campaña** | No hay UI para elegir campaña (auto-detect por personaje) | `sidebar-left.tsx` |
 | **Sin roster de jugadores** | No se ve quién más está en la campaña | — |
-| **Commlink hardcodeado** | `campaign_id: "FIXME_CAMPAIGN_ID"` | `commlink-dialog.tsx` |
-| **Character creation hardcodea UUID** | Todas las characters van a la misma campaña | `character-create-dialog.tsx` |
-| **Header hardcodeado** | Dice "La Mina Perdida" siempre | `chat-interface.tsx` |
 | **Sin membership table** | No hay concepto formal de "jugadores en campaña" | schema |
 | **Sin presence indicators** | No se ve quién está online | — |
-
-### Lo que se necesita para MVP multiplayer
-1. Filtrar mensajes por `campaign_id` en frontend
-2. Selector de campaña en sidebar (o auto-detect por personaje seleccionado)
-3. Header dinámico con nombre de campaña
-4. Roster: mostrar personajes de otros jugadores en la campaña
-5. Commlink: poblar recipients con jugadores de la campaña
-6. Campaign join/invite system (código de invitación o link)
+| **Commlink sin recipients** | No hay lista de jugadores para enviar mensajes | `commlink-dialog.tsx` |
+| **Campaign join/invite** | No hay sistema de invitación | — |
 
 ## 6. Próximos Pasos Prioritarios
 
 1. **Probar upload PDF end-to-end** — verificar que el PDF se vectoriza y SAM lo usa como contexto RAG
-2. **Multiplayer MVP** — filtro de mensajes + selector de campaña + roster
-3. **Admin Dashboard** — controles GM funcionales
-4. **Tests** — al menos smoke tests para el gameplay loop
-5. **Mobile responsive** — verificar y pulir layout en móvil
-6. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
+2. **Multiplayer completo** — selector de campaña, roster de jugadores, membership table, presence indicators, commlink recipients
+3. **Campaign join/invite** — sistema de invitación por código o link
+4. **Admin Dashboard** — controles GM funcionales
+5. **Tests** — al menos smoke tests para el gameplay loop
+6. **Mobile responsive** — verificar y pulir layout en móvil
+7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
 *Última actualización: 18 Mar 2026*
