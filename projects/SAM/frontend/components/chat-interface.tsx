@@ -61,6 +61,7 @@ export function ChatInterface({
     selectedCharacter,
     campaignId,
     campaignName,
+    isGM,
     externalEvent,
     onEventHandled,
     onCharacterUpdate
@@ -68,6 +69,7 @@ export function ChatInterface({
     selectedCharacter: any,
     campaignId?: string,
     campaignName?: string,
+    isGM?: boolean,
     externalEvent?: string | null,
     onEventHandled?: () => void,
     onCharacterUpdate?: (updates: any) => void
@@ -355,22 +357,10 @@ export function ChatInterface({
                 }
 
                 setMessages((prev) => {
-                    // [MULTIPLAYER FIX] ID-based deduplication
-                    // If a message with this DB id already exists, skip it
+                    // [MULTIPLAYER FIX] ID-based deduplication — skip if already in array
                     if (incomingMsg.id && prev.some(m => m.id === incomingMsg.id)) {
                         return prev;
                     }
-
-                    // If this is my own message returning via Realtime, replace the optimistic (no-id) version
-                    if (incomingMsg.senderId && incomingMsg.senderId === currentUserId) {
-                        const optimisticIdx = prev.findIndex(m => !m.id && m.content === incomingMsg.content && m.senderId === currentUserId)
-                        if (optimisticIdx !== -1) {
-                            const updated = [...prev]
-                            updated[optimisticIdx] = incomingMsg
-                            return updated
-                        }
-                    }
-
                     return [...prev, incomingMsg];
                 })
             }
@@ -464,9 +454,15 @@ export function ChatInterface({
         const contentToSend = overrideContent || input
         if (!contentToSend.trim() || isLoading) return
 
-        const userMsg: Message = { role: "user", content: contentToSend, timestamp: new Date(), senderId: currentUserId, senderName: selectedCharacter?.name || "You" }
+        // GM-only admin commands check
+        const adminCommands = ["/reset", "/checkpoint", "/load", "/list"]
+        const trimmed = contentToSend.trim().toLowerCase()
+        if (adminCommands.some(cmd => trimmed.startsWith(cmd)) && !isGM) {
+            toast.error("Only the GM can use admin commands.")
+            return
+        }
 
-        setMessages(prev => [...prev, userMsg])
+        // No optimistic update — message will arrive via Realtime
         if (!overrideContent) setInput("")
         setIsLoading(true)
 

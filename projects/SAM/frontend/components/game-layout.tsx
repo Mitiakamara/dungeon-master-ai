@@ -251,6 +251,7 @@ export default function GameLayout() {
                     selectedCharacter={selectedCharacter}
                     campaignId={campaignId}
                     campaignName={campaignName}
+                    isGM={isGM}
                     externalEvent={rollEvent}
                     onEventHandled={() => setRollEvent(null)}
                     onCharacterUpdate={handleCharacterUpdate}
