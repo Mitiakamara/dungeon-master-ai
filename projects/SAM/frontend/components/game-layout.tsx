@@ -37,6 +37,14 @@ export default function GameLayout() {
     // Derived campaign ID from selected character
     const campaignId = selectedCharacter?.campaign_id || ""
 
+    // Get current user ID on mount
+    React.useEffect(() => {
+        const supabase = createClient()
+        supabase.auth.getUser().then(({ data: { user } }: { data: { user: any } }) => {
+            if (user) setCurrentUserId(user.id)
+        })
+    }, [])
+
     // Fetch campaign info (name + GM check) when campaign changes
     React.useEffect(() => {
         const fetchCampaignInfo = async () => {
@@ -50,7 +58,6 @@ export default function GameLayout() {
                 const supabase = createClient()
                 const { data: { user } } = await supabase.auth.getUser()
                 if (!user) { console.log("🔑 GM Check: No user"); return }
-                setCurrentUserId(user.id)
 
                 console.log("🔑 GM Check: Fetching campaign", campaignId)
                 const res = await authenticatedFetch(`/api/campaigns/${campaignId}`)

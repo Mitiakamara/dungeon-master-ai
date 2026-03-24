@@ -31,7 +31,7 @@ export function PartyRoster({ campaignId, currentUserId }: { campaignId?: string
     const [loading, setLoading] = useState(false)
 
     useEffect(() => {
-        if (!campaignId) { setParty([]); return }
+        if (!campaignId || !currentUserId) { setParty([]); return }
 
         const fetchParty = async () => {
             setLoading(true)
@@ -39,9 +39,7 @@ export function PartyRoster({ campaignId, currentUserId }: { campaignId?: string
                 const res = await authenticatedFetch(`/api/characters/campaign/${campaignId}`)
                 if (res.ok) {
                     const data: PartyMember[] = await res.json()
-                    const filtered = data.filter((c) => c.user_id !== currentUserId)
-                    console.log("🛡️ ROSTER:", { currentUserId, totalChars: data.length, filtered: filtered.length, allUserIds: data.map(c => c.user_id) })
-                    setParty(filtered)
+                    setParty(data.filter((c) => c.user_id !== currentUserId))
                 }
             } catch (e) {
                 console.error("Failed to fetch party:", e)
