@@ -163,6 +163,30 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 4211de3 Feat: Campaign selector in character creation dialog for multiplayer join
 ```
 
+### Sesión 24 Mar 2026 — Multiplayer Polish, Roster, Dedup, Admin Commands
+
+**Features implementados:**
+1. **Party roster** — Nuevo componente `party-roster.tsx` en sidebar izquierdo. Muestra otros personajes de la campaña con avatar, nombre, clase, nivel, y HP coloreado (verde/amarillo/rojo). Nuevo endpoint `GET /api/characters/campaign/{campaign_id}`. Filtra personajes propios del usuario.
+2. **Multiplayer player attribution en AI** — Historial enviado a Gemini ahora incluye `sender_name` por mensaje. System prompt con `MULTIPLAYER PROTOCOL`: SAM distingue jugadores por `[CharacterName]`, narra para cada uno individualmente, nunca controla personajes ajenos. Historial expandido de 5 a 10 mensajes.
+3. **Admin commands GM-only** — `/reset`, `/checkpoint`, `/load`, `/list` restringidos al GM en frontend (`isGM` prop en `ChatInterface`). Jugadores ven toast "Only the GM can use admin commands".
+4. **Reset broadcast** — `/reset` ahora inserta un system message con `<ACTION>CLEAR_CHAT</ACTION>` en la BD después de borrar mensajes, sincronizando todos los clientes via Realtime INSERT (los DELETE events de Supabase no llegan sin `REPLICA IDENTITY FULL`).
+
+**Bug Fixes:**
+1. **Mensajes duplicados eliminados** — Removido optimistic update completamente. Mensajes llegan exclusivamente via Realtime. Deduplicación por `id` de BD como safety net.
+2. **Roster `currentUserId` timing** — `currentUserId` se obtiene en `useEffect([], [])` al montar `game-layout.tsx` (independiente de `campaignId`). Guard `!currentUserId` en roster evita fetch sin token.
+3. **Route ordering** — Endpoint `/campaign/{campaign_id}` movido antes de `/{character_id}` en `characters.py`. FastAPI matcheaba `/campaign/xxx` como `character_id="campaign"` → 500.
+
+### Commits en main (24 Mar 2026)
+```
+4f783c8 Fix: Route ordering — campaign endpoint before generic character_id param
+f90688c Fix: Party roster currentUserId timing + auth guard for campaign characters fetch
+6dd9e59 Fix: Reset broadcasts to all clients + roster filter diagnostic
+466f7ef Feat: Party roster — show other players' characters in sidebar with HP status
+1658188 Feat: Multiplayer player attribution — SAM now distinguishes and addresses each player individually
+45067b1 Fix: Remove optimistic update to prevent duplicate messages + restrict admin commands to GM only
+b1eb562 Docs: Update progress log — multiplayer MVP, PDF upload, session 19 Mar 2026
+```
+
 ## 4. Estado Actual — Marzo 2026
 
 ### Lo que funciona
@@ -183,9 +207,19 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 - **Multiplayer MVP:** mensajes filtrados por campaign_id, header dinámico, re-fetch al cambiar campaña
 - **Multiplayer atribución:** sender_id en backend, burbujas diferenciadas por jugador (azul + nombre personaje), SAM con estilo original
 - **Selector de campaña:** dropdown en dialog de crear personaje, fetch de campañas disponibles via API
-- **Deduplicación robusta:** basada en id de BD, reemplazo de mensajes optimistic
+- **Deduplicación robusta:** sin optimistic update, mensajes llegan solo via Realtime, dedup por id de BD
+- **Party roster:** sidebar muestra otros personajes de la campaña con HP status
+- **Admin commands GM-only:** `/reset`, `/checkpoint`, `/load`, `/list` solo para GM
+- **Reset broadcast:** sincroniza limpieza de chat a todos los clientes via Realtime
+- **SAM multiplayer-aware:** distingue jugadores por nombre, no controla personajes ajenos
 
-### Completitud: ~85-90%
+### Completitud: ~90%
+
+### Pendiente para "done"
+- Auto-creación de perfil para usuarios nuevos (trigger Supabase)
+- Generated scene placeholder (tag `<IMAGE>` sin servicio de imágenes conectado)
+- Playtest completo con grupo de amigos
+- Vercel Root Directory config
 
 ## 5. Análisis Multiplayer
 
@@ -209,7 +243,7 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 | Gap | Detalle | Archivo |
 |-----|---------|---------|
 | ~~**Sin selector de campaña**~~ | ✅ Resuelto: dropdown en `character-create-dialog.tsx` | `4211de3` |
-| **Sin roster de jugadores** | No se ve quién más está en la campaña | — |
+| ~~**Sin roster de jugadores**~~ | ✅ Resuelto: `party-roster.tsx` con endpoint `/campaign/{id}` | `466f7ef` |
 | **Sin membership table** | No hay concepto formal de "jugadores en campaña" | schema |
 | **Sin presence indicators** | No se ve quién está online | — |
 | **Commlink sin recipients** | No hay lista de jugadores para enviar mensajes | `commlink-dialog.tsx` |
@@ -217,13 +251,13 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 
 ## 6. Próximos Pasos Prioritarios
 
-1. ~~**Probar upload PDF end-to-end**~~ — ✅ Completado: pipeline PDF → chunks → embeddings 768d → Supabase → RAG funcional
-2. **Multiplayer completo** — roster de jugadores, membership table, presence indicators, commlink recipients
-3. **Campaign join/invite** — sistema de invitación por código o link
-4. **Admin Dashboard** — controles GM funcionales
-5. **Tests** — al menos smoke tests para el gameplay loop
-6. **Mobile responsive** — verificar y pulir layout en móvil
+1. ~~**Probar upload PDF end-to-end**~~ — ✅ Completado
+2. **Auto-creación de perfil** — Trigger en Supabase o endpoint para que usuarios nuevos no necesiten INSERT manual
+3. **Multiplayer extras** — membership table, presence indicators, commlink recipients
+4. **Campaign join/invite** — sistema de invitación por código o link
+5. **Image generation** — Conectar servicio de imágenes (Imagen 3 o similar) al tag `<IMAGE>`
+6. **Tests** — al menos smoke tests para el gameplay loop
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 19 Mar 2026*
+*Última actualización: 24 Mar 2026*
