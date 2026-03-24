@@ -2,7 +2,8 @@
 from langchain_core.tools import tool
 from supabase import Client
 import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # Note: We need a Supabase Client instance.
 # Ideally, we inject dependencies, but for tools, we might need a global or closure.
@@ -15,14 +16,16 @@ def get_supabase() -> Client:
     return create_client(url, key)
 
 def embed_query(text: str) -> list:
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-    response = genai.embed_content(
-        model="models/gemini-embedding-001",
-        content=text,
-        output_dimensionality=768,
-        task_type="retrieval_query",
+    client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    response = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text,
+        config=types.EmbedContentConfig(
+            output_dimensionality=768,
+            task_type="RETRIEVAL_QUERY",
+        ),
     )
-    return response["embedding"]
+    return response.embeddings[0].values
 
 @tool
 def search_spells(query: str) -> str:

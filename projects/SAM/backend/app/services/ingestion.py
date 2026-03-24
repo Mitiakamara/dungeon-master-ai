@@ -4,7 +4,8 @@ import tempfile
 from typing import List
 from dotenv import load_dotenv
 from supabase import create_client, Client
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredEPubLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -20,9 +21,9 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("Missing Supabase credentials")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-genai.configure(api_key=GOOGLE_API_KEY)
+genai_client = genai.Client(api_key=GOOGLE_API_KEY)
 
-EMBED_MODEL = "models/gemini-embedding-001"
+EMBED_MODEL = "gemini-embedding-001"
 EMBED_DIMS = 768
 EMBED_BATCH_SIZE = 100  # Max texts per embed_content call
 
@@ -78,13 +79,15 @@ class IngestionService:
             all_embeddings = []
             for i in range(0, len(texts), EMBED_BATCH_SIZE):
                 batch = texts[i:i + EMBED_BATCH_SIZE]
-                response = genai.embed_content(
+                response = genai_client.models.embed_content(
                     model=EMBED_MODEL,
-                    content=batch,
-                    output_dimensionality=EMBED_DIMS,
-                    task_type="retrieval_document",
+                    contents=batch,
+                    config=types.EmbedContentConfig(
+                        output_dimensionality=EMBED_DIMS,
+                        task_type="RETRIEVAL_DOCUMENT",
+                    ),
                 )
-                all_embeddings.extend(response["embedding"])
+                all_embeddings.extend([e.values for e in response.embeddings])
                 print(f"Embedded batch {i // EMBED_BATCH_SIZE + 1} ({len(batch)} chunks)")
 
             # 7. Insert into Supabase in batches

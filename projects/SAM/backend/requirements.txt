@@ -3,7 +3,7 @@ uvicorn
 pydantic
 langchain==0.3.25
 langchain-community==0.3.21
-langchain-google-genai==2.0.10
+langchain-google-genai==2.1.12
 python-dotenv
 supabase
 pypdf
@@ -13,5 +13,5 @@ lxml
 pypandoc
 pyjwt
 python-multipart
-google-generativeai>=0.8,<0.9
+google-genai
 pymupdf

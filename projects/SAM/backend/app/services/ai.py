@@ -5,7 +5,8 @@ from app.services.tools.game_mechanics import MECHANIC_TOOLS
 import os
 from dotenv import load_dotenv
 from supabase import create_client
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 load_dotenv()
 
@@ -30,8 +31,8 @@ class AIHelper:
         # Bind Tools for S.A.M. (Compendium + Game Mechanics)
         self.llm_with_tools = self.llm.bind_tools(ALL_TOOLS + MECHANIC_TOOLS)
         
-        # Configure native Google SDK for embeddings (768 dims, server-side truncation)
-        genai.configure(api_key=google_api_key)
+        # Initialize Google GenAI client for embeddings and multimodal (new SDK)
+        self.genai_client = genai.Client(api_key=google_api_key)
 
         self.supabase = create_client(supabase_url, supabase_key)
         
@@ -195,13 +196,15 @@ class AIHelper:
              # 1. Retrieve relevant rules/lore (Manual RPC)
              # NOTE: We actully prefer Tools now, but we keep this for general "Campaign Lore"
             try:
-                embed_response = genai.embed_content(
-                    model="models/gemini-embedding-001",
-                    content=user_input,
-                    output_dimensionality=768,
-                    task_type="retrieval_query",
+                embed_response = self.genai_client.models.embed_content(
+                    model="gemini-embedding-001",
+                    contents=user_input,
+                    config=types.EmbedContentConfig(
+                        output_dimensionality=768,
+                        task_type="RETRIEVAL_QUERY",
+                    ),
                 )
-                query_vector = embed_response["embedding"]
+                query_vector = embed_response.embeddings[0].values
                 response = self.supabase.rpc(
                     "match_documents", 
                     {
@@ -394,12 +397,8 @@ class AIHelper:
             log("--- NEW IMPORT ATTEMPT ---")
             log(f"PDF Bytes received: {len(pdf_bytes)}")
             
-            # We use the google-generativeai SDK directly for blob support
-            import google.generativeai as genai
             import json
-            
-            genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-            model = genai.GenerativeModel('gemini-flash-latest')
+
             log("Model configured. Preparing prompt...")
             
             prompt = """
@@ -464,12 +463,15 @@ class AIHelper:
             """
             
             log("Sending request to Gemini...")
-            response = model.generate_content([
-                {'mime_type': 'application/pdf', 'data': pdf_bytes},
-                prompt
-            ])
+            response = self.genai_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                    prompt,
+                ],
+            )
             log("Response received from Gemini.")
-            
+
             # Clean up response more robustly
             text = response.text
             log(f"Raw response length: {len(text)}")
