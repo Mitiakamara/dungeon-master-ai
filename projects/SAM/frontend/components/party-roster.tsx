@@ -38,9 +38,10 @@ export function PartyRoster({ campaignId, currentUserId }: { campaignId?: string
             try {
                 const res = await authenticatedFetch(`/api/characters/campaign/${campaignId}`)
                 if (res.ok) {
-                    const data = await res.json()
-                    // Filter out current user's characters
-                    setParty(data.filter((c: PartyMember) => c.user_id !== currentUserId))
+                    const data: PartyMember[] = await res.json()
+                    const filtered = data.filter((c) => c.user_id !== currentUserId)
+                    console.log("🛡️ ROSTER:", { currentUserId, totalChars: data.length, filtered: filtered.length, allUserIds: data.map(c => c.user_id) })
+                    setParty(filtered)
                 }
             } catch (e) {
                 console.error("Failed to fetch party:", e)

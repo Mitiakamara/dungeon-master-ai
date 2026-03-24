@@ -174,6 +174,16 @@ class AdminService:
                 supabase.table("messages").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
                 messages_deleted += remaining.count
 
+            # 3. Broadcast CLEAR_CHAT to all clients via Realtime INSERT
+            if camp_res.data:
+                cid = camp_res.data[0]['id']
+                supabase.table("messages").insert({
+                    "role": "system",
+                    "content": "<ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>",
+                    "campaign_id": cid,
+                    "user_id": user_id,
+                }).execute()
+
             return f"⚠️ Campaign Reset! {count} characters healed. {messages_deleted} messages deleted. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
 
         except Exception as e:
