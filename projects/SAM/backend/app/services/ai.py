@@ -186,7 +186,7 @@ class AIHelper:
            - If you narrate damage without a `<DM_ROLL>` text (for monsters) or valid math tool (for HP), you fail.
         """
 
-    def generate_response(self, user_input: str, history: list = [], character_context: str = "No character active.") -> dict:
+    def generate_response(self, user_input: str, history: list = [], character_context: str = "No character active.", sender_name: str = "Player") -> dict:
         """
         Generates a DM response to a player action, using RAG + Character Context + Tools.
         Returns dict with 'response' (text) and optional 'image_url'.
@@ -245,7 +245,7 @@ class AIHelper:
                     # Fallback for old string-only history (treat as user)
                     messages.append(HumanMessage(content=str(msg)))
                 
-            messages.append(HumanMessage(content=user_input))
+            messages.append(HumanMessage(content=f"[{sender_name}]: {user_input}"))
             
             # [CRITICAL] Force reminder for State Updates to ensure S.A.M. never forgets math
             messages.append(SystemMessage(content="REMINDER: If this action changes HP, you MUST output the <UPDATE> tag at the end. Example: <UPDATE>{\"status\": {\"hp_current\": 15}}</UPDATE>"))

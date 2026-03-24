@@ -117,9 +117,10 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         
         print("DEBUG: proceeding to AI generation...")
         response = sam_brain.generate_response(
-            request.message, 
+            request.message,
             request.history,
-            request.character_context
+            request.character_context,
+            sender_name=char_name
         )
         
         # [PHASE 13] PERSISTENCE LAYER - SAVE AI MESSAGE
