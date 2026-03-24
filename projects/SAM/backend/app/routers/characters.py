@@ -125,14 +125,6 @@ def create_character(char: CharacterCreate, user: dict = Depends(verify_token)):
         print(f"ERROR Creating Character: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/{character_id}", response_model=CharacterResponse)
-def get_character(character_id: str, user: dict = Depends(verify_token)):
-    # Optional: Check if character belongs to user or is public
-    response = supabase.table("characters").select("*").eq("id", character_id).execute()
-    if not response.data:
-        raise HTTPException(status_code=404, detail="Character not found")
-    return response.data[0]
-
 @router.get("/campaign/{campaign_id}", response_model=List[CharacterResponse])
 def list_campaign_characters(campaign_id: str, user: dict = Depends(verify_token)):
     """List all characters in a campaign (for party roster)."""
@@ -153,6 +145,14 @@ def list_user_characters(user_id: str, user: dict = Depends(verify_token)):
          raise HTTPException(status_code=403, detail="Access denied")
     response = supabase.table("characters").select("*").eq("user_id", user_id).execute()
     return response.data
+
+@router.get("/{character_id}", response_model=CharacterResponse)
+def get_character(character_id: str, user: dict = Depends(verify_token)):
+    # Optional: Check if character belongs to user or is public
+    response = supabase.table("characters").select("*").eq("id", character_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Character not found")
+    return response.data[0]
 
 @router.patch("/{character_id}", response_model=CharacterResponse)
 def update_character(character_id: str, updates: CharacterUpdate, user: dict = Depends(verify_token)):
