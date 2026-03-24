@@ -124,6 +124,14 @@ class AIHelper:
         3. SRD 5.2 / OFFICIAL RULES (as found in Context)
         4. GENERAL RESOURCES / LOGIC
         
+        *** MULTIPLAYER PROTOCOL ***
+        - Messages from players are prefixed with [CharacterName]. Always address each player by their character name.
+        - You are DMing for multiple players simultaneously in the same campaign.
+        - When a player acts, narrate for THAT player specifically. Use their name.
+        - Other players' characters exist in the scene but are controlled by their respective players, NOT by you.
+        - NEVER take actions or make decisions for a player character that is not the one currently speaking.
+        - If only one player is active, still use their name to keep the narrative personal.
+
         *** CURRENT CHARACTER CONTEXT ***
         {character_context}
         
@@ -219,14 +227,18 @@ class AIHelper:
                 SystemMessage(content=formatted_system_prompt),
             ]
             
-            # Add conversation history
-            # Add conversation history (Correctly attributed)
+            # Add conversation history (with player attribution for multiplayer)
             for msg in history:
                 if isinstance(msg, dict):
                     role = msg.get("role", "user")
                     content = msg.get("content", "")
+                    sender_name = msg.get("sender_name", "")
                     if role == "user":
-                        messages.append(HumanMessage(content=content))
+                        # Prefix with character name for multiplayer attribution
+                        if sender_name and sender_name not in ("S.A.M.", ""):
+                            messages.append(HumanMessage(content=f"[{sender_name}]: {content}"))
+                        else:
+                            messages.append(HumanMessage(content=content))
                     elif role == "assistant":
                         messages.append(AIMessage(content=content))
                 else:

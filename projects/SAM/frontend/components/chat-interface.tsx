@@ -514,7 +514,11 @@ export function ChatInterface({
                 body: JSON.stringify({
                     message: contentToSend,
                     character_context: charContext,
-                    history: messages.slice(-5).map(m => ({ role: m.role, content: m.content }))
+                    history: messages.slice(-10).map(m => ({
+                        role: m.role,
+                        content: m.content,
+                        sender_name: m.senderName || (m.senderId ? "Unknown Player" : "S.A.M.")
+                    }))
                 })
             })
 

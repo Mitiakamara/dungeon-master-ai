@@ -31,7 +31,7 @@ app.include_router(messages.router)
 class ChatRequest(BaseModel):
     message: str
     history: List[Union[str, Dict[str, str]]] = []
-    character_context: Optional[str] = "No character selected." # Frontend will send summary string for now
+    character_context: Optional[str] = "No character selected."
 
 class RollRequest(BaseModel):
     expression: str # e.g. "1d20+5"
