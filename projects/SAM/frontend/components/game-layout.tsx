@@ -32,6 +32,7 @@ export default function GameLayout() {
     const [rollEvent, setRollEvent] = useState<string | null>(null)
     const [isGM, setIsGM] = useState(false)
     const [campaignName, setCampaignName] = useState<string>("")
+    const [currentUserId, setCurrentUserId] = useState<string>("")
 
     // Derived campaign ID from selected character
     const campaignId = selectedCharacter?.campaign_id || ""
@@ -49,6 +50,7 @@ export default function GameLayout() {
                 const supabase = createClient()
                 const { data: { user } } = await supabase.auth.getUser()
                 if (!user) { console.log("🔑 GM Check: No user"); return }
+                setCurrentUserId(user.id)
 
                 console.log("🔑 GM Check: Fetching campaign", campaignId)
                 const res = await authenticatedFetch(`/api/campaigns/${campaignId}`)
@@ -215,6 +217,7 @@ export default function GameLayout() {
                             selectedId={selectedCharacter?.id}
                             campaignId={selectedCharacter?.campaign_id}
                             isGM={isGM}
+                            currentUserId={currentUserId}
                         />
                     </SheetContent>
                 </Sheet>
@@ -242,6 +245,7 @@ export default function GameLayout() {
                     selectedId={selectedCharacter?.id}
                     campaignId={selectedCharacter?.campaign_id}
                     isGM={isGM}
+                    currentUserId={currentUserId}
                 />
             </aside>
 

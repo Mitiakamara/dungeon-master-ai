@@ -133,6 +133,12 @@ def get_character(character_id: str, user: dict = Depends(verify_token)):
         raise HTTPException(status_code=404, detail="Character not found")
     return response.data[0]
 
+@router.get("/campaign/{campaign_id}", response_model=List[CharacterResponse])
+def list_campaign_characters(campaign_id: str, user: dict = Depends(verify_token)):
+    """List all characters in a campaign (for party roster)."""
+    response = supabase.table("characters").select("*").eq("campaign_id", campaign_id).execute()
+    return response.data
+
 @router.get("/user/me", response_model=List[CharacterResponse])
 def list_my_characters(user: dict = Depends(verify_token)):
     user_id = user['sub']

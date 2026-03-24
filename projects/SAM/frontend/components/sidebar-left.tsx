@@ -8,6 +8,7 @@ import { ModeToggle } from "@/components/mode-toggle"
 import { Commlink } from "@/components/commlink/commlink-dialog"
 import { CharacterList } from "@/components/character-list"
 import { CampaignModuleUpload } from "@/components/campaign-module-upload"
+import { PartyRoster } from "@/components/party-roster"
 
 interface SidebarLeftProps {
     refreshKey: number
@@ -15,9 +16,10 @@ interface SidebarLeftProps {
     selectedId?: string
     campaignId?: string
     isGM?: boolean
+    currentUserId?: string
 }
 
-export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId, isGM }: SidebarLeftProps) {
+export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId, isGM, currentUserId }: SidebarLeftProps) {
     const [uploadOpen, setUploadOpen] = React.useState(false)
 
     return (
@@ -49,6 +51,13 @@ export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaig
                     selectedId={selectedId}
                 />
             </div>
+
+            {/* Party Roster */}
+            {campaignId && (
+                <div className="border-t flex-shrink-0">
+                    <PartyRoster campaignId={campaignId} currentUserId={currentUserId} />
+                </div>
+            )}
 
             {/* Upload Module Button (GM only) */}
             {isGM && campaignId && (
