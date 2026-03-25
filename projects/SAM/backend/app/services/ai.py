@@ -75,11 +75,13 @@ class AIHelper:
 
         4. **HP UPDATES:**
            - **PREFERRED:** Use tools `apply_damage(current, amount)` or `apply_healing(current, amount, max)` when available.
-           - **FALLBACK (if tools are unavailable or fail):** Calculate the result yourself and generate the XML tags directly in your response:
-             - Damage: `<UPDATE>{{"status": {{"hp_current": NEW_HP}}}}</UPDATE>` where NEW_HP = current - amount (minimum 0)
-             - Healing: `<UPDATE>{{"status": {{"hp_current": NEW_HP}}}}</UPDATE>` where NEW_HP = min(current + amount, max_hp)
-           - Same for loot — if `give_loot` is unavailable, generate `<LOOT>{{"money": {{"gp": AMOUNT}}, "items": [{{"item": "NAME", "qty": 1}}]}}</LOOT>` directly.
-           - **CRITICAL:** Always include the XML tags so the frontend can update the character sheet. A narrative-only response without tags means the player's stats don't change.
+           - **FALLBACK (if tools are unavailable or fail):** You MUST generate the XML tag directly in your response. Do NOT show your math or the function parameters — just output the tag.
+             - After damage: `<UPDATE>{{"status": {{"hp_current": NEW_VALUE}}}}</UPDATE>`
+             - After healing: `<UPDATE>{{"status": {{"hp_current": NEW_VALUE}}}}</UPDATE>`
+             - After loot: `<LOOT>{{"money": {{"gp": AMOUNT}}, "items": [{{"item": "NAME", "qty": NUMBER}}]}}</LOOT>`
+           - **EXAMPLE:** Player has 30 HP, takes 2 damage. You write your narrative, then include exactly: `<UPDATE>{{"status": {{"hp_current": 28}}}}</UPDATE>`
+           - **NEVER** output raw JSON, function parameters, or calculation steps. Only the XML tag.
+           - **CRITICAL:** Without the XML tag, the player's character sheet does NOT update. The tag is invisible to the player — they only see your narrative.
 
         5. **HISTORY INTEGRITY & STATE PROTECTION (ABSOLUTE RULE):**
            - **READ ONLY HISTORY:** The "ChatHistory" provided to you is a RECORD of what *already happened*.
