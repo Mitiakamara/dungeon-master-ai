@@ -79,7 +79,7 @@ Aplicación web de Dungeon Master con IA para D&D 5e. SAM es un DM virtual con p
 | Backend | FastAPI (Python 3) | Render |
 | Base de datos | Supabase PostgreSQL + pgvector | Supabase Cloud |
 | LLM | Google Gemini Flash (via LangChain) | Google Cloud |
-| Embeddings | `gemini-embedding-001` (768 dims) via native `genai.embed_content()` SDK | Google Cloud |
+| Embeddings | `gemini-embedding-001` (768 dims) via `google-genai` SDK (`client.models.embed_content()`) | Google Cloud |
 | Auth | Supabase JWT + RLS en todas las tablas | Supabase |
 | Avatares | DiceBear API (pública, gratuita, seed-based) | — |
 
@@ -205,8 +205,8 @@ Supabase PostgreSQL + pgvector
 ```
 fastapi, uvicorn, pydantic
 supabase, pyjwt, python-dotenv
-langchain, langchain-google-genai, langchain-community
-google-generativeai
+langchain, langchain-google-genai==2.1.12, langchain-community
+google-genai
 pypdf, unstructured, python-multipart
 ```
 
@@ -228,10 +228,10 @@ lucide-react, sonner, next-themes
 ### Estado actual (Mar 2026)
 - Backend live en Render (`https://sam-backend-mg0j.onrender.com`), Root Directory: `projects/SAM/backend`
 - Frontend en Vercel (`sam-weld-tau.vercel.app`) — config Root Directory: `projects/SAM/frontend`
-- 28+ commits en main (último: `4f783c8`, 24 Mar 2026)
+- 33+ commits en main (último: `26d2e29`, 25 Mar 2026)
 - **Single-player funcional y testeado:** login → personaje → chat → dados → loot → XP → checkpoints
 - **Upload PDF de módulos:** GM-only, vectoriza con gemini-embedding-001 (768d) y almacena en Supabase para RAG
-- **Embeddings refactorizados:** Todo el código runtime usa SDK nativo `genai.embed_content()` (no LangChain wrapper). LangChain `GoogleGenerativeAIEmbeddings` eliminado de runtime — solo queda en scripts de seeding (`app/scripts/`). `langchain-google-genai` se mantiene para `ChatGoogleGenerativeAI` (LLM).
+- **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado. `langchain-google-genai==2.1.12` para `ChatGoogleGenerativeAI` (LLM) con soporte nativo para `thought_signature`. Fallback sin tools cuando Gemini falla con tool calling.
 - **Multiplayer MVP implementado y testeado (sesiones 18-24 Mar):**
   - `fetchHistory()` filtra por `campaign_id` — cada jugador solo ve mensajes de su campaña
   - `useRealtime` messages filtrado: `filter: 'campaign_id=eq.{id}'`, `enabled: !!campaignId`
@@ -247,7 +247,7 @@ lucide-react, sonner, next-themes
   - Admin commands (`/reset`, `/checkpoint`, `/load`, `/list`) restringidos a GM only
   - `/reset` broadcast: inserta system message con `<ACTION>CLEAR_CHAT</ACTION>` para sincronizar todos los clientes
 - **Multiplayer pendiente:** membership table, presence indicators, commlink recipients, campaign join/invite
-- **Completitud: ~90%**
+- **Completitud: ~90-95%**
 - Ver `SAM_progress_log.md` para detalle completo
 
 ---
@@ -773,4 +773,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 24 Mar 2026 — SAM: Multiplayer polish (player attribution, party roster, dedup fix, admin GM-only, reset broadcast). ~90% completitud. FF8: Phase 1-5 + Admin Settings + Mobile Responsive + Security hardening + SEO complete.*
+*Última actualización: 25 Mar 2026 — SAM: SDK migrated to google-genai + langchain-google-genai 2.1.12. thought_signature fallback. Multiplayer attribution fix (current message prefix). ~90-95% completitud. FF8: Phase 1-5 + Admin Settings + Mobile Responsive + Security hardening + SEO complete.*

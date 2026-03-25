@@ -151,10 +151,10 @@ a7cd70d Fix: Pin LangChain dependencies + remove unused langchain-openai
 - Dados funcionan desde ambas cuentas
 - Bug pendiente: mensajes duplicados intermitentes en pantalla del sender
 
-**Bugs conocidos (no resueltos):**
-- Error intermitente `thought_signature` de Gemini API — no reproducible localmente, probablemente transitorio de Google
-- Mensajes duplicados en pantalla del sender — deduplicación mejorada pero no 100% eliminada
-- Auto-creación de perfil para usuarios nuevos — requiere trigger en Supabase o endpoint dedicado
+**Bugs conocidos (resueltos sesión 25 Mar):**
+- ~~Error intermitente `thought_signature` de Gemini API~~ — ✅ Resuelto: SDK migrado a `google-genai` + `langchain-google-genai==2.1.12` + fallback sin tools
+- ~~Mensajes duplicados en pantalla del sender~~ — ✅ Resuelto: eliminado optimistic update, mensajes solo via Realtime
+- Auto-creación de perfil para usuarios nuevos — pendiente (trigger en Supabase o endpoint)
 
 ### Commits en main (19 Mar 2026)
 ```
@@ -187,6 +187,34 @@ f90688c Fix: Party roster currentUserId timing + auth guard for campaign charact
 b1eb562 Docs: Update progress log — multiplayer MVP, PDF upload, session 19 Mar 2026
 ```
 
+### Sesión 25 Mar 2026 — SDK Migration, Attribution Fix, Gemini Resilience
+
+**Refactor mayor: google-generativeai (legacy) → google-genai (new SDK)**
+
+El SDK legacy `google-generativeai` tenía un conflicto de dependencias con `langchain-google-genai>=2.1` (ambos pineaban `google-ai-generativelanguage` a versiones incompatibles). Migración completa a `google-genai` (el SDK nuevo de Google):
+
+1. **`ai.py`** — `genai.configure()` → `genai.Client()`. `genai.embed_content()` → `client.models.embed_content()`. `genai.GenerativeModel().generate_content()` → `client.models.generate_content()` con `types.Part.from_bytes()` para PDF multimodal. Modelo PDF actualizado a `gemini-2.5-flash`.
+2. **`ingestion.py`** — Misma migración de embeddings. Batch results: `[e.values for e in response.embeddings]`.
+3. **`compendium_tools.py`** — Misma migración. `response.embeddings[0].values`.
+
+**Dependencias actualizadas:**
+- `langchain-google-genai` 2.0.10 → **2.1.12** (soporta `thought_signature`)
+- `google-generativeai>=0.8,<0.9` → **`google-genai`** (nuevo SDK)
+- `google-generativeai` eliminado completamente
+
+**Bug Fixes:**
+1. **Mensaje actual sin atribución** — `generate_response()` ahora recibe `sender_name` y prefixea el mensaje actual: `[CharacterName]: message`. Antes solo el historial tenía prefix.
+2. **Fallback `thought_signature`** — Si Gemini falla con `thought_signature` o `functionCall` al usar tools, reintenta sin tools con historial limpio (sin `ToolMessage` ni `AIMessage` con tool calls). Cubre tanto la invocación inicial como el tool loop.
+
+### Commits en main (25 Mar 2026)
+```
+26d2e29 Fix: Clean tool-related messages from history before no-tools fallback
+6b7d256 Fix: Fallback to no-tools response when Gemini thought_signature error occurs
+407f1cf Refactor: Migrate from google-generativeai (legacy) to google-genai (new SDK) + upgrade langchain-google-genai to 2.1.12
+48ed864 Fix: Prefix current user message with character name for multiplayer attribution
+cad16de Docs: Update progress log — multiplayer polish, roster, dedup, admin commands
+```
+
 ## 4. Estado Actual — Marzo 2026
 
 ### Lo que funciona
@@ -211,9 +239,12 @@ b1eb562 Docs: Update progress log — multiplayer MVP, PDF upload, session 19 Ma
 - **Party roster:** sidebar muestra otros personajes de la campaña con HP status
 - **Admin commands GM-only:** `/reset`, `/checkpoint`, `/load`, `/list` solo para GM
 - **Reset broadcast:** sincroniza limpieza de chat a todos los clientes via Realtime
-- **SAM multiplayer-aware:** distingue jugadores por nombre, no controla personajes ajenos
+- **SAM multiplayer-aware:** distingue jugadores por nombre (prefix `[CharacterName]` en mensaje actual + historial), no controla personajes ajenos
+- **SDK migrado:** `google-genai` (nuevo SDK) reemplaza `google-generativeai` (legacy). Sin conflictos de dependencias.
+- **Gemini resilience:** Fallback automático sin tools cuando `thought_signature` error ocurre. Historial limpio (sin ToolMessage) antes de reintentar.
+- **`langchain-google-genai` 2.1.12:** Soporta `thought_signature` nativamente.
 
-### Completitud: ~90%
+### Completitud: ~90-95%
 
 ### Pendiente para "done"
 - Auto-creación de perfil para usuarios nuevos (trigger Supabase)
@@ -260,4 +291,4 @@ b1eb562 Docs: Update progress log — multiplayer MVP, PDF upload, session 19 Ma
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 24 Mar 2026*
+*Última actualización: 25 Mar 2026*
