@@ -259,7 +259,12 @@ class AIHelper:
             except Exception as tool_error:
                 if "thought_signature" in str(tool_error) or "functionCall" in str(tool_error):
                     print(f"⚠️ Tool calling failed, retrying without tools: {tool_error}")
-                    ai_msg = self.llm.invoke(messages)
+                    clean_messages = [
+                        m for m in messages
+                        if isinstance(m, (SystemMessage, HumanMessage))
+                        or (isinstance(m, AIMessage) and not getattr(m, 'tool_calls', None))
+                    ]
+                    ai_msg = self.llm.invoke(clean_messages)
                 else:
                     raise tool_error
 
@@ -300,7 +305,12 @@ class AIHelper:
                 except Exception as tool_error:
                     if "thought_signature" in str(tool_error) or "functionCall" in str(tool_error):
                         print(f"⚠️ Tool loop failed, falling back without tools: {tool_error}")
-                        ai_msg = self.llm.invoke(messages)
+                        clean_messages = [
+                            m for m in messages
+                            if isinstance(m, (SystemMessage, HumanMessage))
+                            or (isinstance(m, AIMessage) and not getattr(m, 'tool_calls', None))
+                        ]
+                        ai_msg = self.llm.invoke(clean_messages)
                         break
                     else:
                         raise tool_error
