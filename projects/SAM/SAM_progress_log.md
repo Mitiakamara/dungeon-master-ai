@@ -205,18 +205,24 @@ El SDK legacy `google-generativeai` tenía un conflicto de dependencias con `lan
 **Bug Fixes:**
 1. **Mensaje actual sin atribución** — `generate_response()` ahora recibe `sender_name` y prefixea el mensaje actual: `[CharacterName]: message`. Antes solo el historial tenía prefix.
 2. **Fallback `thought_signature`** — Si Gemini falla con `thought_signature` o `functionCall` al usar tools, reintenta sin tools con historial limpio (sin `ToolMessage` ni `AIMessage` con tool calls). Cubre tanto la invocación inicial como el tool loop.
-
-**System prompt update:**
-- **HP UPDATES refactored** — Tools son ahora "preferred" en vez de "mandatory". Si tools no están disponibles (fallback), SAM calcula y genera `<UPDATE>` y `<LOOT>` tags inline directamente. El frontend ya parsea estos tags sin importar si vienen de tools o inline. Esto completa el circuito de resiliencia: SDK nuevo → fallback sin tools → tags inline → frontend los procesa.
+3. **Inyección de tool results en fallback** — Cuando los tools se ejecutan exitosamente (ej: `apply_damage` genera `<UPDATE>` tag) pero Gemini falla al reinvocar, los tool results capturados se inyectan en el response del fallback. Esto preserva los tags `<UPDATE>`/`<LOOT>` para que el frontend los procese.
+4. **Campos de status duplicados (hp vs hp_current, wallet vs money)** — El PDF import generaba `hp` y `wallet`, pero el game loop usa `hp_current` y `money`. Fix: post-procesamiento en `parse_character_pdf()` normaliza campos. Migration script ejecutado para personajes existentes (Baol Gortsh + fekas). Frontend con fallback `hp_current ?? hp` como safety net.
+5. **Ghost items en inventario** — Items sin campo `item` eliminados por migration script (1 ghost item removido de Baol).
+6. **System prompt HP UPDATES** — Tools ahora "preferred" en vez de "mandatory". Ejemplo explícito de formato `<UPDATE>` tag. SAM instruido a generar tags inline cuando tools fallan.
 
 ### Commits en main (25 Mar 2026)
 ```
+de895a9 fix: inject captured tool results into fallback response to preserve UPDATE/LOOT tags
+039d20e fix: normalize status field names (hp→hp_current, wallet→money) + migration script
+9895d70 fix: reinforce UPDATE tag format in system prompt with explicit example
 9110278 fix: fallback tool execution via inline XML tags in system prompt
 26d2e29 Fix: Clean tool-related messages from history before no-tools fallback
 6b7d256 Fix: Fallback to no-tools response when Gemini thought_signature error occurs
 407f1cf Refactor: Migrate from google-generativeai (legacy) to google-genai (new SDK) + upgrade langchain-google-genai to 2.1.12
 48ed864 Fix: Prefix current user message with character name for multiplayer attribution
 cad16de Docs: Update progress log — multiplayer polish, roster, dedup, admin commands
+ddcc42c Docs: Update progress log — SDK migration, attribution fix, Gemini resilience (25 Mar 2026)
+0892873 Docs: Update progress log — inline XML fallback, session 25 Mar 2026
 ```
 
 ## 4. Estado Actual — Marzo 2026
@@ -245,10 +251,10 @@ cad16de Docs: Update progress log — multiplayer polish, roster, dedup, admin c
 - **Reset broadcast:** sincroniza limpieza de chat a todos los clientes via Realtime
 - **SAM multiplayer-aware:** distingue jugadores por nombre (prefix `[CharacterName]` en mensaje actual + historial), no controla personajes ajenos
 - **SDK migrado:** `google-genai` (nuevo SDK) reemplaza `google-generativeai` (legacy). Sin conflictos de dependencias.
-- **Gemini resilience:** Fallback automático sin tools cuando `thought_signature` error ocurre. Historial limpio (sin ToolMessage) antes de reintentar. System prompt instruye a SAM a generar tags `<UPDATE>`/`<LOOT>` inline cuando tools no están disponibles.
-- **`langchain-google-genai` 2.1.12:** Soporta `thought_signature` nativamente.
+- **Gemini resilience (3 capas):** (1) SDK nuevo `langchain-google-genai==2.1.12` soporta `thought_signature`. (2) Fallback sin tools con historial limpio + system prompt instruye tags inline. (3) Tool results capturados se inyectan en fallback response.
+- **Status fields normalizados:** `hp→hp_current`, `wallet→money` en PDF import + migration script. Frontend con fallback defensivo `hp_current ?? hp`.
 
-### Completitud: ~90-95%
+### Completitud: ~95%
 
 ### Pendiente para "done"
 - Auto-creación de perfil para usuarios nuevos (trigger Supabase)
@@ -295,4 +301,4 @@ cad16de Docs: Update progress log — multiplayer polish, roster, dedup, admin c
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 25 Mar 2026*
+*Última actualización: 25 Mar 2026 — SDK migration, Gemini resilience (3 layers), status field normalization, tool result injection*

@@ -228,10 +228,12 @@ lucide-react, sonner, next-themes
 ### Estado actual (Mar 2026)
 - Backend live en Render (`https://sam-backend-mg0j.onrender.com`), Root Directory: `projects/SAM/backend`
 - Frontend en Vercel (`sam-weld-tau.vercel.app`) — config Root Directory: `projects/SAM/frontend`
-- 35+ commits en main (último: `9110278`, 25 Mar 2026)
+- 40+ commits en main (último: `de895a9`, 25 Mar 2026)
 - **Single-player funcional y testeado:** login → personaje → chat → dados → loot → XP → checkpoints
 - **Upload PDF de módulos:** GM-only, vectoriza con gemini-embedding-001 (768d) y almacena en Supabase para RAG
-- **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado. `langchain-google-genai==2.1.12` para `ChatGoogleGenerativeAI` (LLM) con soporte nativo para `thought_signature`. Fallback sin tools cuando Gemini falla con tool calling. System prompt instruye generación inline de `<UPDATE>`/`<LOOT>` tags cuando tools no disponibles.
+- **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado. `langchain-google-genai==2.1.12` para `ChatGoogleGenerativeAI` (LLM) con soporte nativo para `thought_signature`.
+- **Gemini resilience (3 capas):** (1) SDK nuevo soporta `thought_signature`. (2) Fallback sin tools con historial limpio + system prompt genera tags inline. (3) Tool results capturados se inyectan en fallback response para preservar `<UPDATE>`/`<LOOT>` tags.
+- **Status fields normalizados:** `hp→hp_current`, `wallet→money` en PDF import + migration script ejecutado. Frontend con fallback defensivo `hp_current ?? hp`. Ghost items eliminados del inventario.
 - **Multiplayer MVP implementado y testeado (sesiones 18-24 Mar):**
   - `fetchHistory()` filtra por `campaign_id` — cada jugador solo ve mensajes de su campaña
   - `useRealtime` messages filtrado: `filter: 'campaign_id=eq.{id}'`, `enabled: !!campaignId`
@@ -247,7 +249,7 @@ lucide-react, sonner, next-themes
   - Admin commands (`/reset`, `/checkpoint`, `/load`, `/list`) restringidos a GM only
   - `/reset` broadcast: inserta system message con `<ACTION>CLEAR_CHAT</ACTION>` para sincronizar todos los clientes
 - **Multiplayer pendiente:** membership table, presence indicators, commlink recipients, campaign join/invite
-- **Completitud: ~90-95%**
+- **Completitud: ~95%**
 - Ver `SAM_progress_log.md` para detalle completo
 
 ---
@@ -773,4 +775,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 25 Mar 2026 — SAM: SDK migrated to google-genai + langchain-google-genai 2.1.12. thought_signature fallback. Multiplayer attribution fix (current message prefix). ~90-95% completitud. FF8: Phase 1-5 + Admin Settings + Mobile Responsive + Security hardening + SEO complete.*
+*Última actualización: 25 Mar 2026 — SAM: SDK migration, Gemini resilience (3 layers), status field normalization (hp→hp_current, wallet→money), tool result injection in fallback. ~95% completitud. FF8: Phase 1-5 + Admin Settings + Mobile Responsive + Security hardening + SEO complete.*
