@@ -254,8 +254,15 @@ class AIHelper:
             messages.append(SystemMessage(content="REMINDER: If this action changes HP, you MUST output the <UPDATE> tag at the end. Example: <UPDATE>{\"status\": {\"hp_current\": 15}}</UPDATE>"))
             
             # 3. Gemini Inference (With Tools)
-            ai_msg = self.llm_with_tools.invoke(messages)
-            
+            try:
+                ai_msg = self.llm_with_tools.invoke(messages)
+            except Exception as tool_error:
+                if "thought_signature" in str(tool_error) or "functionCall" in str(tool_error):
+                    print(f"⚠️ Tool calling failed, retrying without tools: {tool_error}")
+                    ai_msg = self.llm.invoke(messages)
+                else:
+                    raise tool_error
+
             MAX_TOOL_ITERATIONS = 3
             tool_iterations = 0
 
@@ -288,7 +295,15 @@ class AIHelper:
                     messages.append(ToolMessage(tool_call_id=tool_id, content=str(tool_output)))
                 
                 # Next Pass: AI sees tool output and answers (or calls another tool)
-                ai_msg = self.llm_with_tools.invoke(messages)
+                try:
+                    ai_msg = self.llm_with_tools.invoke(messages)
+                except Exception as tool_error:
+                    if "thought_signature" in str(tool_error) or "functionCall" in str(tool_error):
+                        print(f"⚠️ Tool loop failed, falling back without tools: {tool_error}")
+                        ai_msg = self.llm.invoke(messages)
+                        break
+                    else:
+                        raise tool_error
             
             ai_response = ai_msg.content
             
