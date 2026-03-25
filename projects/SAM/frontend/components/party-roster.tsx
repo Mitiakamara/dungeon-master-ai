@@ -13,6 +13,7 @@ interface PartyMember {
     image_url?: string
     user_id: string
     status?: {
+        hp?: number
         hp_current?: number
         hp_max?: number
     }
@@ -66,7 +67,7 @@ export function PartyRoster({ campaignId, currentUserId }: { campaignId?: string
             ) : (
                 <div className="space-y-1.5">
                     {party.map((member) => {
-                        const hpCurrent = member.status?.hp_current ?? 0
+                        const hpCurrent = member.status?.hp_current ?? member.status?.hp ?? 0
                         const hpMax = member.status?.hp_max ?? 0
 
                         return (

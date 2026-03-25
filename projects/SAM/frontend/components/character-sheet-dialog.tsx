@@ -74,7 +74,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                 level: character.level || 1,
                 stats: character.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
                 status: {
-                    hp_current: character.status?.hp_current || 0,
+                    hp_current: character.status?.hp_current ?? character.status?.hp ?? 0,
                     hp_max: character.status?.hp_max || 10,
                     temp_hp: character.status?.temp_hp || 0,
                     ac: character.status?.ac || 10,

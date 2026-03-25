@@ -471,7 +471,8 @@ export function ChatInterface({
             let charContext = "No character selected."
             if (selectedCharacter) {
                 const s = selectedCharacter.status || {};
-                const hp = s.hp_current !== undefined ? `HP: ${s.hp_current}/${s.hp_max}` : 'HP: Unknown';
+                const hpVal = s.hp_current ?? s.hp;
+                const hp = hpVal !== undefined ? `HP: ${hpVal}/${s.hp_max}` : 'HP: Unknown';
                 const ac = s.ac ? `AC: ${s.ac}` : 'AC: Unknown';
 
                 // Format Inventory

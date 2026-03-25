@@ -145,7 +145,7 @@ export function CharacterList({
 
                         {characters.map((char: any) => {
                             const isSelected = char.id === selectedId
-                            const hpCurrent = char.status?.hp_current ?? 0
+                            const hpCurrent = char.status?.hp_current ?? char.status?.hp ?? 0
                             const hpMax = char.status?.hp_max ?? 10
                             const ac = char.status?.ac ?? char.stats?.armor_class ?? 10
 

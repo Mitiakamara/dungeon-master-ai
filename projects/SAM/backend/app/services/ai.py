@@ -519,7 +519,21 @@ class AIHelper:
             log("Attempting `json.loads`...")
             data = json.loads(text)
             log("JSON parsed successfully.")
-            
+
+            # Normalize status field names (Gemini sometimes returns hp instead of hp_current)
+            if "status" in data and isinstance(data["status"], dict):
+                st = data["status"]
+                if "hp" in st and "hp_current" not in st:
+                    st["hp_current"] = st.pop("hp")
+                    log(f"Normalized: hp → hp_current = {st['hp_current']}")
+                elif "hp" in st and "hp_current" in st:
+                    st.pop("hp")  # Remove duplicate
+                if "wallet" in st and "money" not in st:
+                    st["money"] = st.pop("wallet")
+                    log(f"Normalized: wallet → money")
+                elif "wallet" in st and "money" in st:
+                    st.pop("wallet")  # Remove duplicate
+
             # Auto-generate Avatar (DiceBear Adventurer)
             # Uses Name+Race+Class as seed for consistent generation without API costs
             if "name" in data:
