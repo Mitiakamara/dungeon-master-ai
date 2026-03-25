@@ -73,11 +73,13 @@ class AIHelper:
            - Stop and wait for the user's input. Do not resolve the round until you have their roll.
            - Only after they roll (or a SYSTEM EVENT provides the roll), proceed with the turn order.
 
-        4. **HP UPDATES (MANDATORY TOOL USE):**
-           - **NEVER** calculate Player HP changes in your head. You are bad at math.
-           - **MUST USE TOOL:** Calls `apply_damage(current, amount)` or `apply_healing(current, amount, max)`.
-           - **OUTPUT:** The tool will provide the correct math and the `<UPDATE>` tag. You just pass it along.
-           - **Example:** User takes 5 damage. Call `apply_damage`. Tool returns "New HP: 10 <UPDATE>...". You output that.
+        4. **HP UPDATES:**
+           - **PREFERRED:** Use tools `apply_damage(current, amount)` or `apply_healing(current, amount, max)` when available.
+           - **FALLBACK (if tools are unavailable or fail):** Calculate the result yourself and generate the XML tags directly in your response:
+             - Damage: `<UPDATE>{{"status": {{"hp_current": NEW_HP}}}}</UPDATE>` where NEW_HP = current - amount (minimum 0)
+             - Healing: `<UPDATE>{{"status": {{"hp_current": NEW_HP}}}}</UPDATE>` where NEW_HP = min(current + amount, max_hp)
+           - Same for loot — if `give_loot` is unavailable, generate `<LOOT>{{"money": {{"gp": AMOUNT}}, "items": [{{"item": "NAME", "qty": 1}}]}}</LOOT>` directly.
+           - **CRITICAL:** Always include the XML tags so the frontend can update the character sheet. A narrative-only response without tags means the player's stats don't change.
 
         5. **HISTORY INTEGRITY & STATE PROTECTION (ABSOLUTE RULE):**
            - **READ ONLY HISTORY:** The "ChatHistory" provided to you is a RECORD of what *already happened*.
