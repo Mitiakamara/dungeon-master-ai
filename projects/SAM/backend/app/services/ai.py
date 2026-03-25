@@ -320,7 +320,16 @@ class AIHelper:
                         raise tool_error
             
             ai_response = ai_msg.content
-            
+
+            # Inject captured tool results into fallback response (preserves UPDATE/LOOT tags from executed tools)
+            captured_tool_results = [
+                m.content for m in messages
+                if isinstance(m, ToolMessage)
+            ]
+            if captured_tool_results:
+                print(f"📦 Injecting {len(captured_tool_results)} captured tool results into response")
+                ai_response = (ai_response or "") + " " + " ".join(captured_tool_results)
+
             # FAIL-SAFE: If AI returns empty content (e.g. tool loop failed or safety block), prevent "Mute"
             if not ai_response or (isinstance(ai_response, str) and not ai_response.strip()):
                  ai_response = "*(S.A.M. stares at you blankly, then taps the microphone.)* 'Is this thing on? My neural pathways jammed. Say that again?' (System Error: Empty AI Response)"
