@@ -228,10 +228,10 @@ lucide-react, sonner, next-themes
 ### Estado actual (Mar 2026)
 - Backend live en Render (`https://sam-backend-mg0j.onrender.com`), Root Directory: `projects/SAM/backend`
 - Frontend en Vercel (`sam-weld-tau.vercel.app`) — config Root Directory: `projects/SAM/frontend`
-- 33+ commits en main (último: `26d2e29`, 25 Mar 2026)
+- 35+ commits en main (último: `9110278`, 25 Mar 2026)
 - **Single-player funcional y testeado:** login → personaje → chat → dados → loot → XP → checkpoints
 - **Upload PDF de módulos:** GM-only, vectoriza con gemini-embedding-001 (768d) y almacena en Supabase para RAG
-- **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado. `langchain-google-genai==2.1.12` para `ChatGoogleGenerativeAI` (LLM) con soporte nativo para `thought_signature`. Fallback sin tools cuando Gemini falla con tool calling.
+- **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado. `langchain-google-genai==2.1.12` para `ChatGoogleGenerativeAI` (LLM) con soporte nativo para `thought_signature`. Fallback sin tools cuando Gemini falla con tool calling. System prompt instruye generación inline de `<UPDATE>`/`<LOOT>` tags cuando tools no disponibles.
 - **Multiplayer MVP implementado y testeado (sesiones 18-24 Mar):**
   - `fetchHistory()` filtra por `campaign_id` — cada jugador solo ve mensajes de su campaña
   - `useRealtime` messages filtrado: `filter: 'campaign_id=eq.{id}'`, `enabled: !!campaignId`

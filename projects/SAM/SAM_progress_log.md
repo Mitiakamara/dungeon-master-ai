@@ -206,8 +206,12 @@ El SDK legacy `google-generativeai` tenía un conflicto de dependencias con `lan
 1. **Mensaje actual sin atribución** — `generate_response()` ahora recibe `sender_name` y prefixea el mensaje actual: `[CharacterName]: message`. Antes solo el historial tenía prefix.
 2. **Fallback `thought_signature`** — Si Gemini falla con `thought_signature` o `functionCall` al usar tools, reintenta sin tools con historial limpio (sin `ToolMessage` ni `AIMessage` con tool calls). Cubre tanto la invocación inicial como el tool loop.
 
+**System prompt update:**
+- **HP UPDATES refactored** — Tools son ahora "preferred" en vez de "mandatory". Si tools no están disponibles (fallback), SAM calcula y genera `<UPDATE>` y `<LOOT>` tags inline directamente. El frontend ya parsea estos tags sin importar si vienen de tools o inline. Esto completa el circuito de resiliencia: SDK nuevo → fallback sin tools → tags inline → frontend los procesa.
+
 ### Commits en main (25 Mar 2026)
 ```
+9110278 fix: fallback tool execution via inline XML tags in system prompt
 26d2e29 Fix: Clean tool-related messages from history before no-tools fallback
 6b7d256 Fix: Fallback to no-tools response when Gemini thought_signature error occurs
 407f1cf Refactor: Migrate from google-generativeai (legacy) to google-genai (new SDK) + upgrade langchain-google-genai to 2.1.12
@@ -241,7 +245,7 @@ cad16de Docs: Update progress log — multiplayer polish, roster, dedup, admin c
 - **Reset broadcast:** sincroniza limpieza de chat a todos los clientes via Realtime
 - **SAM multiplayer-aware:** distingue jugadores por nombre (prefix `[CharacterName]` en mensaje actual + historial), no controla personajes ajenos
 - **SDK migrado:** `google-genai` (nuevo SDK) reemplaza `google-generativeai` (legacy). Sin conflictos de dependencias.
-- **Gemini resilience:** Fallback automático sin tools cuando `thought_signature` error ocurre. Historial limpio (sin ToolMessage) antes de reintentar.
+- **Gemini resilience:** Fallback automático sin tools cuando `thought_signature` error ocurre. Historial limpio (sin ToolMessage) antes de reintentar. System prompt instruye a SAM a generar tags `<UPDATE>`/`<LOOT>` inline cuando tools no están disponibles.
 - **`langchain-google-genai` 2.1.12:** Soporta `thought_signature` nativamente.
 
 ### Completitud: ~90-95%
