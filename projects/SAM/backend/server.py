@@ -116,9 +116,36 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 }
         
         print("DEBUG: proceeding to AI generation...")
+
+        # Fetch recent messages from DB instead of trusting frontend history
+        db_history = []
+        if cid:
+            try:
+                db_history_response = sam_brain.supabase.table("messages") \
+                    .select("role, content, metadata, sender_id") \
+                    .eq("campaign_id", cid) \
+                    .order("created_at", desc=True) \
+                    .limit(20) \
+                    .execute()
+                if db_history_response.data:
+                    db_history = list(reversed(db_history_response.data))
+                    # Map DB format to generate_response format
+                    db_history = [
+                        {
+                            "role": msg.get("role", "user"),
+                            "content": msg.get("content", ""),
+                            "sender_name": (msg.get("metadata") or {}).get("character_name", "") if msg.get("sender_id") else "S.A.M.",
+                        }
+                        for msg in db_history
+                    ]
+                print(f"📜 DB History: {len(db_history)} messages for campaign {cid}")
+            except Exception as hist_e:
+                print(f"WARNING: DB history fetch failed, falling back to frontend history: {hist_e}")
+                db_history = request.history
+
         response = sam_brain.generate_response(
             request.message,
-            request.history,
+            db_history if db_history else request.history,
             request.character_context,
             sender_name=char_name
         )
