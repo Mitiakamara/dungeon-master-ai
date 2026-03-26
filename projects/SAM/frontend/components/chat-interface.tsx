@@ -43,8 +43,10 @@ function stripSystemTags(content: string): string {
         .replace(/<EVENT>[\s\S]*?<\/EVENT>/g, '')
         .replace(/<ACTION>[\s\S]*?<\/ACTION>/g, '')
         .replace(/<IMAGE>[\s\S]*?<\/IMAGE>/g, '')
+        .replace(/<COMBAT>[\s\S]*?<\/COMBAT>/g, '')
         .replace(/<\/?LOOT>/g, '')
         .replace(/<\/?UPDATE>/g, '')
+        .replace(/<\/?COMBAT>/g, '')
     // Gemini internal calculation text
     cleaned = cleaned.replace(/Calculation:\s*-?\d+[\s]*[-+*/][\s]*-?\d+[\s]*=[\s]*-?\d+\.?/gi, '')
     // Failed search results

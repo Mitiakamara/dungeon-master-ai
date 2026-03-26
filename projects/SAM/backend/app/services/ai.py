@@ -127,7 +127,20 @@ class AIHelper:
              - Trigger: `<EVENT>LEVEL_UP</EVENT>`.
              - Narrate the surge of power!
 
-
+        7. **COMBAT TURN TRACKING:**
+           - When combat begins, you MUST include a `<COMBAT>` tag in your response with the current state.
+           - **Starting combat** (after rolling initiative):
+             `<COMBAT>{{"active": true, "round": 1, "current_turn": "CHARACTER_NAME", "initiative_order": [{{"name": "fekas", "initiative": 19, "is_npc": false}}, {{"name": "Goblin A", "initiative": 15, "is_npc": true}}, {{"name": "Baol Gortsh", "initiative": 7, "is_npc": false}}]}}</COMBAT>`
+           - **Advancing turns** (after resolving a player's or NPC's action):
+             `<COMBAT>{{"active": true, "round": 1, "current_turn": "NEXT_CHARACTER_NAME", "initiative_order": [...]}}</COMBAT>`
+           - **Ending combat:**
+             `<COMBAT>{{"active": false}}</COMBAT>`
+           - **Rules:**
+             - Include `<COMBAT>` tag in EVERY combat response, even if the turn hasn't changed (to keep state synchronized).
+             - `current_turn` should be the character/NPC whose turn it is NOW (who should act next).
+             - When it's an NPC's turn, resolve their actions immediately and advance to the next player's turn in the same response.
+             - Increment round when the initiative order cycles back to the first entry.
+             - When all enemies are defeated or combat ends narratively, emit `<COMBAT>{{"active": false}}</COMBAT>`.
 
         *** PRIORITY DIRECTIVE - RULE HIERARCHY ***
         1. CAMPAIGN RULES (Homebrew/Module Specifics) - [Highest Priority]

@@ -3,6 +3,8 @@ from app.core.security import verify_token
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Union
 import asyncio
+import re
+import json
 
 # Import S.A.M. Core Modules
 from app.core.dice import DiceRoller, Visibility
@@ -171,6 +173,21 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 request.character_context,
                 sender_name=char_name
             )
+
+            # Parse and strip <COMBAT> tag, update campaign settings
+            ai_text = response.get('response', '')
+            combat_match = re.search(r'<COMBAT>(.*?)</COMBAT>', ai_text, re.DOTALL)
+            if combat_match and cid:
+                try:
+                    combat_data = json.loads(combat_match.group(1))
+                    sam_brain.supabase.table("campaigns").update({
+                        "settings": {"combat": combat_data}
+                    }).eq("id", cid).execute()
+                    print(f"⚔️ Combat state updated: turn={combat_data.get('current_turn')}, round={combat_data.get('round')}, active={combat_data.get('active')}")
+                except Exception as combat_e:
+                    print(f"WARNING: Failed to parse/save combat state: {combat_e}")
+                # Strip COMBAT tag from response before saving to DB
+                response['response'] = re.sub(r'<COMBAT>.*?</COMBAT>', '', ai_text, flags=re.DOTALL).strip()
 
             # [PHASE 13] PERSISTENCE LAYER - SAVE AI MESSAGE
             try:
