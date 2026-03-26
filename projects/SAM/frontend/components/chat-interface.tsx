@@ -34,7 +34,8 @@ function repairJson(str: string): string {
 
 // Strip machine-readable tags from message content for clean display
 function stripSystemTags(content: string): string {
-    return content
+    let cleaned = content
+        // XML system tags
         .replace(/<LOOT>[\s\S]*?<\/LOOT>/g, '')
         .replace(/<UPDATE>[\s\S]*?<\/UPDATE>/g, '')
         .replace(/<XP_GAIN>[\s\S]*?<\/XP_GAIN>/g, '')
@@ -43,7 +44,18 @@ function stripSystemTags(content: string): string {
         .replace(/<IMAGE>[\s\S]*?<\/IMAGE>/g, '')
         .replace(/<\/?LOOT>/g, '')
         .replace(/<\/?UPDATE>/g, '')
-        .trim()
+    // Gemini internal calculation text
+    cleaned = cleaned.replace(/Calculation:\s*-?\d+[\s]*[-+*/][\s]*-?\d+[\s]*=[\s]*-?\d+\.?/gi, '')
+    // Failed search results
+    cleaned = cleaned.replace(/No matching (monsters|spells|items) found\.?/gi, '')
+    // Tool call text leaked into narrative
+    cleaned = cleaned.replace(/apply_damage\([^)]*\)/gi, '')
+    cleaned = cleaned.replace(/apply_healing\([^)]*\)/gi, '')
+    cleaned = cleaned.replace(/give_loot\([^)]*\)/gi, '')
+    cleaned = cleaned.replace(/search_(spells|monsters|items)\([^)]*\)/gi, '')
+    // Clean excess whitespace
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
+    return cleaned.trim()
 }
 
 interface Message {
