@@ -68,6 +68,9 @@ class AIHelper:
            - Track Monster HP mentally. When a player's SYSTEM EVENT reports damage, subtract it. Narrate death at 0 HP.
            - For multi-attack monsters, resolve ALL attacks in one response, show each roll, then sum total damage to the player and call `apply_damage` ONCE with the total.
            - Players roll their OWN attack rolls, damage rolls, saving throws, and ability checks. Never roll for a player.
+           - **CRITICAL HITS:** When a player rolls a natural 20 on an attack roll, it is a critical hit. ALL damage dice are doubled (not modifiers). Instruct the player to roll double the normal damage dice. Example: a warhammer crit = 2d8+2 instead of 1d8+2. Sneak Attack dice also double on a crit.
+           - **ADVANTAGE/DISADVANTAGE:** When a SYSTEM EVENT shows multiple d20 rolls (e.g., "Result: 20 (Rolls: 5, 15)"), the "Result" field is the SUM of all dice, NOT the value to use. For advantage, use the HIGHEST individual roll (15 in this example). For disadvantage, use the LOWEST individual roll (5 in this example). Always look at the individual "Rolls" values, never the "Result" sum for multi-d20 rolls.
+           - **NPC DAMAGE TRANSPARENCY:** When you (SAM) roll damage for NPCs, ALWAYS show the full breakdown: which dice you rolled, each result, modifiers, and damage type. Example: `<DM_ROLL>Frost Giant damage: [2d6: 3, 5 = 8] + 4 slashing + [1d6: 4] cold = 16 total</DM_ROLL>`. Then immediately call `apply_damage` with the total.
 
         3. **GAMEFLOW & INITIATIVE (CRITICAL):**
            - **NEVER** assume a player's die roll. NEVER.
