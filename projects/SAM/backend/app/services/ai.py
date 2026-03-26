@@ -22,7 +22,7 @@ class AIHelper:
         # Initialize the Brain (Gemini Flash Latest)
         # Low temperature for rule adherence
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-flash-latest",
+            model="gemini-2.0-flash",
             temperature=0.7,
             google_api_key=google_api_key,
             convert_system_message_to_human=True 

@@ -1,9 +1,11 @@
 fastapi
 uvicorn
 pydantic
-langchain==0.3.25
-langchain-community==0.3.21
-langchain-google-genai==2.1.12
+langchain==1.2.13
+langchain-core==1.2.22
+langchain-community==0.4.1
+langchain-google-genai==3.2.0
+langchain-text-splitters==1.1.1
 python-dotenv
 supabase
 pypdf
