@@ -11,6 +11,7 @@ import { authenticatedFetch } from "@/lib/api"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useRealtime } from "@/hooks/use-realtime"
+import { useTypingIndicator } from "@/hooks/use-typing-indicator"
 
 // Helper: Attempt to repair truncated JSON from malformed AI tags
 function repairJson(str: string): string {
@@ -91,6 +92,9 @@ export function ChatInterface({
     const [isLoading, setIsLoading] = React.useState(false)
     const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
     const bottomRef = React.useRef<HTMLDivElement>(null)
+
+    // Typing indicator (Supabase Broadcast)
+    const { typingNames, sendTyping } = useTypingIndicator(campaignId || null, selectedCharacter?.name || null)
 
     // Debug Inspector State
     const [debugOpen, setDebugOpen] = React.useState(false)
@@ -713,12 +717,22 @@ export function ChatInterface({
                 <div ref={bottomRef} className="h-px w-full" />
             </div>
 
+            {/* Typing Indicator */}
+            {typingNames.length > 0 && (
+                <div className="px-6 py-1 text-sm text-muted-foreground italic animate-pulse">
+                    {typingNames.length === 1
+                        ? `${typingNames[0]} is typing...`
+                        : `${typingNames.join(', ')} are typing...`
+                    }
+                </div>
+            )}
+
             {/* Input Area */}
             <div className="p-4 border-t bg-background shrink-0">
                 <form onSubmit={(e) => handleSendMessage(e)} className="flex gap-4">
                     <Input
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={(e) => { setInput(e.target.value); sendTyping(); }}
                         placeholder="Describe tu acción..."
                         className="flex-1"
                         disabled={isLoading}
