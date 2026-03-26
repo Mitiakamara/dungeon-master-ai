@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from app.core.security import verify_token
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Union
+import asyncio
 
 # Import S.A.M. Core Modules
 from app.core.dice import DiceRoller, Visibility
@@ -36,6 +37,14 @@ class ChatRequest(BaseModel):
 class RollRequest(BaseModel):
     expression: str # e.g. "1d20+5"
     visibility: Visibility = Visibility.PUBLIC
+
+# Lock per campaign to prevent simultaneous SAM responses
+_campaign_locks: dict[str, asyncio.Lock] = {}
+
+def get_campaign_lock(campaign_id: str) -> asyncio.Lock:
+    if campaign_id not in _campaign_locks:
+        _campaign_locks[campaign_id] = asyncio.Lock()
+    return _campaign_locks[campaign_id]
 
 # --- Endpoints ---
 
@@ -117,56 +126,74 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         
         print("DEBUG: proceeding to AI generation...")
 
-        # Fetch recent messages from DB instead of trusting frontend history
-        db_history = []
-        if cid:
-            try:
-                db_history_response = sam_brain.supabase.table("messages") \
-                    .select("role, content, metadata, sender_id") \
-                    .eq("campaign_id", cid) \
-                    .order("created_at", desc=True) \
-                    .limit(20) \
-                    .execute()
-                if db_history_response.data:
-                    db_history = list(reversed(db_history_response.data))
-                    # Map DB format to generate_response format
-                    db_history = [
-                        {
-                            "role": msg.get("role", "user"),
-                            "content": msg.get("content", ""),
-                            "sender_name": (msg.get("metadata") or {}).get("character_name", "") if msg.get("sender_id") else "S.A.M.",
-                        }
-                        for msg in db_history
-                    ]
-                print(f"📜 DB History: {len(db_history)} messages for campaign {cid}")
-            except Exception as hist_e:
-                print(f"WARNING: DB history fetch failed, falling back to frontend history: {hist_e}")
-                db_history = request.history
+        # Acquire campaign lock to serialize SAM responses per campaign
+        lock = get_campaign_lock(cid) if cid else None
+        if lock:
+            await lock.acquire()
+            print(f"🔒 Lock acquired for campaign {cid}")
 
-        response = sam_brain.generate_response(
-            request.message,
-            db_history if db_history else request.history,
-            request.character_context,
-            sender_name=char_name
-        )
-        
-        # [PHASE 13] PERSISTENCE LAYER - SAVE AI MESSAGE
         try:
-             ai_payload = {
-                "role": "assistant",
-                "content": response['response'],
-                "image_url": response.get('image_url'),
-                "metadata": response.get('debug_info'),
-                "user_id": user_id 
-            }
-             if cid:
-                 ai_payload["campaign_id"] = cid
+            # Fetch recent messages from DB (INSIDE lock so second request sees updated history)
+            db_history = []
+            if cid:
+                try:
+                    db_history_response = sam_brain.supabase.table("messages") \
+                        .select("role, content, metadata, sender_id") \
+                        .eq("campaign_id", cid) \
+                        .order("created_at", desc=True) \
+                        .limit(21) \
+                        .execute()
+                    if db_history_response.data:
+                        raw_history = list(reversed(db_history_response.data))
+                        # Exclude the current user's message (already inserted above, will be passed as user_input)
+                        raw_history = [
+                            msg for msg in raw_history
+                            if not (msg.get("content") == request.message and msg.get("sender_id") == user_id
+                                    and msg == raw_history[-1])
+                        ]
+                        # Map DB format to generate_response format
+                        db_history = [
+                            {
+                                "role": msg.get("role", "user"),
+                                "content": msg.get("content", ""),
+                                "sender_name": (msg.get("metadata") or {}).get("character_name", "") if msg.get("sender_id") else "S.A.M.",
+                            }
+                            for msg in raw_history
+                        ]
+                    print(f"📜 DB History: {len(db_history)} messages for campaign {cid}")
+                except Exception as hist_e:
+                    print(f"WARNING: DB history fetch failed, falling back to frontend history: {hist_e}")
+                    db_history = request.history
 
-             sam_brain.supabase.table("messages").insert(ai_payload).execute()
-        except Exception as e:
-             print(f"FAILED TO SAVE AI MESSAGE: {e}")
+            response = sam_brain.generate_response(
+                request.message,
+                db_history if db_history else request.history,
+                request.character_context,
+                sender_name=char_name
+            )
 
-        return response # Returns {"response": "...", "image_url": "..."}
+            # [PHASE 13] PERSISTENCE LAYER - SAVE AI MESSAGE
+            try:
+                ai_payload = {
+                    "role": "assistant",
+                    "content": response['response'],
+                    "image_url": response.get('image_url'),
+                    "metadata": response.get('debug_info'),
+                    "user_id": user_id
+                }
+                if cid:
+                    ai_payload["campaign_id"] = cid
+
+                sam_brain.supabase.table("messages").insert(ai_payload).execute()
+            except Exception as e:
+                print(f"FAILED TO SAVE AI MESSAGE: {e}")
+
+            return response # Returns {"response": "...", "image_url": "..."}
+
+        finally:
+            if lock and lock.locked():
+                lock.release()
+                print(f"🔓 Lock released for campaign {cid}")
     except Exception as e:
         import traceback
         trace = traceback.format_exc()
