@@ -269,11 +269,13 @@ class AIHelper:
                         or (isinstance(m, AIMessage) and not getattr(m, 'tool_calls', None))
                     ]
                     ai_msg = self.llm.invoke(clean_messages)
+                    print("⚠️ First invocation failed, using no-tools fallback")
                 else:
                     raise tool_error
 
             MAX_TOOL_ITERATIONS = 3
             tool_iterations = 0
+            tool_loop_failed = False
 
             # Loop for multi-step tool execution (e.g. Search -> Calc -> Answer)
             while ai_msg.tool_calls and tool_iterations < MAX_TOOL_ITERATIONS:
@@ -309,6 +311,7 @@ class AIHelper:
                 except Exception as tool_error:
                     if "thought_signature" in str(tool_error) or "functionCall" in str(tool_error):
                         print(f"⚠️ Tool loop failed, falling back without tools: {tool_error}")
+                        tool_loop_failed = True
                         clean_messages = [
                             m for m in messages
                             if isinstance(m, (SystemMessage, HumanMessage))
@@ -321,14 +324,15 @@ class AIHelper:
             
             ai_response = ai_msg.content
 
-            # Inject captured tool results into fallback response (preserves UPDATE/LOOT tags from executed tools)
-            captured_tool_results = [
-                m.content for m in messages
-                if isinstance(m, ToolMessage)
-            ]
-            if captured_tool_results:
-                print(f"📦 Injecting {len(captured_tool_results)} captured tool results into response")
-                ai_response = (ai_response or "") + " " + " ".join(captured_tool_results)
+            # Inject captured tool results ONLY when tool loop failed (prevents duplication on success)
+            if tool_loop_failed:
+                captured_tool_results = [
+                    m.content for m in messages
+                    if isinstance(m, ToolMessage)
+                ]
+                if captured_tool_results:
+                    print(f"📦 Injecting {len(captured_tool_results)} captured tool results into fallback response")
+                    ai_response = (ai_response or "") + " " + " ".join(captured_tool_results)
 
             # FAIL-SAFE: If AI returns empty content (e.g. tool loop failed or safety block), prevent "Mute"
             if not ai_response or (isinstance(ai_response, str) and not ai_response.strip()):
