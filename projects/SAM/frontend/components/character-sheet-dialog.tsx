@@ -133,7 +133,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto p-3 sm:p-6">
                 <DialogHeader>
                     <div className="flex items-center justify-between mr-8">
                         <div>
@@ -149,17 +149,17 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                 </DialogHeader>
 
                 <Tabs defaultValue="main" className="w-full mt-2">
-                    <TabsList className="grid w-full grid-cols-5">
-                        <TabsTrigger value="main">Stats & Saves</TabsTrigger>
-                        <TabsTrigger value="combat">Combat & Attacks</TabsTrigger>
-                        <TabsTrigger value="spells">Spells</TabsTrigger>
-                        <TabsTrigger value="features">Features & Traits</TabsTrigger>
-                        <TabsTrigger value="bio">Bio & Gear</TabsTrigger>
+                    <TabsList className="flex w-full overflow-x-auto no-scrollbar">
+                        <TabsTrigger value="main" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-3">Stats</TabsTrigger>
+                        <TabsTrigger value="combat" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-3">Combat</TabsTrigger>
+                        <TabsTrigger value="spells" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-3">Spells</TabsTrigger>
+                        <TabsTrigger value="features" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-3">Features</TabsTrigger>
+                        <TabsTrigger value="bio" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-3">Bio & Gear</TabsTrigger>
                     </TabsList>
 
                     {/* --- TAB: MAIN (Ability Scores, Saves, Proficiencies) --- */}
                     <TabsContent value="main" className="space-y-6 py-4">
-                        <div className="grid grid-cols-6 gap-4">
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-4">
                             {/* Ability Scores */}
                             {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((stat) => {
                                 const score = formData.stats[stat]
@@ -308,22 +308,23 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                         <div className="space-y-2">
                             <Label className="text-base font-semibold">Weapon Attacks</Label>
                             {Array.isArray(formData.status.attacks) ? (
-                                <div className="border rounded-xl overflow-hidden">
-                                    <div className="grid grid-cols-12 bg-muted p-2 text-xs font-bold uppercase text-muted-foreground">
-                                        <div className="col-span-4">Name</div>
-                                        <div className="col-span-2 text-center">Bonus</div>
-                                        <div className="col-span-6">Damage / Type</div>
+                                <div className="border rounded-xl overflow-x-auto">
+                                    <div className="min-w-[400px]">
+                                        <div className="grid grid-cols-12 bg-muted p-2 text-xs font-bold uppercase text-muted-foreground">
+                                            <div className="col-span-4">Name</div>
+                                            <div className="col-span-2 text-center">Bonus</div>
+                                            <div className="col-span-6">Damage / Type</div>
+                                        </div>
+                                        <div className="divide-y">
+                                            {formData.status.attacks.map((atk: any, i: number) => (
+                                                <div key={i} className="grid grid-cols-12 p-3 text-sm items-center hover:bg-muted/10">
+                                                    <div className="col-span-4 font-bold">{atk.name}</div>
+                                                    <div className="col-span-2 text-center font-mono font-bold text-green-500">{atk.bonus}</div>
+                                                    <div className="col-span-6 font-mono text-xs">{atk.damage} {atk.type}</div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="divide-y">
-                                        {formData.status.attacks.map((atk: any, i: number) => (
-                                            <div key={i} className="grid grid-cols-12 p-3 text-sm items-center hover:bg-muted/10">
-                                                <div className="col-span-4 font-bold">{atk.name}</div>
-                                                <div className="col-span-2 text-center font-mono font-bold text-green-500">{atk.bonus}</div>
-                                                <div className="col-span-6 font-mono text-xs">{atk.damage} {atk.type}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {/* Fallback to Add Manual Attack if array is empty? For now just display. */}
                                 </div>
                             ) : (
                                 <Textarea
@@ -518,9 +519,9 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                         </div>
 
                         {/* Wallet Row */}
-                        <div className="p-3 bg-muted/20 border rounded-lg flex items-center justify-between gap-4">
+                        <div className="p-3 bg-muted/20 border rounded-lg space-y-2 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
                             <Label className="font-bold uppercase text-xs w-16">Wallet</Label>
-                            <div className="flex gap-2 flex-1">
+                            <div className="grid grid-cols-3 sm:flex gap-2 flex-1">
                                 {['cp', 'sp', 'ep', 'gp', 'pp'].map((coin) => (
                                     <div key={coin} className="flex items-center gap-1 bg-background border px-2 py-1 rounded-md flex-1">
                                         <span className="uppercase text-[10px] font-bold text-muted-foreground">{coin}</span>
