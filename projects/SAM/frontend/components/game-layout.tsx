@@ -33,6 +33,7 @@ export default function GameLayout() {
     const [isGM, setIsGM] = useState(false)
     const [campaignName, setCampaignName] = useState<string>("")
     const [currentUserId, setCurrentUserId] = useState<string>("")
+    const [combatState, setCombatState] = useState<any>(null)
 
     // Derived campaign ID from selected character
     const campaignId = selectedCharacter?.campaign_id || ""
@@ -67,6 +68,7 @@ export default function GameLayout() {
                     console.log("🔑 GM Check:", { gm_id: campaign.gm_id, user_id: user.id, isGM: match })
                     setIsGM(match)
                     setCampaignName(campaign.name || "")
+                    setCombatState(campaign.settings?.combat || null)
                 } else {
                     console.log("🔑 GM Check: API returned", res.status)
                     setIsGM(false)
@@ -107,6 +109,20 @@ export default function GameLayout() {
 
                     return updated;
                 })
+            }
+        }
+    })
+
+    // Realtime Combat State Updates (campaigns table)
+    useRealtime({
+        table: 'campaigns',
+        event: 'UPDATE',
+        enabled: !!campaignId,
+        onData: (payload: any) => {
+            if (payload.new?.id === campaignId) {
+                const combat = payload.new.settings?.combat || null
+                console.log("⚔️ Combat state update:", combat)
+                setCombatState(combat)
             }
         }
     })
@@ -263,6 +279,7 @@ export default function GameLayout() {
                     campaignId={campaignId}
                     campaignName={campaignName}
                     isGM={isGM}
+                    combatState={combatState}
                     externalEvent={rollEvent}
                     onEventHandled={() => setRollEvent(null)}
                     onCharacterUpdate={handleCharacterUpdate}

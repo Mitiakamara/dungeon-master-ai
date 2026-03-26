@@ -77,6 +77,7 @@ export function ChatInterface({
     campaignId,
     campaignName,
     isGM,
+    combatState,
     externalEvent,
     onEventHandled,
     onCharacterUpdate
@@ -85,6 +86,7 @@ export function ChatInterface({
     campaignId?: string,
     campaignName?: string,
     isGM?: boolean,
+    combatState?: any,
     externalEvent?: string | null,
     onEventHandled?: () => void,
     onCharacterUpdate?: (updates: any) => void
@@ -97,6 +99,16 @@ export function ChatInterface({
 
     // Typing indicator (Supabase Broadcast)
     const { typingNames, sendTyping } = useTypingIndicator(campaignId || null, selectedCharacter?.name || null)
+
+    // Combat turn logic
+    const characterName = selectedCharacter?.name || null
+    const isInCombat = combatState?.active === true
+    const currentTurnEntry = combatState?.initiative_order?.find(
+        (e: any) => e.name === combatState.current_turn
+    )
+    const isNpcTurn = currentTurnEntry?.is_npc === true
+    const isMyTurn = !isInCombat || isNpcTurn || combatState?.current_turn === characterName
+    const turnMessage = isInCombat && !isMyTurn ? `${combatState.current_turn}'s turn` : null
 
     // Debug Inspector State
     const [debugOpen, setDebugOpen] = React.useState(false)
@@ -648,6 +660,31 @@ export function ChatInterface({
                 </div>
             </header>
 
+            {/* Combat Initiative Banner */}
+            {isInCombat && combatState.initiative_order && (
+                <div className="px-4 py-2 bg-red-900/20 border-b border-red-800/30 text-sm shrink-0">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-red-400 font-semibold">⚔️ Combat — Round {combatState.round}</span>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                        {combatState.initiative_order.map((entry: any, i: number) => (
+                            <span
+                                key={i}
+                                className={`px-2 py-0.5 rounded text-xs ${
+                                    entry.name === combatState.current_turn
+                                        ? 'bg-red-600 text-white font-bold'
+                                        : entry.is_npc
+                                            ? 'bg-gray-700 text-gray-400'
+                                            : 'bg-gray-800 text-gray-300'
+                                }`}
+                            >
+                                {entry.name} ({entry.initiative})
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
                 <div className="flex flex-col gap-6 pb-4">
@@ -735,11 +772,11 @@ export function ChatInterface({
                     <Input
                         value={input}
                         onChange={(e) => { setInput(e.target.value); sendTyping(); }}
-                        placeholder="Describe tu acción..."
+                        placeholder={turnMessage || "Describe tu acción..."}
                         className="flex-1"
-                        disabled={isLoading}
+                        disabled={isLoading || (isInCombat && !isMyTurn)}
                     />
-                    <Button type="submit" disabled={isLoading}>
+                    <Button type="submit" disabled={isLoading || (isInCombat && !isMyTurn)}>
                         <Send className="h-4 w-4" />
                     </Button>
                 </form>
