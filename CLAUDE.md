@@ -205,7 +205,7 @@ Supabase PostgreSQL + pgvector
 ```
 fastapi, uvicorn, pydantic
 supabase, pyjwt, python-dotenv
-langchain, langchain-google-genai==2.1.12, langchain-community
+langchain==1.2.13, langchain-google-genai==3.2.0, langchain-community==0.4.1
 google-genai
 pypdf, unstructured, python-multipart
 ```
@@ -228,27 +228,25 @@ lucide-react, sonner, next-themes
 ### Estado actual (Mar 2026)
 - Backend live en Render (`https://sam-backend-mg0j.onrender.com`), Root Directory: `projects/SAM/backend`
 - Frontend en Vercel (`sam-weld-tau.vercel.app`) — config Root Directory: `projects/SAM/frontend`
-- 40+ commits en main (último: `de895a9`, 25 Mar 2026)
+- 55+ commits en main (último: `0389543`, 26 Mar 2026)
 - **Single-player funcional y testeado:** login → personaje → chat → dados → loot → XP → checkpoints
 - **Upload PDF de módulos:** GM-only, vectoriza con gemini-embedding-001 (768d) y almacena en Supabase para RAG
-- **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado. `langchain-google-genai==2.1.12` para `ChatGoogleGenerativeAI` (LLM) con soporte nativo para `thought_signature`.
-- **Gemini resilience (3 capas):** (1) SDK nuevo soporta `thought_signature`. (2) Fallback sin tools con historial limpio + system prompt genera tags inline. (3) Tool results capturados se inyectan en fallback response para preservar `<UPDATE>`/`<LOOT>` tags.
-- **Status fields normalizados:** `hp→hp_current`, `wallet→money` en PDF import + migration script ejecutado. Frontend con fallback defensivo `hp_current ?? hp`. Ghost items eliminados del inventario.
-- **Multiplayer MVP implementado y testeado (sesiones 18-24 Mar):**
-  - `fetchHistory()` filtra por `campaign_id` — cada jugador solo ve mensajes de su campaña
-  - `useRealtime` messages filtrado: `filter: 'campaign_id=eq.{id}'`, `enabled: !!campaignId`
-  - Re-fetch automático al cambiar de campaña (limpia + recarga mensajes)
-  - Header dinámico: muestra nombre de campaña desde API
-  - `commlink-dialog.tsx` usa `campaignId` real (no hardcodeado)
-  - `character-create-dialog.tsx` con selector dropdown de campañas disponibles (`GET /api/campaigns/`)
-  - `campaignId` propagado desde `game-layout.tsx` a todos los componentes
-  - `sender_id` en mensajes, burbujas diferenciadas: propios (derecha), otros jugadores (azul, izquierda), SAM (izquierda, estilo original)
-  - SAM multiplayer-aware: historial con `[CharacterName]` prefix, MULTIPLAYER PROTOCOL en system prompt
-  - Party roster en sidebar: muestra otros personajes con HP coloreado (`GET /api/characters/campaign/{id}`)
-  - Sin optimistic update: mensajes llegan exclusivamente via Realtime (elimina duplicados)
-  - Admin commands (`/reset`, `/checkpoint`, `/load`, `/list`) restringidos a GM only
-  - `/reset` broadcast: inserta system message con `<ACTION>CLEAR_CHAT</ACTION>` para sincronizar todos los clientes
-- **Multiplayer pendiente:** membership table, presence indicators, commlink recipients, campaign join/invite
+- **LangChain 1.x stack:** `langchain==1.2.13`, `langchain-core==1.2.22`, `langchain-google-genai==3.2.0` (thought_signature support), `langchain-community==0.4.1`. Modelo: `gemini-2.5-flash` (pineado).
+- **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado.
+- **Gemini resilience (3 capas):** (1) `langchain-google-genai==3.2.0` soporta `thought_signature`. (2) Fallback sin tools con historial limpio + inline tags. (3) Tool results capturados se inyectan en fallback response.
+- **Context-aware prompting:** AI history se lee de BD (últimos 20 msgs por campaign_id) en vez de frontend. Campaign lock (`asyncio.Lock`) serializa respuestas de SAM por campaña.
+- **Combat turn tracking:** Tag `<COMBAT>` en system prompt → backend parsea y actualiza `campaigns.settings.combat` → frontend muestra initiative banner con turno actual resaltado, input bloqueado cuando no es tu turno (NPCs no bloquean).
+- **Multiplayer completo (sesiones 18-26 Mar):**
+  - Mensajes filtrados por campaign_id, Realtime scoped, header dinámico
+  - sender_id + burbujas diferenciadas (propios/otros/SAM), `[CharacterName]` prefix en AI prompt
+  - Selector de campaña, party roster con HP, commlink con campaignId real
+  - Sin optimistic update, dedup por id de BD
+  - Admin commands GM-only, `/reset` broadcast + clear combat state
+  - Typing indicator via Supabase Broadcast
+- **Status fields normalizados:** `hp→hp_current`, `wallet→money`. Migration script ejecutado.
+- **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile.
+- **stripSystemTags expandido:** Limpia Calculation lines, tool call text, `<COMBAT>` tags, failed search results.
+- **Multiplayer pendiente:** membership table, commlink recipients, campaign join/invite
 - **Completitud: ~95%**
 - Ver `SAM_progress_log.md` para detalle completo
 
@@ -775,4 +773,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 25 Mar 2026 — SAM: SDK migration, Gemini resilience (3 layers), status field normalization (hp→hp_current, wallet→money), tool result injection in fallback. ~95% completitud. FF8: Phase 1-5 + Admin Settings + Mobile Responsive + Security hardening + SEO complete.*
+*Última actualización: 26 Mar 2026 — SAM: LangChain 1.x upgrade, combat turn tracking (COMBAT tag + initiative banner + input lock), context-aware prompting (DB history + campaign lock), typing indicator, character sheet responsive, gemini-2.5-flash. ~95% completitud. FF8: Phase 1-5 + Admin Settings + Mobile Responsive + Security hardening + SEO complete.*

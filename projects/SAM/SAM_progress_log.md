@@ -225,6 +225,47 @@ ddcc42c Docs: Update progress log — SDK migration, attribution fix, Gemini res
 0892873 Docs: Update progress log — inline XML fallback, session 25 Mar 2026
 ```
 
+### Sesión 26 Mar 2026 — Combat System, Context-Aware Prompting, LangChain 1.x Upgrade, Mobile Responsive
+
+**Upgrade mayor: LangChain 0.3.x → 1.x**
+- `langchain` 0.3.25 → **1.2.13**, `langchain-core` → **1.2.22**, `langchain-google-genai` 2.1.12 → **3.2.0**, `langchain-community` 0.3.21 → **0.4.1**
+- Nuevo: `langchain-text-splitters==1.1.1`
+- Modelo pineado a `gemini-2.5-flash` (reemplaza `gemini-2.0-flash` deprecated y `gemini-flash-latest` alias dinámico)
+- `langchain-google-genai 3.2.0` soporta `thought_signature` nativamente para Gemini 2.5/3.x
+
+**Features implementados:**
+1. **Context-aware prompting** — AI history ahora se lee de la BD (últimos 20 mensajes por campaign_id) en vez del frontend. SAM siempre ve mensajes de todos los jugadores sin importar timing de Realtime.
+2. **Campaign lock** — `asyncio.Lock` por campaign_id serializa respuestas de SAM. Si dos jugadores envían mensajes simultáneamente, el segundo espera a que SAM termine de responder al primero.
+3. **Combat turn tracking** — Nuevo tag `<COMBAT>` en system prompt. SAM emite initiative order, turno actual, ronda. Backend parsea el tag y actualiza `campaigns.settings.combat`. Frontend escucha via Realtime.
+4. **Combat UI** — Banner de initiative order (rojo) encima del chat con turno actual resaltado. Input bloqueado cuando no es tu turno. NPCs no bloquean (SAM resuelve automáticamente).
+5. **Typing indicator** — Supabase Broadcast channel `typing:{campaignId}`. Throttle 2s, stale cleanup 4s. "`Baol Gortsh is typing...`" aparece para otros jugadores.
+6. **System prompt reforzado** — Combat rules: SAM tira TODOS los dados de NPCs con `<DM_ROLL>` transparente + `apply_damage` inmediato. Críticos (nat 20 = dados dobles). Advantage/disadvantage parsing de SYSTEM EVENTs. HP updates ahora MANDATORY tool use (no preferred).
+7. **Character sheet responsive** — Tabs scrollables en mobile, grids adaptativos (3 cols → 6 cols), tablas con scroll horizontal, padding compacto.
+8. **stripSystemTags expandido** — Limpia `Calculation:` lines, tool call text, failed search results, `<COMBAT>` tags del chat visible.
+
+**Bug Fixes:**
+1. **Duplicate message in DB history** — Fetch de BD incluía el mensaje actual del sender (ya insertado). Fix: excluir último mensaje si coincide con request.message.
+2. **`/reset` no limpiaba combat** — Agregado clear de `campaigns.settings` a `{}` en el reset.
+3. **`gemini-2.0-flash` deprecated** — Cambiado a `gemini-2.5-flash`.
+
+### Commits en main (26 Mar 2026)
+```
+0389543 fix: make character sheet dialog responsive for mobile
+1c4d96e fix: /reset now clears combat state from campaign settings
+aa73ee0 feat: combat turn lock — frontend initiative banner, input blocking, realtime sync
+776d7af feat: combat turn tracking — COMBAT tag parsing, campaign settings update, system prompt instructions
+42ddca0 fix: add critical hit rules, advantage/disadvantage parsing, NPC damage transparency
+3217903 fix: reinforce system prompt — mandatory apply_damage, DM rolls own NPC dice
+8e6517e feat: add campaign lock for response consolidation + fix duplicate message in history
+899dd1e feat: switch AI history from frontend to DB-sourced for context-aware prompting
+e89c8d7 feat: add typing indicator via Supabase Broadcast
+651dae5 fix: expand stripSystemTags to clean Calculation lines, tool call text
+7c02b81 fix: switch model to gemini-2.5-flash (2.0-flash deprecated)
+39697b9 chore: upgrade langchain stack to 1.x + langchain-google-genai 3.2.0
+f3b730f fix: conditional tool result injection (only on fallback) + first invocation logging
+692810c Docs: Update progress log — tool result injection, status normalization, Gemini resilience
+```
+
 ## 4. Estado Actual — Marzo 2026
 
 ### Lo que funciona
@@ -251,8 +292,13 @@ ddcc42c Docs: Update progress log — SDK migration, attribution fix, Gemini res
 - **Reset broadcast:** sincroniza limpieza de chat a todos los clientes via Realtime
 - **SAM multiplayer-aware:** distingue jugadores por nombre (prefix `[CharacterName]` en mensaje actual + historial), no controla personajes ajenos
 - **SDK migrado:** `google-genai` (nuevo SDK) reemplaza `google-generativeai` (legacy). Sin conflictos de dependencias.
-- **Gemini resilience (3 capas):** (1) SDK nuevo `langchain-google-genai==2.1.12` soporta `thought_signature`. (2) Fallback sin tools con historial limpio + system prompt instruye tags inline. (3) Tool results capturados se inyectan en fallback response.
+- **Gemini resilience (3 capas):** (1) `langchain-google-genai==3.2.0` soporta `thought_signature`. (2) Fallback sin tools con historial limpio + system prompt instruye tags inline. (3) Tool results capturados se inyectan en fallback response.
 - **Status fields normalizados:** `hp→hp_current`, `wallet→money` en PDF import + migration script. Frontend con fallback defensivo `hp_current ?? hp`.
+- **LangChain 1.x:** Stack completo actualizado (`langchain==1.2.13`, `langchain-core==1.2.22`, `langchain-google-genai==3.2.0`)
+- **Context-aware prompting:** AI history de BD (20 msgs) en vez de frontend. Campaign lock serializa respuestas.
+- **Combat turn tracking:** `<COMBAT>` tag → `campaigns.settings.combat`. Initiative banner, input blocking por turno.
+- **Typing indicator:** Supabase Broadcast, throttle 2s.
+- **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile.
 
 ### Completitud: ~95%
 
@@ -301,4 +347,4 @@ ddcc42c Docs: Update progress log — SDK migration, attribution fix, Gemini res
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 25 Mar 2026 — SDK migration, Gemini resilience (3 layers), status field normalization, tool result injection*
+*Última actualización: 26 Mar 2026 — LangChain 1.x upgrade, combat turn tracking, context-aware prompting, typing indicator, mobile responsive*
