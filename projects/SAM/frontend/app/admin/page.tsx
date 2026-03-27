@@ -8,12 +8,23 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import Link from "next/link"
 import {
     LogOut, Loader2, ShieldAlert, FileText, Upload, Ticket, Users,
-    Copy, X, RotateCcw, Save, List, Swords, Shield
+    Copy, X, RotateCcw, Save, List, Swords, Shield, Plus, Map
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
+
+interface Campaign {
+    id: string
+    name: string
+    description?: string
+    status: string
+    gm_id: string
+    settings: any
+    created_at: string
+}
 
 interface Invitation {
     id: string
@@ -23,7 +34,6 @@ interface Invitation {
     is_active: boolean
     expires_at: string | null
     created_at: string
-    campaign_id: string | null
 }
 
 interface Profile {
@@ -36,27 +46,36 @@ interface Profile {
 }
 
 export default function AdminPage() {
-    const [campaign, setCampaign] = useState<any>(null)
+    const [campaigns, setCampaigns] = useState<Campaign[]>([])
+    const [campaign, setCampaign] = useState<Campaign | null>(null)
+    const [playerCounts, setPlayerCounts] = useState<Record<string, number>>({})
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [currentUserId, setCurrentUserId] = useState<string>("")
 
-    // Module Upload State
+    // New Campaign Form
+    const [showNewCampaign, setShowNewCampaign] = useState(false)
+    const [newCampName, setNewCampName] = useState("")
+    const [newCampDesc, setNewCampDesc] = useState("")
+    const [creatingCampaign, setCreatingCampaign] = useState(false)
+
+    // Module Upload
     const [file, setFile] = useState<File | null>(null)
     const [uploading, setUploading] = useState(false)
 
-    // Invitations State
+    // Invitations
     const [invitations, setInvitations] = useState<Invitation[]>([])
     const [newCodeMaxUses, setNewCodeMaxUses] = useState(5)
     const [generating, setGenerating] = useState(false)
     const [lastGeneratedCode, setLastGeneratedCode] = useState<string | null>(null)
 
-    // Users State
+    // Users
     const [profiles, setProfiles] = useState<Profile[]>([])
 
-    // Campaign Controls State
+    // Campaign Controls
     const [commandLoading, setCommandLoading] = useState<string | null>(null)
     const [confirmReset, setConfirmReset] = useState(false)
+    const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
     const supabaseRef = useRef(createClient())
 
@@ -76,15 +95,10 @@ export default function AdminPage() {
                     return
                 }
 
-                const res = await authenticatedFetch("/api/campaigns/")
-                if (res.ok) {
-                    const data = await res.json()
-                    if (data?.length > 0) setCampaign(data[0])
-                    else setError("No campaigns found.")
-                }
-
+                await fetchCampaigns()
                 await fetchInvitations()
                 await fetchProfiles()
+                await fetchPlayerCounts()
             } catch (e) {
                 console.error(e)
                 setError("Connection error.")
@@ -94,6 +108,23 @@ export default function AdminPage() {
         }
         init()
     }, [])
+
+    const fetchCampaigns = async () => {
+        const res = await authenticatedFetch("/api/campaigns/")
+        if (res.ok) {
+            const data: Campaign[] = await res.json()
+            setCampaigns(data)
+            const active = data.find(c => c.status === "active") || data[0] || null
+            setCampaign(active)
+        }
+    }
+
+    const fetchPlayerCounts = async () => {
+        const { data } = await supabaseRef.current.from("characters").select("campaign_id")
+        const counts: Record<string, number> = {}
+        data?.forEach((c: any) => { counts[c.campaign_id] = (counts[c.campaign_id] || 0) + 1 })
+        setPlayerCounts(counts)
+    }
 
     const fetchInvitations = async () => {
         try {
@@ -106,6 +137,70 @@ export default function AdminPage() {
         const { data } = await supabaseRef.current
             .from("profiles").select("*").order("created_at", { ascending: false })
         setProfiles(data || [])
+    }
+
+    // --- Campaigns ---
+    const handleCreateCampaign = async () => {
+        if (!newCampName.trim()) return
+        setCreatingCampaign(true)
+        try {
+            const res = await authenticatedFetch("/api/campaigns/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: newCampName.trim(), description: newCampDesc.trim() }),
+            })
+            if (res.ok) {
+                toast.success("Campaign created")
+                setNewCampName("")
+                setNewCampDesc("")
+                setShowNewCampaign(false)
+                await fetchCampaigns()
+                await fetchPlayerCounts()
+            } else toast.error("Failed to create campaign")
+        } catch { toast.error("Error creating campaign") }
+        finally { setCreatingCampaign(false) }
+    }
+
+    const activateCampaign = async (id: string) => {
+        // Deactivate all, then activate selected
+        for (const c of campaigns) {
+            if (c.id !== id && c.status === "active") {
+                await authenticatedFetch(`/api/campaigns/${c.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "inactive" }),
+                })
+            }
+        }
+        await authenticatedFetch(`/api/campaigns/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "active" }),
+        })
+        toast.success("Campaign activated")
+        await fetchCampaigns()
+    }
+
+    const deactivateCampaign = async (id: string) => {
+        await authenticatedFetch(`/api/campaigns/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "inactive" }),
+        })
+        toast.success("Campaign deactivated")
+        await fetchCampaigns()
+    }
+
+    const deleteCampaign = async (id: string) => {
+        try {
+            const res = await authenticatedFetch(`/api/campaigns/${id}`, { method: "DELETE" })
+            if (res.ok) {
+                toast.success("Campaign deleted")
+                setConfirmDelete(null)
+                await fetchCampaigns()
+                await fetchPlayerCounts()
+            } else toast.error("Failed to delete campaign")
+        } catch { toast.error("Error deleting campaign") }
     }
 
     // --- Invitations ---
@@ -128,7 +223,7 @@ export default function AdminPage() {
         finally { setGenerating(false) }
     }
 
-    const handleDeactivate = async (id: string) => {
+    const handleDeactivateInvite = async (id: string) => {
         try {
             const res = await authenticatedFetch(`/api/invitations/${id}`, { method: "DELETE" })
             if (res.ok) { toast.success("Invitation deactivated"); await fetchInvitations() }
@@ -179,10 +274,6 @@ export default function AdminPage() {
     }
 
     // --- Module Upload ---
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files?.[0]) setFile(e.target.files[0])
-    }
-
     const handleUpload = async () => {
         if (!file || !campaign) return
         setUploading(true)
@@ -221,7 +312,7 @@ export default function AdminPage() {
                     <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">
                         God Mode
                     </h1>
-                    <p className="text-muted-foreground text-sm">Campaign: {campaign?.name}</p>
+                    <p className="text-muted-foreground text-sm">Active: {campaign?.name || "None"}</p>
                 </div>
                 <Link href="/">
                     <Button variant="outline" className="border-red-500/50 text-red-400 hover:bg-red-500/10">
@@ -230,7 +321,90 @@ export default function AdminPage() {
                 </Link>
             </div>
 
-            {/* Row 1: SAM Tuner + Campaign Controls */}
+            {/* Row 1: Campaigns (full width) */}
+            <Card className="border-cyan-500/20 bg-black/40">
+                <CardHeader>
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="text-cyan-400 flex items-center gap-2">
+                            <Map className="h-5 w-5" /> Campaigns
+                        </CardTitle>
+                        <Button size="sm" variant="secondary" onClick={() => setShowNewCampaign(!showNewCampaign)}>
+                            <Plus className="mr-1 h-3 w-3" /> New Campaign
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* New Campaign Form */}
+                    {showNewCampaign && (
+                        <div className="p-3 border border-cyan-500/20 rounded-lg space-y-3">
+                            <div>
+                                <Label className="text-xs">Name</Label>
+                                <Input value={newCampName} onChange={(e) => setNewCampName(e.target.value)} placeholder="The Lost Mines of Phandelver" />
+                            </div>
+                            <div>
+                                <Label className="text-xs">Description</Label>
+                                <Textarea value={newCampDesc} onChange={(e) => setNewCampDesc(e.target.value)} placeholder="A classic D&D adventure..." className="min-h-[60px]" />
+                            </div>
+                            <div className="flex gap-2">
+                                <Button size="sm" onClick={handleCreateCampaign} disabled={!newCampName.trim() || creatingCampaign}>
+                                    {creatingCampaign ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setShowNewCampaign(false)}>Cancel</Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Campaign List */}
+                    <div className="space-y-2">
+                        {campaigns.length === 0 && <p className="text-xs text-muted-foreground">No campaigns yet.</p>}
+                        {campaigns.map((c) => {
+                            const isActive = c.status === "active"
+                            const count = playerCounts[c.id] || 0
+                            const isConfirmingDelete = confirmDelete === c.id
+
+                            return (
+                                <div key={c.id} className={`flex items-center gap-3 p-3 rounded-lg ${isActive ? "bg-green-500/5 border border-green-500/20" : "bg-muted/20"}`}>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`font-medium truncate ${isActive ? "text-green-400" : ""}`}>{c.name}</span>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${isActive ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-500"}`}>
+                                                {c.status}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground truncate">
+                                            {count} player{count !== 1 ? "s" : ""} {c.description ? `— ${c.description}` : ""}
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        {isActive ? (
+                                            <Button size="sm" variant="ghost" className="h-7 text-xs text-gray-400" onClick={() => deactivateCampaign(c.id)}>
+                                                Deactivate
+                                            </Button>
+                                        ) : (
+                                            <Button size="sm" variant="ghost" className="h-7 text-xs text-green-400" onClick={() => activateCampaign(c.id)}>
+                                                Activate
+                                            </Button>
+                                        )}
+                                        {!isActive && count === 0 && !isConfirmingDelete && (
+                                            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-400" onClick={() => setConfirmDelete(c.id)}>
+                                                Delete
+                                            </Button>
+                                        )}
+                                        {isConfirmingDelete && (
+                                            <>
+                                                <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteCampaign(c.id)}>Confirm</Button>
+                                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Row 2: SAM Tuner + Campaign Controls */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {campaign && (
                     <SamTuner campaignId={campaign.id} initialSettings={campaign.settings || {}} />
@@ -241,7 +415,7 @@ export default function AdminPage() {
                         <CardTitle className="text-orange-400 flex items-center gap-2">
                             <Shield className="h-5 w-5" /> Campaign Controls
                         </CardTitle>
-                        <CardDescription>Admin commands for the active campaign.</CardDescription>
+                        <CardDescription>Admin commands for {campaign?.name || "—"}.</CardDescription>
                     </CardHeader>
                     <CardContent className="grid grid-cols-2 gap-2">
                         {!confirmReset ? (
@@ -250,7 +424,7 @@ export default function AdminPage() {
                             </Button>
                         ) : (
                             <div className="col-span-2 flex gap-2 items-center p-2 bg-red-500/10 border border-red-500/30 rounded">
-                                <span className="text-xs text-red-400 flex-1">This will delete all messages and restore HP. Are you sure?</span>
+                                <span className="text-xs text-red-400 flex-1">Delete all messages and restore HP?</span>
                                 <Button variant="destructive" size="sm" onClick={() => sendCommand("/reset")} disabled={commandLoading === "/reset"}>
                                     {commandLoading === "/reset" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
                                 </Button>
@@ -272,7 +446,7 @@ export default function AdminPage() {
                 </Card>
             </div>
 
-            {/* Row 2: Invitations + Players */}
+            {/* Row 3: Invitations + Players */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Invitations */}
                 <Card className="border-yellow-500/20 bg-black/40">
@@ -280,7 +454,6 @@ export default function AdminPage() {
                         <CardTitle className="text-yellow-400 flex items-center gap-2">
                             <Ticket className="h-5 w-5" /> Invitations
                         </CardTitle>
-                        <CardDescription>Generate invite codes for new players.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="flex items-end gap-2">
@@ -292,32 +465,27 @@ export default function AdminPage() {
                                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate"}
                             </Button>
                         </div>
-
                         {lastGeneratedCode && (
                             <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                                 <span className="font-mono text-xl font-bold tracking-widest flex-1">{lastGeneratedCode}</span>
-                                <Button size="sm" variant="ghost" onClick={() => copyCode(lastGeneratedCode)}>
-                                    <Copy className="h-4 w-4" />
-                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => copyCode(lastGeneratedCode)}><Copy className="h-4 w-4" /></Button>
                             </div>
                         )}
-
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
                             {invitations.length === 0 && <p className="text-xs text-muted-foreground">No invitations yet.</p>}
                             {invitations.map((inv) => {
                                 const isExpired = inv.expires_at && new Date(inv.expires_at) < new Date()
                                 const isUsedUp = inv.current_uses >= inv.max_uses
-                                const statusColor = !inv.is_active || isExpired || isUsedUp ? "text-gray-500" : "text-green-400"
-
+                                const dead = !inv.is_active || isExpired || isUsedUp
                                 return (
                                     <div key={inv.id} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/20">
                                         <button onClick={() => copyCode(inv.code)} className="font-mono font-bold tracking-wider hover:text-yellow-400" title="Copy">{inv.code}</button>
-                                        <span className={`text-xs ${statusColor}`}>{inv.current_uses}/{inv.max_uses}</span>
+                                        <span className={`text-xs ${dead ? "text-gray-500" : "text-green-400"}`}>{inv.current_uses}/{inv.max_uses}</span>
                                         <span className="text-xs text-muted-foreground flex-1">
                                             {!inv.is_active ? "inactive" : isExpired ? "expired" : isUsedUp ? "used" : "active"}
                                         </span>
-                                        {inv.is_active && !isExpired && !isUsedUp && (
-                                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-300" onClick={() => handleDeactivate(inv.id)}>
+                                        {!dead && (
+                                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400" onClick={() => handleDeactivateInvite(inv.id)}>
                                                 <X className="h-3 w-3" />
                                             </Button>
                                         )}
@@ -331,31 +499,20 @@ export default function AdminPage() {
                 {/* Players */}
                 <Card className="border-green-500/20 bg-black/40">
                     <CardHeader>
-                        <CardTitle className="text-green-400 flex items-center gap-2">
-                            <Users className="h-5 w-5" /> Players
-                        </CardTitle>
-                        <CardDescription>Registered users and roles.</CardDescription>
+                        <CardTitle className="text-green-400 flex items-center gap-2"><Users className="h-5 w-5" /> Players</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-2 max-h-80 overflow-y-auto">
-                            {profiles.length === 0 && <p className="text-xs text-muted-foreground">No users found.</p>}
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
                             {profiles.map((p) => {
                                 const isSelf = p.id === currentUserId
-
                                 return (
                                     <div key={p.id} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/20">
                                         <div className="flex-1 min-w-0">
                                             <div className="font-medium truncate">{p.username || "—"}{isSelf && " (you)"}</div>
                                             <div className="text-xs text-muted-foreground truncate">{p.email}</div>
                                         </div>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                            p.role === "admin" ? "bg-purple-500/20 text-purple-400" : "bg-gray-500/20 text-gray-400"
-                                        }`}>{p.role}</span>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                            p.status === "approved" ? "bg-green-500/20 text-green-400"
-                                                : p.status === "pending" ? "bg-yellow-500/20 text-yellow-400"
-                                                    : "bg-red-500/20 text-red-400"
-                                        }`}>{p.status}</span>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.role === "admin" ? "bg-purple-500/20 text-purple-400" : "bg-gray-500/20 text-gray-400"}`}>{p.role}</span>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.status === "approved" ? "bg-green-500/20 text-green-400" : p.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>{p.status}</span>
                                         {!isSelf && (
                                             <div className="flex gap-1">
                                                 <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1.5" onClick={() => toggleRole(p.id, p.role)}>
@@ -375,18 +532,18 @@ export default function AdminPage() {
                 </Card>
             </div>
 
-            {/* Row 3: Campaign Modules (full width) */}
+            {/* Row 4: Campaign Modules (full width) */}
             <Card className="border-blue-500/20 bg-black/40">
                 <CardHeader>
                     <CardTitle className="text-blue-400 flex items-center gap-2">
                         <FileText className="h-5 w-5" /> Campaign Modules
                     </CardTitle>
-                    <CardDescription>Upload PDF adventures to expand S.A.M.&apos;s knowledge for this campaign.</CardDescription>
+                    <CardDescription>Upload PDF adventures for {campaign?.name || "—"}.</CardDescription>
                 </CardHeader>
                 <CardContent className="flex items-end gap-4">
                     <div className="flex-1">
                         <Label htmlFor="module">Upload PDF / EPUB</Label>
-                        <Input id="module" type="file" accept=".pdf,.epub" onChange={handleFileChange} disabled={uploading} className="cursor-pointer" />
+                        <Input id="module" type="file" accept=".pdf,.epub" onChange={(e) => { if (e.target.files?.[0]) setFile(e.target.files[0]) }} disabled={uploading} className="cursor-pointer" />
                     </div>
                     <Button onClick={handleUpload} disabled={!file || uploading} className="bg-blue-600 hover:bg-blue-700">
                         {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
