@@ -10,7 +10,7 @@ import json
 from app.core.dice import DiceRoller, Visibility
 from app.services.ai import sam_brain
 from app.services.admin import AdminService
-from app.routers import characters, campaigns, messages
+from app.routers import characters, campaigns, messages, invitations
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,6 +29,7 @@ app.add_middleware(
 app.include_router(characters.router)
 app.include_router(campaigns.router)
 app.include_router(messages.router)
+app.include_router(invitations.router)
 
 # --- Data Models ---
 class ChatRequest(BaseModel):
