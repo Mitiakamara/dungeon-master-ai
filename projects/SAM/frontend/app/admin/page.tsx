@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import Link from "next/link"
 import {
     LogOut, Loader2, ShieldAlert, FileText, Upload, Ticket, Users,
-    Copy, X, RotateCcw, Save, List, Swords, Shield, Plus, Map
+    Copy, X, RotateCcw, Save, List, Swords, Shield, Plus, Map, Paperclip
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -49,6 +49,7 @@ export default function AdminPage() {
     const [campaigns, setCampaigns] = useState<Campaign[]>([])
     const [campaign, setCampaign] = useState<Campaign | null>(null)
     const [playerCounts, setPlayerCounts] = useState<Record<string, number>>({})
+    const [campaignModules, setCampaignModules] = useState<Record<string, string[]>>({})
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [currentUserId, setCurrentUserId] = useState<string>("")
@@ -57,11 +58,12 @@ export default function AdminPage() {
     const [showNewCampaign, setShowNewCampaign] = useState(false)
     const [newCampName, setNewCampName] = useState("")
     const [newCampDesc, setNewCampDesc] = useState("")
+    const [newCampFile, setNewCampFile] = useState<File | null>(null)
     const [creatingCampaign, setCreatingCampaign] = useState(false)
 
-    // Module Upload
-    const [file, setFile] = useState<File | null>(null)
-    const [uploading, setUploading] = useState(false)
+    // Per-campaign upload
+    const [uploadingFor, setUploadingFor] = useState<string | null>(null)
+    const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
     // Invitations
     const [invitations, setInvitations] = useState<Invitation[]>([])
@@ -116,7 +118,28 @@ export default function AdminPage() {
             setCampaigns(data)
             const active = data.find(c => c.status === "active") || data[0] || null
             setCampaign(active)
+            // Fetch modules for all campaigns
+            await fetchAllModules(data)
         }
+    }
+
+    const fetchAllModules = async (camps: Campaign[]) => {
+        const modules: Record<string, string[]> = {}
+        for (const c of camps) {
+            const { data } = await supabaseRef.current
+                .from("documents")
+                .select("metadata")
+                .like("metadata", `%"campaign_id":"${c.id}"%`)
+            const sources = new Set<string>()
+            data?.forEach((doc: any) => {
+                try {
+                    const meta = typeof doc.metadata === "string" ? JSON.parse(doc.metadata) : doc.metadata
+                    if (meta.source) sources.add(meta.source)
+                } catch { /* skip */ }
+            })
+            modules[c.id] = Array.from(sources)
+        }
+        setCampaignModules(modules)
     }
 
     const fetchPlayerCounts = async () => {
@@ -139,6 +162,20 @@ export default function AdminPage() {
         setProfiles(data || [])
     }
 
+    // --- Upload Module helper ---
+    const uploadModule = async (campaignId: string, file: File): Promise<number> => {
+        const { data: { session } } = await supabaseRef.current.auth.getSession()
+        const fd = new FormData(); fd.append("file", file)
+        const res = await fetch(`/api/campaigns/${campaignId}/modules`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+            body: fd,
+        })
+        if (!res.ok) throw new Error(await res.text())
+        const data = await res.json()
+        return data.chunks || 0
+    }
+
     // --- Campaigns ---
     const handleCreateCampaign = async () => {
         if (!newCampName.trim()) return
@@ -150,9 +187,23 @@ export default function AdminPage() {
                 body: JSON.stringify({ name: newCampName.trim(), description: newCampDesc.trim() }),
             })
             if (res.ok) {
-                toast.success("Campaign created")
+                const newCamp = await res.json()
+                let msg = `Campaign "${newCamp.name}" created`
+
+                // Upload module if file selected
+                if (newCampFile) {
+                    try {
+                        const chunks = await uploadModule(newCamp.id, newCampFile)
+                        msg += ` + ${chunks} chunks indexed from ${newCampFile.name}`
+                    } catch (e) {
+                        toast.error(`Campaign created but module upload failed: ${e}`)
+                    }
+                }
+
+                toast.success(msg)
                 setNewCampName("")
                 setNewCampDesc("")
+                setNewCampFile(null)
                 setShowNewCampaign(false)
                 await fetchCampaigns()
                 await fetchPlayerCounts()
@@ -161,20 +212,30 @@ export default function AdminPage() {
         finally { setCreatingCampaign(false) }
     }
 
+    const handleInlineUpload = async (campaignId: string, file: File) => {
+        setUploadingFor(campaignId)
+        try {
+            const chunks = await uploadModule(campaignId, file)
+            toast.success(`Module uploaded: ${chunks} chunks from ${file.name}`)
+            await fetchAllModules(campaigns)
+        } catch (e) {
+            toast.error(`Upload failed: ${e}`)
+        } finally {
+            setUploadingFor(null)
+        }
+    }
+
     const activateCampaign = async (id: string) => {
-        // Deactivate all, then activate selected
         for (const c of campaigns) {
             if (c.id !== id && c.status === "active") {
                 await authenticatedFetch(`/api/campaigns/${c.id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ status: "inactive" }),
                 })
             }
         }
         await authenticatedFetch(`/api/campaigns/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            method: "PATCH", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ status: "active" }),
         })
         toast.success("Campaign activated")
@@ -183,8 +244,7 @@ export default function AdminPage() {
 
     const deactivateCampaign = async (id: string) => {
         await authenticatedFetch(`/api/campaigns/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            method: "PATCH", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ status: "inactive" }),
         })
         toast.success("Campaign deactivated")
@@ -194,76 +254,50 @@ export default function AdminPage() {
     const deleteCampaign = async (id: string) => {
         try {
             const res = await authenticatedFetch(`/api/campaigns/${id}`, { method: "DELETE" })
-            if (res.ok) {
-                toast.success("Campaign deleted")
-                setConfirmDelete(null)
-                await fetchCampaigns()
-                await fetchPlayerCounts()
-            } else toast.error("Failed to delete campaign")
+            if (res.ok) { toast.success("Campaign deleted"); setConfirmDelete(null); await fetchCampaigns(); await fetchPlayerCounts() }
+            else toast.error("Failed to delete campaign")
         } catch { toast.error("Error deleting campaign") }
     }
 
     // --- Invitations ---
     const handleGenerateCode = async () => {
-        setGenerating(true)
-        setLastGeneratedCode(null)
+        setGenerating(true); setLastGeneratedCode(null)
         try {
             const res = await authenticatedFetch("/api/invitations/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+                method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ max_uses: newCodeMaxUses, expires_hours: 168 }),
             })
-            if (res.ok) {
-                const data = await res.json()
-                setLastGeneratedCode(data.code)
-                toast.success(`Code generated: ${data.code}`)
-                await fetchInvitations()
-            } else toast.error("Failed to generate code")
-        } catch { toast.error("Error generating code") }
+            if (res.ok) { const d = await res.json(); setLastGeneratedCode(d.code); toast.success(`Code: ${d.code}`); await fetchInvitations() }
+            else toast.error("Failed to generate code")
+        } catch { toast.error("Error") }
         finally { setGenerating(false) }
     }
 
     const handleDeactivateInvite = async (id: string) => {
-        try {
-            const res = await authenticatedFetch(`/api/invitations/${id}`, { method: "DELETE" })
-            if (res.ok) { toast.success("Invitation deactivated"); await fetchInvitations() }
-        } catch { toast.error("Error deactivating") }
+        const res = await authenticatedFetch(`/api/invitations/${id}`, { method: "DELETE" })
+        if (res.ok) { toast.success("Deactivated"); await fetchInvitations() }
     }
 
-    const copyCode = (code: string) => {
-        navigator.clipboard.writeText(code)
-        toast.success(`Copied: ${code}`)
-    }
+    const copyCode = (code: string) => { navigator.clipboard.writeText(code); toast.success(`Copied: ${code}`) }
 
-    // --- Player Management ---
-    const toggleRole = async (profileId: string, currentRole: string) => {
-        const newRole = currentRole === "admin" ? "player" : "admin"
-        await supabaseRef.current.from("profiles").update({ role: newRole }).eq("id", profileId)
-        toast.success(`Role changed to ${newRole}`)
-        await fetchProfiles()
+    // --- Players ---
+    const toggleRole = async (pid: string, cur: string) => {
+        await supabaseRef.current.from("profiles").update({ role: cur === "admin" ? "player" : "admin" }).eq("id", pid)
+        toast.success("Role changed"); await fetchProfiles()
     }
-
-    const toggleStatus = async (profileId: string, currentStatus: string) => {
-        const newStatus = currentStatus === "approved" ? "rejected" : "approved"
-        await supabaseRef.current.from("profiles").update({ status: newStatus }).eq("id", profileId)
-        toast.success(`Status changed to ${newStatus}`)
-        await fetchProfiles()
+    const toggleStatus = async (pid: string, cur: string) => {
+        await supabaseRef.current.from("profiles").update({ status: cur === "approved" ? "rejected" : "approved" }).eq("id", pid)
+        toast.success("Status changed"); await fetchProfiles()
     }
 
     // --- Campaign Controls ---
-    const sendCommand = async (command: string) => {
-        setCommandLoading(command)
+    const sendCommand = async (cmd: string) => {
+        setCommandLoading(cmd)
         try {
-            const res = await authenticatedFetch("/api/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: command }),
-            })
-            if (res.ok) {
-                const data = await res.json()
-                toast.success(data.response?.substring(0, 100) || "Command executed")
-            } else toast.error("Command failed")
-        } catch { toast.error("Error sending command") }
+            const res = await authenticatedFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: cmd }) })
+            if (res.ok) { const d = await res.json(); toast.success(d.response?.substring(0, 100) || "Done") }
+            else toast.error("Failed")
+        } catch { toast.error("Error") }
         finally { setCommandLoading(null); setConfirmReset(false) }
     }
 
@@ -273,33 +307,10 @@ export default function AdminPage() {
         toast.success("Combat state cleared")
     }
 
-    // --- Module Upload ---
-    const handleUpload = async () => {
-        if (!file || !campaign) return
-        setUploading(true)
-        try {
-            const { data: { session } } = await supabaseRef.current.auth.getSession()
-            const fd = new FormData(); fd.append("file", file)
-            const res = await fetch(`/api/campaigns/${campaign.id}/modules`, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${session?.access_token}` },
-                body: fd,
-            })
-            if (res.ok) {
-                const data = await res.json()
-                toast.success(`Module Ingested: ${data.chunks} chunks indexed.`)
-                setFile(null)
-            } else toast.error(`Upload Failed: ${await res.text()}`)
-        } catch { toast.error("Upload Error") }
-        finally { setUploading(false) }
-    }
-
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-purple-500" /></div>
-
     if (error) return (
         <div className="flex h-screen flex-col items-center justify-center gap-4 text-red-400">
-            <ShieldAlert className="h-12 w-12" />
-            <div>{error}</div>
+            <ShieldAlert className="h-12 w-12" /><div>{error}</div>
             <Link href="/"><Button variant="outline">Back to Game</Button></Link>
         </div>
     )
@@ -309,25 +320,17 @@ export default function AdminPage() {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">
-                        God Mode
-                    </h1>
+                    <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">God Mode</h1>
                     <p className="text-muted-foreground text-sm">Active: {campaign?.name || "None"}</p>
                 </div>
-                <Link href="/">
-                    <Button variant="outline" className="border-red-500/50 text-red-400 hover:bg-red-500/10">
-                        <LogOut className="mr-2 h-4 w-4" /> Exit
-                    </Button>
-                </Link>
+                <Link href="/"><Button variant="outline" className="border-red-500/50 text-red-400 hover:bg-red-500/10"><LogOut className="mr-2 h-4 w-4" /> Exit</Button></Link>
             </div>
 
             {/* Row 1: Campaigns (full width) */}
             <Card className="border-cyan-500/20 bg-black/40">
                 <CardHeader>
                     <div className="flex items-center justify-between">
-                        <CardTitle className="text-cyan-400 flex items-center gap-2">
-                            <Map className="h-5 w-5" /> Campaigns
-                        </CardTitle>
+                        <CardTitle className="text-cyan-400 flex items-center gap-2"><Map className="h-5 w-5" /> Campaigns</CardTitle>
                         <Button size="sm" variant="secondary" onClick={() => setShowNewCampaign(!showNewCampaign)}>
                             <Plus className="mr-1 h-3 w-3" /> New Campaign
                         </Button>
@@ -345,11 +348,16 @@ export default function AdminPage() {
                                 <Label className="text-xs">Description</Label>
                                 <Textarea value={newCampDesc} onChange={(e) => setNewCampDesc(e.target.value)} placeholder="A classic D&D adventure..." className="min-h-[60px]" />
                             </div>
+                            <div>
+                                <Label className="text-xs">PDF Module (optional)</Label>
+                                <Input type="file" accept=".pdf,.epub" onChange={(e) => setNewCampFile(e.target.files?.[0] || null)} className="cursor-pointer" />
+                            </div>
                             <div className="flex gap-2">
                                 <Button size="sm" onClick={handleCreateCampaign} disabled={!newCampName.trim() || creatingCampaign}>
-                                    {creatingCampaign ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
+                                    {creatingCampaign ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                                    {creatingCampaign ? "Creating..." : "Create"}
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setShowNewCampaign(false)}>Cancel</Button>
+                                <Button size="sm" variant="ghost" onClick={() => { setShowNewCampaign(false); setNewCampFile(null) }}>Cancel</Button>
                             </div>
                         </div>
                     )}
@@ -360,43 +368,61 @@ export default function AdminPage() {
                         {campaigns.map((c) => {
                             const isActive = c.status === "active"
                             const count = playerCounts[c.id] || 0
+                            const modules = campaignModules[c.id] || []
                             const isConfirmingDelete = confirmDelete === c.id
+                            const isUploading = uploadingFor === c.id
 
                             return (
-                                <div key={c.id} className={`flex items-center gap-3 p-3 rounded-lg ${isActive ? "bg-green-500/5 border border-green-500/20" : "bg-muted/20"}`}>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`font-medium truncate ${isActive ? "text-green-400" : ""}`}>{c.name}</span>
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${isActive ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-500"}`}>
-                                                {c.status}
-                                            </span>
+                                <div key={c.id} className={`p-3 rounded-lg ${isActive ? "bg-green-500/5 border border-green-500/20" : "bg-muted/20"}`}>
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`font-medium truncate ${isActive ? "text-green-400" : ""}`}>{c.name}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${isActive ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-500"}`}>{c.status}</span>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground truncate">
+                                                {count} player{count !== 1 ? "s" : ""}{c.description ? ` — ${c.description}` : ""}
+                                            </div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground truncate">
-                                            {count} player{count !== 1 ? "s" : ""} {c.description ? `— ${c.description}` : ""}
+                                        <div className="flex gap-1 flex-shrink-0">
+                                            {/* Upload Module */}
+                                            <input
+                                                type="file"
+                                                accept=".pdf,.epub"
+                                                className="hidden"
+                                                ref={(el) => { fileInputRefs.current[c.id] = el }}
+                                                onChange={(e) => { if (e.target.files?.[0]) handleInlineUpload(c.id, e.target.files[0]); e.target.value = "" }}
+                                            />
+                                            <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={isUploading}
+                                                onClick={() => fileInputRefs.current[c.id]?.click()}>
+                                                {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Paperclip className="h-3 w-3" />}
+                                            </Button>
+                                            {isActive ? (
+                                                <Button size="sm" variant="ghost" className="h-7 text-xs text-gray-400" onClick={() => deactivateCampaign(c.id)}>Deactivate</Button>
+                                            ) : (
+                                                <Button size="sm" variant="ghost" className="h-7 text-xs text-green-400" onClick={() => activateCampaign(c.id)}>Activate</Button>
+                                            )}
+                                            {!isActive && count === 0 && !isConfirmingDelete && (
+                                                <Button size="sm" variant="ghost" className="h-7 text-xs text-red-400" onClick={() => setConfirmDelete(c.id)}>Delete</Button>
+                                            )}
+                                            {isConfirmingDelete && (
+                                                <>
+                                                    <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteCampaign(c.id)}>Confirm</Button>
+                                                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="flex gap-1">
-                                        {isActive ? (
-                                            <Button size="sm" variant="ghost" className="h-7 text-xs text-gray-400" onClick={() => deactivateCampaign(c.id)}>
-                                                Deactivate
-                                            </Button>
-                                        ) : (
-                                            <Button size="sm" variant="ghost" className="h-7 text-xs text-green-400" onClick={() => activateCampaign(c.id)}>
-                                                Activate
-                                            </Button>
-                                        )}
-                                        {!isActive && count === 0 && !isConfirmingDelete && (
-                                            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-400" onClick={() => setConfirmDelete(c.id)}>
-                                                Delete
-                                            </Button>
-                                        )}
-                                        {isConfirmingDelete && (
-                                            <>
-                                                <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteCampaign(c.id)}>Confirm</Button>
-                                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-                                            </>
-                                        )}
-                                    </div>
+                                    {/* Modules list */}
+                                    {modules.length > 0 && (
+                                        <div className="mt-2 flex gap-1 flex-wrap">
+                                            {modules.map((m, i) => (
+                                                <span key={i} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded">
+                                                    <FileText className="h-2.5 w-2.5" /> {m}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )
                         })}
@@ -406,21 +432,17 @@ export default function AdminPage() {
 
             {/* Row 2: SAM Tuner + Campaign Controls */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {campaign && (
-                    <SamTuner campaignId={campaign.id} initialSettings={campaign.settings || {}} />
-                )}
+                {campaign && <SamTuner campaignId={campaign.id} initialSettings={campaign.settings || {}} />}
 
                 <Card className="border-orange-500/20 bg-black/40">
                     <CardHeader>
-                        <CardTitle className="text-orange-400 flex items-center gap-2">
-                            <Shield className="h-5 w-5" /> Campaign Controls
-                        </CardTitle>
-                        <CardDescription>Admin commands for {campaign?.name || "—"}.</CardDescription>
+                        <CardTitle className="text-orange-400 flex items-center gap-2"><Shield className="h-5 w-5" /> Campaign Controls</CardTitle>
+                        <CardDescription>Commands for {campaign?.name || "—"}.</CardDescription>
                     </CardHeader>
                     <CardContent className="grid grid-cols-2 gap-2">
                         {!confirmReset ? (
                             <Button variant="destructive" size="sm" onClick={() => setConfirmReset(true)} disabled={!!commandLoading}>
-                                <RotateCcw className="mr-1 h-3 w-3" /> Reset Campaign
+                                <RotateCcw className="mr-1 h-3 w-3" /> Reset
                             </Button>
                         ) : (
                             <div className="col-span-2 flex gap-2 items-center p-2 bg-red-500/10 border border-red-500/30 rounded">
@@ -432,12 +454,10 @@ export default function AdminPage() {
                             </div>
                         )}
                         <Button variant="secondary" size="sm" onClick={() => sendCommand("/checkpoint")} disabled={!!commandLoading}>
-                            {commandLoading === "/checkpoint" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Save className="mr-1 h-3 w-3" />}
-                            Save Checkpoint
+                            {commandLoading === "/checkpoint" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Save className="mr-1 h-3 w-3" />} Checkpoint
                         </Button>
                         <Button variant="secondary" size="sm" onClick={() => sendCommand("/list")} disabled={!!commandLoading}>
-                            {commandLoading === "/list" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <List className="mr-1 h-3 w-3" />}
-                            List Checkpoints
+                            {commandLoading === "/list" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <List className="mr-1 h-3 w-3" />} List
                         </Button>
                         <Button variant="outline" size="sm" className="border-orange-500/30 text-orange-400" onClick={clearCombatState}>
                             <Swords className="mr-1 h-3 w-3" /> Clear Combat
@@ -448,13 +468,8 @@ export default function AdminPage() {
 
             {/* Row 3: Invitations + Players */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Invitations */}
                 <Card className="border-yellow-500/20 bg-black/40">
-                    <CardHeader>
-                        <CardTitle className="text-yellow-400 flex items-center gap-2">
-                            <Ticket className="h-5 w-5" /> Invitations
-                        </CardTitle>
-                    </CardHeader>
+                    <CardHeader><CardTitle className="text-yellow-400 flex items-center gap-2"><Ticket className="h-5 w-5" /> Invitations</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
                         <div className="flex items-end gap-2">
                             <div className="flex-1">
@@ -474,21 +489,13 @@ export default function AdminPage() {
                         <div className="space-y-2 max-h-48 overflow-y-auto">
                             {invitations.length === 0 && <p className="text-xs text-muted-foreground">No invitations yet.</p>}
                             {invitations.map((inv) => {
-                                const isExpired = inv.expires_at && new Date(inv.expires_at) < new Date()
-                                const isUsedUp = inv.current_uses >= inv.max_uses
-                                const dead = !inv.is_active || isExpired || isUsedUp
+                                const dead = !inv.is_active || (inv.expires_at && new Date(inv.expires_at) < new Date()) || inv.current_uses >= inv.max_uses
                                 return (
                                     <div key={inv.id} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/20">
-                                        <button onClick={() => copyCode(inv.code)} className="font-mono font-bold tracking-wider hover:text-yellow-400" title="Copy">{inv.code}</button>
+                                        <button onClick={() => copyCode(inv.code)} className="font-mono font-bold tracking-wider hover:text-yellow-400">{inv.code}</button>
                                         <span className={`text-xs ${dead ? "text-gray-500" : "text-green-400"}`}>{inv.current_uses}/{inv.max_uses}</span>
-                                        <span className="text-xs text-muted-foreground flex-1">
-                                            {!inv.is_active ? "inactive" : isExpired ? "expired" : isUsedUp ? "used" : "active"}
-                                        </span>
-                                        {!dead && (
-                                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400" onClick={() => handleDeactivateInvite(inv.id)}>
-                                                <X className="h-3 w-3" />
-                                            </Button>
-                                        )}
+                                        <span className="text-xs text-muted-foreground flex-1">{dead ? (inv.is_active ? (inv.current_uses >= inv.max_uses ? "used" : "expired") : "inactive") : "active"}</span>
+                                        {!dead && <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400" onClick={() => handleDeactivateInvite(inv.id)}><X className="h-3 w-3" /></Button>}
                                     </div>
                                 )
                             })}
@@ -496,11 +503,8 @@ export default function AdminPage() {
                     </CardContent>
                 </Card>
 
-                {/* Players */}
                 <Card className="border-green-500/20 bg-black/40">
-                    <CardHeader>
-                        <CardTitle className="text-green-400 flex items-center gap-2"><Users className="h-5 w-5" /> Players</CardTitle>
-                    </CardHeader>
+                    <CardHeader><CardTitle className="text-green-400 flex items-center gap-2"><Users className="h-5 w-5" /> Players</CardTitle></CardHeader>
                     <CardContent>
                         <div className="space-y-2 max-h-64 overflow-y-auto">
                             {profiles.map((p) => {
@@ -515,13 +519,9 @@ export default function AdminPage() {
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.status === "approved" ? "bg-green-500/20 text-green-400" : p.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>{p.status}</span>
                                         {!isSelf && (
                                             <div className="flex gap-1">
-                                                <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1.5" onClick={() => toggleRole(p.id, p.role)}>
-                                                    {p.role === "admin" ? "→Player" : "→Admin"}
-                                                </Button>
+                                                <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1.5" onClick={() => toggleRole(p.id, p.role)}>{p.role === "admin" ? "→Player" : "→Admin"}</Button>
                                                 <Button size="sm" variant="ghost" className={`h-6 text-[10px] px-1.5 ${p.status === "approved" ? "text-red-400" : "text-green-400"}`}
-                                                    onClick={() => toggleStatus(p.id, p.status)}>
-                                                    {p.status === "approved" ? "Deactivate" : "Activate"}
-                                                </Button>
+                                                    onClick={() => toggleStatus(p.id, p.status)}>{p.status === "approved" ? "Deactivate" : "Activate"}</Button>
                                             </div>
                                         )}
                                     </div>
@@ -531,26 +531,6 @@ export default function AdminPage() {
                     </CardContent>
                 </Card>
             </div>
-
-            {/* Row 4: Campaign Modules (full width) */}
-            <Card className="border-blue-500/20 bg-black/40">
-                <CardHeader>
-                    <CardTitle className="text-blue-400 flex items-center gap-2">
-                        <FileText className="h-5 w-5" /> Campaign Modules
-                    </CardTitle>
-                    <CardDescription>Upload PDF adventures for {campaign?.name || "—"}.</CardDescription>
-                </CardHeader>
-                <CardContent className="flex items-end gap-4">
-                    <div className="flex-1">
-                        <Label htmlFor="module">Upload PDF / EPUB</Label>
-                        <Input id="module" type="file" accept=".pdf,.epub" onChange={(e) => { if (e.target.files?.[0]) setFile(e.target.files[0]) }} disabled={uploading} className="cursor-pointer" />
-                    </div>
-                    <Button onClick={handleUpload} disabled={!file || uploading} className="bg-blue-600 hover:bg-blue-700">
-                        {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                        {uploading ? "Ingesting..." : "Ingest"}
-                    </Button>
-                </CardContent>
-            </Card>
         </div>
     )
 }
