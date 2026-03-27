@@ -78,6 +78,9 @@ export default function AdminPage() {
     const [commandLoading, setCommandLoading] = useState<string | null>(null)
     const [confirmReset, setConfirmReset] = useState(false)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+    const [confirmDeleteText, setConfirmDeleteText] = useState("")
+    const [confirmDeleteUser, setConfirmDeleteUser] = useState<string | null>(null)
+    const [confirmDeleteUserText, setConfirmDeleteUserText] = useState("")
 
     const supabaseRef = useRef(createClient())
 
@@ -252,11 +255,49 @@ export default function AdminPage() {
     }
 
     const deleteCampaign = async (id: string) => {
+        const sb = supabaseRef.current
         try {
+            // 1. Delete documents (RAG chunks)
+            await sb.from("documents").delete().like("metadata", `%"campaign_id":"${id}"%`)
+            // 2. Delete messages
+            await sb.from("messages").delete().eq("campaign_id", id)
+            // 3. Delete characters
+            await sb.from("characters").delete().eq("campaign_id", id)
+            // 4. Delete campaign
             const res = await authenticatedFetch(`/api/campaigns/${id}`, { method: "DELETE" })
-            if (res.ok) { toast.success("Campaign deleted"); setConfirmDelete(null); await fetchCampaigns(); await fetchPlayerCounts() }
-            else toast.error("Failed to delete campaign")
-        } catch { toast.error("Error deleting campaign") }
+            if (res.ok) {
+                toast.success("Campaign and all associated data deleted")
+            } else {
+                toast.error("Campaign record delete failed (data was cleaned)")
+            }
+        } catch (e) {
+            toast.error(`Delete error: ${e}`)
+        } finally {
+            setConfirmDelete(null)
+            setConfirmDeleteText("")
+            await fetchCampaigns()
+            await fetchPlayerCounts()
+        }
+    }
+
+    const deleteUser = async (userId: string) => {
+        const sb = supabaseRef.current
+        try {
+            // 1. Delete characters
+            await sb.from("characters").delete().eq("user_id", userId)
+            // 2. Delete messages
+            await sb.from("messages").delete().eq("sender_id", userId)
+            // 3. Delete profile
+            await sb.from("profiles").delete().eq("id", userId)
+            toast.success("User and associated data deleted")
+        } catch (e) {
+            toast.error(`Delete error: ${e}`)
+        } finally {
+            setConfirmDeleteUser(null)
+            setConfirmDeleteUserText("")
+            await fetchProfiles()
+            await fetchPlayerCounts()
+        }
     }
 
     // --- Invitations ---
@@ -402,14 +443,8 @@ export default function AdminPage() {
                                             ) : (
                                                 <Button size="sm" variant="ghost" className="h-7 text-xs text-green-400" onClick={() => activateCampaign(c.id)}>Activate</Button>
                                             )}
-                                            {!isActive && count === 0 && !isConfirmingDelete && (
-                                                <Button size="sm" variant="ghost" className="h-7 text-xs text-red-400" onClick={() => setConfirmDelete(c.id)}>Delete</Button>
-                                            )}
-                                            {isConfirmingDelete && (
-                                                <>
-                                                    <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteCampaign(c.id)}>Confirm</Button>
-                                                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-                                                </>
+                                            {!isActive && !isConfirmingDelete && campaigns.length > 1 && (
+                                                <Button size="sm" variant="ghost" className="h-7 text-xs text-red-400" onClick={() => { setConfirmDelete(c.id); setConfirmDeleteText("") }}>Delete</Button>
                                             )}
                                         </div>
                                     </div>
@@ -421,6 +456,26 @@ export default function AdminPage() {
                                                     <FileText className="h-2.5 w-2.5" /> {m}
                                                 </span>
                                             ))}
+                                        </div>
+                                    )}
+                                    {/* Delete confirmation */}
+                                    {isConfirmingDelete && (
+                                        <div className="mt-2 p-3 bg-red-500/10 border border-red-500/30 rounded space-y-2">
+                                            <p className="text-xs text-red-400">
+                                                This will permanently delete the campaign, {count} character{count !== 1 ? "s" : ""}, all messages, and {modules.length} module{modules.length !== 1 ? "s" : ""}. Type <strong>{c.name}</strong> to confirm:
+                                            </p>
+                                            <Input
+                                                value={confirmDeleteText}
+                                                onChange={(e) => setConfirmDeleteText(e.target.value)}
+                                                placeholder={c.name}
+                                                className="h-8 text-sm"
+                                            />
+                                            <div className="flex gap-2">
+                                                <Button size="sm" variant="destructive" disabled={confirmDeleteText !== c.name} onClick={() => deleteCampaign(c.id)}>
+                                                    Delete Permanently
+                                                </Button>
+                                                <Button size="sm" variant="ghost" onClick={() => { setConfirmDelete(null); setConfirmDeleteText("") }}>Cancel</Button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -506,22 +561,42 @@ export default function AdminPage() {
                 <Card className="border-green-500/20 bg-black/40">
                     <CardHeader><CardTitle className="text-green-400 flex items-center gap-2"><Users className="h-5 w-5" /> Players</CardTitle></CardHeader>
                     <CardContent>
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                        <div className="space-y-2 max-h-80 overflow-y-auto">
                             {profiles.map((p) => {
                                 const isSelf = p.id === currentUserId
+                                const isConfirmingUserDelete = confirmDeleteUser === p.id
                                 return (
-                                    <div key={p.id} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/20">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-medium truncate">{p.username || "—"}{isSelf && " (you)"}</div>
-                                            <div className="text-xs text-muted-foreground truncate">{p.email}</div>
+                                    <div key={p.id} className="p-2 rounded bg-muted/20">
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-medium truncate">{p.username || "—"}{isSelf && " (you)"}</div>
+                                                <div className="text-xs text-muted-foreground truncate">{p.email}</div>
+                                            </div>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.role === "admin" ? "bg-purple-500/20 text-purple-400" : "bg-gray-500/20 text-gray-400"}`}>{p.role}</span>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.status === "approved" ? "bg-green-500/20 text-green-400" : p.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>{p.status}</span>
+                                            {!isSelf && (
+                                                <div className="flex gap-1">
+                                                    <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1.5" onClick={() => toggleRole(p.id, p.role)}>{p.role === "admin" ? "→Player" : "→Admin"}</Button>
+                                                    <Button size="sm" variant="ghost" className={`h-6 text-[10px] px-1.5 ${p.status === "approved" ? "text-red-400" : "text-green-400"}`}
+                                                        onClick={() => toggleStatus(p.id, p.status)}>{p.status === "approved" ? "Deactivate" : "Activate"}</Button>
+                                                    {!isConfirmingUserDelete && (
+                                                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1.5 text-red-500" onClick={() => { setConfirmDeleteUser(p.id); setConfirmDeleteUserText("") }}>Delete</Button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.role === "admin" ? "bg-purple-500/20 text-purple-400" : "bg-gray-500/20 text-gray-400"}`}>{p.role}</span>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.status === "approved" ? "bg-green-500/20 text-green-400" : p.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>{p.status}</span>
-                                        {!isSelf && (
-                                            <div className="flex gap-1">
-                                                <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1.5" onClick={() => toggleRole(p.id, p.role)}>{p.role === "admin" ? "→Player" : "→Admin"}</Button>
-                                                <Button size="sm" variant="ghost" className={`h-6 text-[10px] px-1.5 ${p.status === "approved" ? "text-red-400" : "text-green-400"}`}
-                                                    onClick={() => toggleStatus(p.id, p.status)}>{p.status === "approved" ? "Deactivate" : "Activate"}</Button>
+                                        {isConfirmingUserDelete && (
+                                            <div className="mt-2 p-2 bg-red-500/10 border border-red-500/30 rounded space-y-2">
+                                                <p className="text-xs text-red-400">
+                                                    Delete <strong>{p.username || p.email}</strong>? This removes their profile, characters, and messages. Type <strong>{p.username || p.email}</strong> to confirm:
+                                                </p>
+                                                <Input value={confirmDeleteUserText} onChange={(e) => setConfirmDeleteUserText(e.target.value)} placeholder={p.username || p.email} className="h-7 text-xs" />
+                                                <div className="flex gap-2">
+                                                    <Button size="sm" variant="destructive" className="text-xs" disabled={confirmDeleteUserText !== (p.username || p.email)} onClick={() => deleteUser(p.id)}>
+                                                        Delete Permanently
+                                                    </Button>
+                                                    <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setConfirmDeleteUser(null); setConfirmDeleteUserText("") }}>Cancel</Button>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
