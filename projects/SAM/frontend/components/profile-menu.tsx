@@ -75,6 +75,12 @@ export function ProfileMenu() {
         return () => subscription.unsubscribe()
     }, [supabase])
 
+    const [showEmailLogin, setShowEmailLogin] = useState(false)
+    const [loginEmail, setLoginEmail] = useState("")
+    const [loginPassword, setLoginPassword] = useState("")
+    const [loginLoading, setLoginLoading] = useState(false)
+    const [loginError, setLoginError] = useState("")
+
     const handleLogin = async () => {
         await supabase.auth.signInWithOAuth({
             provider: 'google',
@@ -84,16 +90,69 @@ export function ProfileMenu() {
         })
     }
 
+    const handleEmailLogin = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setLoginLoading(true)
+        setLoginError("")
+        try {
+            const { error } = await supabase.auth.signInWithPassword({
+                email: loginEmail,
+                password: loginPassword,
+            })
+            if (error) setLoginError(error.message)
+        } catch {
+            setLoginError("Connection error")
+        } finally {
+            setLoginLoading(false)
+        }
+    }
+
     const handleLogout = async () => {
         await supabase.auth.signOut()
     }
 
     if (!user) {
         return (
-            <div className="p-4 border-t mt-auto">
+            <div className="p-4 border-t mt-auto space-y-3">
                 <Button onClick={handleLogin} className="w-full">
                     Login with Google
                 </Button>
+
+                <button
+                    onClick={() => setShowEmailLogin(!showEmailLogin)}
+                    className="text-xs text-muted-foreground hover:underline w-full text-center"
+                >
+                    {showEmailLogin ? "Hide" : "Login with email"}
+                </button>
+
+                {showEmailLogin && (
+                    <form onSubmit={handleEmailLogin} className="space-y-2">
+                        <input
+                            type="email"
+                            placeholder="Email"
+                            value={loginEmail}
+                            onChange={(e) => setLoginEmail(e.target.value)}
+                            required
+                            className="w-full px-3 py-1.5 text-sm rounded-md border bg-transparent"
+                        />
+                        <input
+                            type="password"
+                            placeholder="Password"
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                            required
+                            className="w-full px-3 py-1.5 text-sm rounded-md border bg-transparent"
+                        />
+                        {loginError && <p className="text-xs text-red-500">{loginError}</p>}
+                        <Button type="submit" variant="secondary" size="sm" className="w-full" disabled={loginLoading}>
+                            {loginLoading ? "..." : "Sign In"}
+                        </Button>
+                    </form>
+                )}
+
+                <a href="/signup" className="text-xs text-muted-foreground hover:underline block text-center">
+                    Have an invitation code? Sign up
+                </a>
             </div>
         )
     }
