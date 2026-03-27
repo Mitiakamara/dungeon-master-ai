@@ -214,7 +214,39 @@ class AIHelper:
            - If you deal NPC damage without both a `<DM_ROLL>` tag AND a call to `apply_damage`, you have failed.
         """
 
-    def generate_response(self, user_input: str, history: list = [], character_context: str = "No character active.", sender_name: str = "Player") -> dict:
+    def _build_dm_style(self, settings: dict) -> str:
+        difficulty = settings.get('difficulty', 50)
+        creativity = settings.get('creativity', 50)
+        lethality = settings.get('lethality', False)
+
+        sections = ["*** DM STYLE SETTINGS (configured by GM) ***"]
+
+        if difficulty < 25:
+            sections.append("- DIFFICULTY: Story Mode. Be lenient with rules. Fudge rolls in players' favor when dramatically appropriate. Enemies are weaker than standard. Focus on narrative over challenge.")
+        elif difficulty < 50:
+            sections.append("- DIFFICULTY: Easy. Apply rules fairly but give players the benefit of the doubt. Encounters are manageable.")
+        elif difficulty < 75:
+            sections.append("- DIFFICULTY: Standard (Old School). Apply D&D 5e rules strictly. Encounters are balanced per CR guidelines. No fudging.")
+        else:
+            sections.append("- DIFFICULTY: Hardcore. Encounters are deadly. Apply rules strictly. No mercy. TPK is a valid outcome.")
+
+        if creativity < 25:
+            sections.append("- RULE ADHERENCE: Rules Lawyer. Follow Rules As Written (RAW) strictly. No homebrew, no rule of cool.")
+        elif creativity < 50:
+            sections.append("- RULE ADHERENCE: Balanced. Follow RAW for combat and mechanics, but allow creative solutions with appropriate skill checks.")
+        elif creativity < 75:
+            sections.append("- RULE ADHERENCE: Creative. Rule of Cool applies — if a player proposes something cinematic and fun, allow it with a reasonable DC.")
+        else:
+            sections.append("- RULE ADHERENCE: Rule of Cool. Anything goes if it's entertaining. Mechanics serve the story, not the other way around.")
+
+        if lethality:
+            sections.append("- LETHAL MODE: ON. You may kill player characters without confirmation. Death is permanent. Instant death rules apply (massive damage).")
+        else:
+            sections.append("- LETHAL MODE: OFF. When a player reaches 0 HP, they fall unconscious and make death saving throws as normal. Do not kill characters without giving them a chance.")
+
+        return "\n".join(sections)
+
+    def generate_response(self, user_input: str, history: list = [], character_context: str = "No character active.", sender_name: str = "Player", campaign_settings: dict = None) -> dict:
         """
         Generates a DM response to a player action, using RAG + Character Context + Tools.
         Returns dict with 'response' (text) and optional 'image_url'.
@@ -248,10 +280,11 @@ class AIHelper:
                 context_text = "No specific rules found in memory."
             
             # 2. Build Prompt
+            dm_style = self._build_dm_style(campaign_settings or {})
             formatted_system_prompt = self.system_prompt.format(
                 context=context_text,
                 character_context=character_context
-            )
+            ) + "\n\n" + dm_style
             
             messages = [
                 SystemMessage(content=formatted_system_prompt),

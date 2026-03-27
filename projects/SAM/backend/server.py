@@ -168,11 +168,22 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                     print(f"WARNING: DB history fetch failed, falling back to frontend history: {hist_e}")
                     db_history = request.history
 
+            # Fetch campaign settings for DM style
+            campaign_settings = {}
+            if cid:
+                try:
+                    camp_settings_res = sam_brain.supabase.table("campaigns").select("settings").eq("id", cid).execute()
+                    if camp_settings_res.data:
+                        campaign_settings = camp_settings_res.data[0].get("settings", {})
+                except Exception as e:
+                    print(f"⚠️ Failed to fetch campaign settings: {e}")
+
             response = sam_brain.generate_response(
                 request.message,
                 db_history if db_history else request.history,
                 request.character_context,
-                sender_name=char_name
+                sender_name=char_name,
+                campaign_settings=campaign_settings
             )
 
             # Parse and strip <COMBAT> tag, update campaign settings
