@@ -46,42 +46,71 @@ export default function GameLayout() {
         })
     }, [])
 
-    // Fetch campaign info (name + GM check) when campaign changes
-    React.useEffect(() => {
-        const fetchCampaignInfo = async () => {
-            if (!campaignId) {
-                console.log("🔑 GM Check: No campaign_id on character")
-                setIsGM(false)
-                setCampaignName("")
-                return
-            }
-            try {
-                const supabase = createClient()
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) { console.log("🔑 GM Check: No user"); return }
+    // Reusable: fetch campaign info (name + GM check + combat state)
+    const fetchCampaignInfo = React.useCallback(async () => {
+        if (!campaignId) {
+            setIsGM(false)
+            setCampaignName("")
+            return
+        }
+        try {
+            const supabase = createClient()
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
 
-                console.log("🔑 GM Check: Fetching campaign", campaignId)
-                const res = await authenticatedFetch(`/api/campaigns/${campaignId}`)
-                if (res.ok) {
-                    const campaign = await res.json()
-                    const match = campaign.gm_id === user.id
-                    console.log("🔑 GM Check:", { gm_id: campaign.gm_id, user_id: user.id, isGM: match })
-                    setIsGM(match)
-                    setCampaignName(campaign.name || "")
-                    setCombatState(campaign.settings?.combat || null)
-                } else {
-                    console.log("🔑 GM Check: API returned", res.status)
-                    setIsGM(false)
-                    setCampaignName("")
-                }
-            } catch (err) {
-                console.error("🔑 GM Check failed:", err)
+            const res = await authenticatedFetch(`/api/campaigns/${campaignId}`)
+            if (res.ok) {
+                const campaign = await res.json()
+                setIsGM(campaign.gm_id === user.id)
+                setCampaignName(campaign.name || "")
+                setCombatState(campaign.settings?.combat || null)
+            } else {
                 setIsGM(false)
                 setCampaignName("")
+            }
+        } catch (err) {
+            console.error("🔑 GM Check failed:", err)
+            setIsGM(false)
+            setCampaignName("")
+        }
+    }, [campaignId])
+
+    // Reusable: fetch fresh character data from backend
+    const fetchCharacterData = React.useCallback(async (charId: string) => {
+        try {
+            const res = await authenticatedFetch(`/api/characters/${charId}`)
+            if (res.ok) {
+                const freshChar = await res.json()
+                console.log("🔄 Synced Fresh Character Data:", freshChar)
+                setSelectedCharacter(freshChar)
+                localStorage.setItem("selectedCharacter", JSON.stringify(freshChar))
+            }
+        } catch (err) {
+            console.warn("Character resync failed:", err)
+        }
+    }, [])
+
+    // Fetch campaign info when campaign changes
+    React.useEffect(() => {
+        fetchCampaignInfo()
+    }, [fetchCampaignInfo])
+
+    // Re-sync character + campaign when returning from background
+    const lastGameSyncRef = React.useRef<number>(0)
+    React.useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                const now = Date.now()
+                if (now - lastGameSyncRef.current < 5000) return
+                lastGameSyncRef.current = now
+                console.log('🔄 Tab visible, re-syncing character and campaign data...')
+                if (selectedCharacter?.id) fetchCharacterData(selectedCharacter.id)
+                if (campaignId) fetchCampaignInfo()
             }
         }
-        fetchCampaignInfo()
-    }, [campaignId])
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }, [selectedCharacter?.id, campaignId, fetchCharacterData, fetchCampaignInfo])
 
     // [PHASE 13] Realtime Character Updates
     useRealtime({

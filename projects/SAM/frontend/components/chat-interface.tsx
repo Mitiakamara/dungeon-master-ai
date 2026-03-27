@@ -397,6 +397,46 @@ export function ChatInterface({
         }
     })
 
+    // Reusable fetch history function
+    const fetchHistory = React.useCallback(async () => {
+        if (!campaignId) return
+        const supabase = createClient()
+        const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('campaign_id', campaignId)
+            .order('created_at', { ascending: true })
+            .limit(100)
+
+        if (error) {
+            console.error("Error fetching chat history:", error)
+            return
+        }
+
+        if (data) {
+            const history: Message[] = data.map((msg: any) => ({
+                id: msg.id,
+                role: msg.role as "user" | "assistant" | "system",
+                content: stripSystemTags(msg.content),
+                timestamp: new Date(msg.created_at),
+                imageUrl: msg.image_url,
+                debugInfo: msg.role === "assistant" ? msg.metadata : undefined,
+                senderId: msg.sender_id || null,
+                senderName: msg.metadata?.character_name || "Player",
+            }))
+
+            if (history.length === 0) {
+                setMessages([{
+                    role: "assistant",
+                    content: "Te encuentras ante la entrada de la caverna. El olor a humedad y podredumbre emana de su interior. ¿Qué haces?",
+                    timestamp: new Date()
+                }])
+            } else {
+                setMessages(history)
+            }
+        }
+    }, [campaignId])
+
     // Load History from Supabase — filtered by campaign, re-fetches on campaign change
     React.useEffect(() => {
         if (!campaignId) {
@@ -407,49 +447,36 @@ export function ChatInterface({
             }])
             return
         }
-
-        const fetchHistory = async () => {
-            const supabase = createClient()
-            const { data, error } = await supabase
-                .from('messages')
-                .select('*')
-                .eq('campaign_id', campaignId)
-                .order('created_at', { ascending: true })
-                .limit(100)
-
-            if (error) {
-                console.error("Error fetching chat history:", error)
-                return
-            }
-
-            if (data) {
-                const history: Message[] = data.map((msg: any) => ({
-                    id: msg.id,
-                    role: msg.role as "user" | "assistant" | "system",
-                    content: stripSystemTags(msg.content),
-                    timestamp: new Date(msg.created_at),
-                    imageUrl: msg.image_url,
-                    debugInfo: msg.role === "assistant" ? msg.metadata : undefined,
-                    senderId: msg.sender_id || null,
-                    senderName: msg.metadata?.character_name || "Player",
-                }))
-
-                if (history.length === 0) {
-                    setMessages([{
-                        role: "assistant",
-                        content: "Te encuentras ante la entrada de la caverna. El olor a humedad y podredumbre emana de su interior. ¿Qué haces?",
-                        timestamp: new Date()
-                    }])
-                } else {
-                    setMessages(history)
-                }
-            }
-        }
-
-        // Clear messages before fetching new campaign's history
         setMessages([])
         fetchHistory()
-    }, [campaignId]);
+    }, [campaignId, fetchHistory]);
+
+    // Re-sync messages when returning from background (mobile sleep, tab switch)
+    const lastSyncRef = React.useRef<number>(0)
+    React.useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible' && campaignId) {
+                const now = Date.now()
+                if (now - lastSyncRef.current < 5000) return
+                lastSyncRef.current = now
+                console.log('🔄 Tab visible again, re-syncing messages...')
+                fetchHistory()
+                toast.info('Syncing messages...', { duration: 2000 })
+            }
+        }
+        const handleOnline = () => {
+            if (campaignId) {
+                console.log('🔄 Back online, re-syncing messages...')
+                fetchHistory()
+            }
+        }
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+        window.addEventListener('online', handleOnline)
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+            window.removeEventListener('online', handleOnline)
+        }
+    }, [campaignId, fetchHistory]);
 
     // Scroll effect
     React.useEffect(() => {
