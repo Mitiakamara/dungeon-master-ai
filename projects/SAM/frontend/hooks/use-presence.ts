@@ -17,15 +17,18 @@ export function usePresence(campaignId: string | null, characterName: string | n
             const state = channel.presenceState()
             const users = new Set<string>()
             Object.keys(state).forEach(key => users.add(key))
+            console.log(`🟢 Presence sync: keys=${JSON.stringify(Object.keys(state))}, onlineUsers=${JSON.stringify([...users])}`)
             setOnlineUsers(users)
         })
 
         channel.subscribe(async (status: string) => {
+            console.log(`🟢 Presence channel status: ${status} for ${characterName}`)
             if (status === 'SUBSCRIBED') {
-                await channel.track({
+                const trackResult = await channel.track({
                     character_name: characterName,
                     online_at: new Date().toISOString()
                 })
+                console.log(`🟢 Track result:`, trackResult)
             }
         })
 
