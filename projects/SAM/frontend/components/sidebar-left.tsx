@@ -16,9 +16,10 @@ interface SidebarLeftProps {
     campaignId?: string
     isGM?: boolean
     currentUserId?: string
+    isOnline?: (name: string) => boolean
 }
 
-export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId, isGM, currentUserId }: SidebarLeftProps) {
+export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId, isGM, currentUserId, isOnline }: SidebarLeftProps) {
     return (
         <div className="flex flex-col h-full bg-muted/20 border-r">
             {/* Header Area */}
@@ -52,7 +53,7 @@ export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaig
             {/* Party Roster */}
             {campaignId && (
                 <div className="border-t flex-shrink-0">
-                    <PartyRoster campaignId={campaignId} currentUserId={currentUserId} />
+                    <PartyRoster campaignId={campaignId} currentUserId={currentUserId} isOnline={isOnline} />
                 </div>
             )}
 

@@ -27,7 +27,7 @@ function HpColor(current: number, max: number): string {
     return "text-red-500"
 }
 
-export function PartyRoster({ campaignId, currentUserId }: { campaignId?: string; currentUserId?: string }) {
+export function PartyRoster({ campaignId, currentUserId, isOnline }: { campaignId?: string; currentUserId?: string; isOnline?: (name: string) => boolean }) {
     const [party, setParty] = useState<PartyMember[]>([])
     const [loading, setLoading] = useState(false)
 
@@ -72,6 +72,11 @@ export function PartyRoster({ campaignId, currentUserId }: { campaignId?: string
 
                         return (
                             <div key={member.id} className="flex items-center gap-2 px-1 py-1 rounded-md hover:bg-muted/50 transition-colors">
+                                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                    isOnline?.(member.name)
+                                        ? 'bg-green-500 shadow-[0_0_4px_rgba(34,197,94,0.5)]'
+                                        : 'bg-gray-600'
+                                }`} />
                                 <Avatar className="h-7 w-7 border border-blue-500/30">
                                     <AvatarFallback className="text-[10px]">{member.name?.[0]?.toUpperCase() || "?"}</AvatarFallback>
                                     <AvatarImage src={member.image_url} />

@@ -21,6 +21,7 @@ import { authenticatedFetch } from "@/lib/api"
 import { useRealtime } from "@/hooks/use-realtime"
 
 import { SidebarLeft } from "@/components/sidebar-left"
+import { usePresence } from "@/hooks/use-presence"
 import { SidebarRight } from "@/components/sidebar-right"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
@@ -37,6 +38,9 @@ export default function GameLayout() {
 
     // Derived campaign ID from selected character
     const campaignId = selectedCharacter?.campaign_id || ""
+
+    // Presence tracking
+    const { isOnline } = usePresence(campaignId || null, selectedCharacter?.name ?? null)
 
     // Get current user ID on mount
     React.useEffect(() => {
@@ -270,6 +274,7 @@ export default function GameLayout() {
                             campaignId={selectedCharacter?.campaign_id}
                             isGM={isGM}
                             currentUserId={currentUserId}
+                            isOnline={isOnline}
                         />
                     </SheetContent>
                 </Sheet>
@@ -298,6 +303,7 @@ export default function GameLayout() {
                     campaignId={selectedCharacter?.campaign_id}
                     isGM={isGM}
                     currentUserId={currentUserId}
+                    isOnline={isOnline}
                 />
             </aside>
 
