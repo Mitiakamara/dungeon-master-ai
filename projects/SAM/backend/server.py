@@ -178,19 +178,9 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 except Exception as e:
                     print(f"⚠️ Failed to fetch campaign settings: {e}")
 
-            # DEBUG: Log history sent to SAM for player attribution diagnosis
-            final_history = db_history if db_history else request.history
-            print(f"📜 History for SAM ({len(final_history)} messages):")
-            for i, msg in enumerate(final_history[-5:]):
-                role = msg.get('role', '?')
-                sender = msg.get('sender_name', 'UNKNOWN')
-                content = msg.get('content', '')[:80]
-                print(f"  [{i}] role={role} sender={sender}: {content}...")
-            print(f"📜 Current message: sender_name={char_name}, content={request.message[:80]}...")
-
             response = sam_brain.generate_response(
                 request.message,
-                final_history,
+                db_history if db_history else request.history,
                 request.character_context,
                 sender_name=char_name,
                 campaign_settings=campaign_settings
