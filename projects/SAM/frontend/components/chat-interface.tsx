@@ -56,6 +56,8 @@ function stripSystemTags(content: string): string {
     cleaned = cleaned.replace(/apply_healing\([^)]*\)/gi, '')
     cleaned = cleaned.replace(/give_loot\([^)]*\)/gi, '')
     cleaned = cleaned.replace(/search_(spells|monsters|items)\([^)]*\)/gi, '')
+    // SYSTEM EVENT echoes
+    cleaned = cleaned.replace(/\[SYSTEM EVENT\][^\n]*/gi, '')
     // Clean excess whitespace
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
     return cleaned.trim()
