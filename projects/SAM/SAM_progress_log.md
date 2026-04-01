@@ -266,10 +266,48 @@ f3b730f fix: conditional tool result injection (only on fallback) + first invoca
 692810c Docs: Update progress log — tool result injection, status normalization, Gemini resilience
 ```
 
-## 4. Estado Actual — Marzo 2026
+### Sesión 31 Mar 2026 — Admin Panel, Invitations, Presence, Identity Fix
+
+**Features implementados:**
+1. **Admin panel completo** — Rediseño total de `/admin`. Campaign manager (crear/activar/desactivar/eliminar campañas con player count). Gestión de invitaciones (generar códigos, listar, desactivar). User management (tabla con role/status, toggle admin/player, activate/deactivate, activity log, role filter pills, sortable columns). Campaign controls (reset, save/load checkpoints, clear combat). SAM Neural Tuner conectado al AI (difficulty/creativity/lethality afectan system prompt dinámicamente). Módulos PDF unificados en la card de campañas.
+2. **Sistema de invitaciones** — Backend: 5 endpoints (`POST /api/invitations`, `GET /api/invitations`, `DELETE /api/invitations/{id}`, `POST /api/invitations/validate`, `POST /api/invitations/register`). Códigos de 6 caracteres alfanuméricos. Validación de max_uses y expiración. Registro con código crea usuario Supabase Auth + auto-profile via trigger.
+3. **Signup page** — `/signup` con validación de código de invitación en 2 pasos. Login con email/password además de Google OAuth.
+4. **Player presence** — Supabase Presence API (`channel.track()`) muestra punto verde/gris al lado de cada personaje en el party roster. Auto-absent a los ~10s de cerrar tab.
+5. **Tab notifications** — Título dinámico con unread count (`(3) ⚔️ S.A.M. — New activity!`). Sonido de notificación (Web Audio API, beep D5). Alerta especial de turno en combate (`🎯 YOUR TURN!`).
+6. **Visibility resync** — `visibilitychange` + `online` listeners refetchean mensajes, personaje, y campaign data al volver de background. Throttle 5s anti-spam.
+
+**Bug Fixes críticos:**
+1. **🔴 Shadow variable `sender_name`** — En `ai.py`, la variable del loop de historial sobrescribía el parámetro `sender_name` de `generate_response()`. Si el último mensaje del historial era de SAM, el mensaje actual del jugador se enviaba a Gemini como `[S.A.M.]: texto` en vez de `[Baol Gortsh]: texto`. Fix: renombrado a `msg_sender` dentro del loop.
+2. **Identity rule reescrita** — System prompt ahora explica que los prefixes `[CharacterName]:` son automáticos del sistema. SAM instruido a nunca pedir a jugadores que se identifiquen. 6 reglas absolutas numeradas. Stripping de `[SYSTEM EVENT]` echoes en frontend.
+3. **`stripSystemTags` expandido** — Limpia `[SYSTEM EVENT]` echoes, `Calculation:` lines, tool call text, failed search results.
+
+**Infraestructura:**
+1. **Schema migration 006** — `profiles` con campos `status` (pending/approved/rejected) y `role` (admin/player). Tabla `invitations` (code, max_uses, expires_at, is_active). Trigger `handle_new_user` auto-crea perfil al registrarse. RLS para admin.
+2. **Admin verification** — `verify_admin()` helper reutilizable. Endpoints admin verifican `role = 'admin'` en profiles.
+3. **Delete campaigns/users** — Confirmación por nombre (type-to-confirm). Cascade: documents → messages → characters → campaign.
+
+### Commits en main (27 Mar – 1 Abr 2026)
+```
+d567718 fix: critical shadow variable bug — player messages sent to Gemini as [S.A.M.]
+a7832a9 fix: rewrite identity rules + add Gemini prompt debug logs + strip SYSTEM EVENT echoes
+222cc72 fix: rewrite identity rule — clarify prefix is automatic
+bc5657a debug: add presence tracking console logs for diagnosis
+95b77dc fix: prevent SAM from prefixing responses with player name brackets
+4db77ec feat: tab notifications — dynamic title, notification sound, turn alert
+264477b feat: player presence tracking — online/offline indicator via Supabase Presence API
+bc2ff64 fix: add critical identity rule to system prompt
+efa24c0 debug: log history sent to SAM for player attribution diagnosis
+aced2a2 feat: admin delete campaigns and users with confirmation dialogs
+532b265 feat: merge campaign modules into campaign manager
+a9f7fc4 feat: admin campaign manager — create, activate/deactivate, delete campaigns with player count
+d884ced feat: connect SAM Neural Tuner to AI — campaign settings affect system prompt dynamically
+ca710b7 feat: admin panel — player role/status management, campaign controls, layout reorganization
+```
+
+## 4. Estado Actual — Abril 2026
 
 ### Lo que funciona
-- Login/auth via Supabase JWT
+- Login/auth via Supabase JWT + email/password + Google OAuth
 - Crear/importar personajes (PDF via Gemini)
 - Chat con SAM (narrativa + mecánicas)
 - Dados (backend con `secrets.randbelow`, fallback client-side)
@@ -279,34 +317,39 @@ f3b730f fix: conditional tool result injection (only on fallback) + first invoca
 - DM rolls visualizados (chips morados)
 - Compendio D&D 5e con búsqueda semántica (spells, monsters, items)
 - RAG sobre módulos PDF de campaña
-- Upload PDF de módulos de campaña (GM-only, con vectorización)
+- Upload PDF de módulos de campaña (integrado en admin campaign manager)
 - Checkpoints (save/load/reset/list)
-- Mensajería privada (commlink) — usa campaignId real
+- Mensajería privada (commlink) — usa campaignId real (UI prototipo, falta selector de destinatarios)
 - Realtime sync via Supabase WebSocket (filtrado por campaña)
-- **Multiplayer MVP:** mensajes filtrados por campaign_id, header dinámico, re-fetch al cambiar campaña
-- **Multiplayer atribución:** sender_id en backend, burbujas diferenciadas por jugador (azul + nombre personaje), SAM con estilo original
-- **Selector de campaña:** dropdown en dialog de crear personaje, fetch de campañas disponibles via API
-- **Deduplicación robusta:** sin optimistic update, mensajes llegan solo via Realtime, dedup por id de BD
-- **Party roster:** sidebar muestra otros personajes de la campaña con HP status
+- **Multiplayer completo:** mensajes filtrados por campaign_id, header dinámico, atribución por `[CharacterName]` prefix
+- **Shadow variable fix:** `sender_name` del loop de historial ya no sobrescribe el parámetro de `generate_response()`
+- **Identity rule robusta:** System prompt con 6 reglas absolutas, SAM nunca confunde jugadores con DM
+- **Selector de campaña:** dropdown en dialog de crear personaje
+- **Deduplicación robusta:** sin optimistic update, mensajes solo via Realtime, dedup por id de BD
+- **Party roster:** sidebar muestra otros personajes con HP status + indicador de presencia online/offline
+- **Player presence:** Supabase Presence API con punto verde/gris en roster
 - **Admin commands GM-only:** `/reset`, `/checkpoint`, `/load`, `/list` solo para GM
-- **Reset broadcast:** sincroniza limpieza de chat a todos los clientes via Realtime
-- **SAM multiplayer-aware:** distingue jugadores por nombre (prefix `[CharacterName]` en mensaje actual + historial), no controla personajes ajenos
-- **SDK migrado:** `google-genai` (nuevo SDK) reemplaza `google-generativeai` (legacy). Sin conflictos de dependencias.
-- **Gemini resilience (3 capas):** (1) `langchain-google-genai==3.2.0` soporta `thought_signature`. (2) Fallback sin tools con historial limpio + system prompt instruye tags inline. (3) Tool results capturados se inyectan en fallback response.
-- **Status fields normalizados:** `hp→hp_current`, `wallet→money` en PDF import + migration script. Frontend con fallback defensivo `hp_current ?? hp`.
-- **LangChain 1.x:** Stack completo actualizado (`langchain==1.2.13`, `langchain-core==1.2.22`, `langchain-google-genai==3.2.0`)
-- **Context-aware prompting:** AI history de BD (20 msgs) en vez de frontend. Campaign lock serializa respuestas.
-- **Combat turn tracking:** `<COMBAT>` tag → `campaigns.settings.combat`. Initiative banner, input blocking por turno.
-- **Typing indicator:** Supabase Broadcast, throttle 2s.
-- **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile.
+- **Admin panel completo:** Campaign manager, invitaciones, user management, SAM tuner, campaign controls
+- **Sistema de invitaciones:** Registro por código de 6 chars. Signup page + backend endpoints
+- **SAM Neural Tuner → AI:** Difficulty/creativity/lethality afectan system prompt dinámicamente
+- **SDK migrado:** `google-genai` (nuevo SDK), `langchain-google-genai==3.2.0`, `langchain==1.2.13`
+- **Gemini resilience (3 capas):** thought_signature support + fallback sin tools + tool results injection
+- **Context-aware prompting:** AI history de BD (20 msgs). Campaign lock (`asyncio.Lock`) serializa respuestas.
+- **Combat turn tracking:** `<COMBAT>` tag → initiative banner + input blocking por turno
+- **Typing indicator:** Supabase Broadcast, throttle 2s
+- **Tab notifications:** Unread count, sonido, alerta de turno
+- **Visibility resync:** Re-fetch de mensajes/personaje/campaña al volver de background
+- **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile
+- **stripSystemTags:** Limpia SYSTEM EVENT echoes, Calculation lines, tool calls, COMBAT tags
 
 ### Completitud: ~95%
 
 ### Pendiente para "done"
-- Auto-creación de perfil para usuarios nuevos (trigger Supabase)
+- Commlink: selector de destinatarios (usar party roster como lista)
 - Generated scene placeholder (tag `<IMAGE>` sin servicio de imágenes conectado)
 - Playtest completo con grupo de amigos
 - Vercel Root Directory config
+- Quitar console.logs de debug (presence tracking)
 
 ## 5. Análisis Multiplayer
 
@@ -332,19 +375,21 @@ f3b730f fix: conditional tool result injection (only on fallback) + first invoca
 | ~~**Sin selector de campaña**~~ | ✅ Resuelto: dropdown en `character-create-dialog.tsx` | `4211de3` |
 | ~~**Sin roster de jugadores**~~ | ✅ Resuelto: `party-roster.tsx` con endpoint `/campaign/{id}` | `466f7ef` |
 | **Sin membership table** | No hay concepto formal de "jugadores en campaña" | schema |
-| **Sin presence indicators** | No se ve quién está online | — |
+| ~~**Sin presence indicators**~~ | ✅ Resuelto: Supabase Presence API + punto verde/gris en roster | `264477b` |
 | **Commlink sin recipients** | No hay lista de jugadores para enviar mensajes | `commlink-dialog.tsx` |
-| **Campaign join/invite** | No hay sistema de invitación | — |
+| ~~**Campaign join/invite**~~ | ✅ Resuelto: sistema de invitaciones por código | `aced2a2` |
 
 ## 6. Próximos Pasos Prioritarios
 
 1. ~~**Probar upload PDF end-to-end**~~ — ✅ Completado
-2. **Auto-creación de perfil** — Trigger en Supabase o endpoint para que usuarios nuevos no necesiten INSERT manual
-3. **Multiplayer extras** — membership table, presence indicators, commlink recipients
-4. **Campaign join/invite** — sistema de invitación por código o link
-5. **Image generation** — Conectar servicio de imágenes (Imagen 3 o similar) al tag `<IMAGE>`
-6. **Tests** — al menos smoke tests para el gameplay loop
+2. ~~**Auto-creación de perfil**~~ — ✅ Trigger `handle_new_user` en Supabase (migration 006)
+3. ~~**Presence indicators**~~ — ✅ Supabase Presence API en party roster
+4. ~~**Campaign join/invite**~~ — ✅ Sistema de invitaciones por código
+5. **Commlink recipients** — Agregar selector de destinatarios usando party roster
+6. **Image generation** — Conectar servicio de imágenes (Imagen 3 o similar) al tag `<IMAGE>`
+7. **Tests** — al menos smoke tests para el gameplay loop
+8. **Vercel config** — Root Directory → `projects/SAM/frontend`
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 26 Mar 2026 — LangChain 1.x upgrade, combat turn tracking, context-aware prompting, typing indicator, mobile responsive*
+*Última actualización: 1 Abr 2026 — Admin panel completo, invitations, player presence, shadow variable fix, tab notifications, identity rule rewrite*

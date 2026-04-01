@@ -225,28 +225,35 @@ lucide-react, sonner, next-themes
 - **Render build command:** `pip install -r requirements.txt`
 - Los esquemas de BD son iterativos; el más reciente es `phase11_schema.sql`
 
-### Estado actual (Mar 2026)
+### Estado actual (Abr 2026)
 - Backend live en Render (`https://sam-backend-mg0j.onrender.com`), Root Directory: `projects/SAM/backend`
 - Frontend en Vercel (`sam-weld-tau.vercel.app`) — config Root Directory: `projects/SAM/frontend`
-- 55+ commits en main (último: `0389543`, 26 Mar 2026)
+- 70+ commits en main (último: `d567718`, 1 Abr 2026)
 - **Single-player funcional y testeado:** login → personaje → chat → dados → loot → XP → checkpoints
-- **Upload PDF de módulos:** GM-only, vectoriza con gemini-embedding-001 (768d) y almacena en Supabase para RAG
+- **Upload PDF de módulos:** Integrado en admin campaign manager, vectoriza con gemini-embedding-001 (768d)
 - **LangChain 1.x stack:** `langchain==1.2.13`, `langchain-core==1.2.22`, `langchain-google-genai==3.2.0` (thought_signature support), `langchain-community==0.4.1`. Modelo: `gemini-2.5-flash` (pineado).
 - **SDK migrado a `google-genai`:** Todo el código runtime usa el nuevo SDK (`from google import genai`). Legacy `google-generativeai` eliminado.
 - **Gemini resilience (3 capas):** (1) `langchain-google-genai==3.2.0` soporta `thought_signature`. (2) Fallback sin tools con historial limpio + inline tags. (3) Tool results capturados se inyectan en fallback response.
 - **Context-aware prompting:** AI history se lee de BD (últimos 20 msgs por campaign_id) en vez de frontend. Campaign lock (`asyncio.Lock`) serializa respuestas de SAM por campaña.
 - **Combat turn tracking:** Tag `<COMBAT>` en system prompt → backend parsea y actualiza `campaigns.settings.combat` → frontend muestra initiative banner con turno actual resaltado, input bloqueado cuando no es tu turno (NPCs no bloquean).
-- **Multiplayer completo (sesiones 18-26 Mar):**
+- **Multiplayer completo (sesiones 18 Mar – 1 Abr):**
   - Mensajes filtrados por campaign_id, Realtime scoped, header dinámico
   - sender_id + burbujas diferenciadas (propios/otros/SAM), `[CharacterName]` prefix en AI prompt
-  - Selector de campaña, party roster con HP, commlink con campaignId real
+  - **Shadow variable fix:** `msg_sender` en loop de historial, `sender_name` (parámetro) intacto para mensaje actual
+  - **Identity rule robusta:** 6 reglas absolutas, prefixes son automáticos del sistema, SAM nunca pide identificación
+  - Selector de campaña, party roster con HP + **presencia online/offline** (Supabase Presence API)
   - Sin optimistic update, dedup por id de BD
   - Admin commands GM-only, `/reset` broadcast + clear combat state
   - Typing indicator via Supabase Broadcast
+  - **Tab notifications:** unread count dinámico, sonido (Web Audio API), alerta de turno
+  - **Visibility resync:** re-fetch al volver de background (visibilitychange + online)
+- **Admin panel completo:** Campaign manager (crear/activar/desactivar/eliminar + módulos PDF unificados), invitaciones (códigos 6 chars, max_uses, expiración), user management (role/status toggle, delete con confirmación), campaign controls (reset/checkpoint/combat clear), SAM Neural Tuner conectado al AI
+- **Sistema de invitaciones:** 5 endpoints backend + signup page con validación de código en 2 pasos + auto-profile trigger
+- **SAM Neural Tuner → AI:** Difficulty/creativity/lethality en `campaigns.settings` afectan system prompt dinámicamente
 - **Status fields normalizados:** `hp→hp_current`, `wallet→money`. Migration script ejecutado.
 - **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile.
-- **stripSystemTags expandido:** Limpia Calculation lines, tool call text, `<COMBAT>` tags, failed search results.
-- **Multiplayer pendiente:** membership table, commlink recipients, campaign join/invite
+- **stripSystemTags expandido:** Limpia `[SYSTEM EVENT]` echoes, Calculation lines, tool call text, `<COMBAT>` tags, failed search results.
+- **Multiplayer pendiente:** commlink recipients (selector de destinatarios)
 - **Completitud: ~95%**
 - Ver `SAM_progress_log.md` para detalle completo
 
@@ -282,7 +289,12 @@ projects/FF8/
 │   ├── # 🤖 Automatrix (AMX) – FF8.md  # CRÍTICO: Reglas de negocio, esquema DB, cálculos
 │   ├── AMX_Tables_Summary_2025-08-26.md # Relaciones de tablas y columnas
 │   ├── Production_Query_Analysis.md    # Updates al schema por hallazgos en producción
-│   └── Resumen de tablas y relaciones.txt
+│   ├── Resumen de tablas y relaciones.txt
+│   ├── FF8_Bracket_Movement_Reports.md # 3 SQL adaptados de Get Financed: Weekly Collections, Bracket Snapshot, Bracket Movement
+│   ├── FF8_Collections_Master_Report_Spec_v3.md # Spec v3.1: 36 columnas, reporte maestro para agente AI de cobranzas
+│   ├── FF8_Collections_Master_Report.sql # SQL v3.1: genera el reporte maestro (AMX → .xlsx → Make → Claude AI)
+│   ├── Out_For_Repo_Report.sql         # Cuentas Out for Repo con DIN, descuentos, interest due
+│   └── HASHEDSSNREPAYFEED_Query.sql    # Últimas 30 cuentas con hashed SSN
 │
 ├── COMERCIAL/                          # Business Intelligence y marketing
 │   ├── FF8_Website_SEO_Guide.md
@@ -340,6 +352,11 @@ projects/FF8/
     │   │   │   │   ├── dealers/route.ts       # Linked dealers + CRM enrichment
     │   │   │   │   ├── crm/route.ts           # CRM Interactions (name-based broker post-filter + optional dealerId filter)
     │   │   │   │   └── buybacks/route.ts      # DINs: Pipeline Status='Default Process' filtered by {Broker}
+    │   │   │   ├── collections/                # Collections module API routes
+    │   │   │   │   ├── ingest/route.ts        # POST: JSON ingestion (API key auth, batch upsert)
+    │   │   │   │   ├── upload/route.ts        # POST: xlsx upload (local dev fallback, production uses Netlify Function)
+    │   │   │   │   ├── summary/route.ts       # GET: role-filtered KPI summary from ai_analysis
+    │   │   │   │   └── accounts/route.ts      # GET: role-filtered account list with sorting/pagination
     │   │   │   └── investor/                  # Phase 5 — Investor API routes
     │   │   │       ├── profile/route.ts       # Airtable Investors table (by email or investorId)
     │   │   │       ├── loans/route.ts         # Airtable Loans table (by Investor Email)
@@ -371,6 +388,8 @@ projects/FF8/
     │   │       │   ├── page.tsx                     # Admin portal (desktop only)
     │   │       │   ├── AdminMobileMessage.tsx       # Shows "Desktop Required" on mobile
     │   │       │   └── investors/page.tsx           # Admin Investor View (InvestorTabs isAdmin)
+    │   │       ├── collections/
+    │   │       │   └── page.tsx                     # Collections dashboard: routes by collections_role (admin/supervisor/collector)
     │   │       └── unauthorized/page.tsx
     │   ├── lib/supabase/
     │   │   ├── client.ts              # Browser client (createBrowserClient)
@@ -381,11 +400,13 @@ projects/FF8/
     │   │   ├── dealer.ts             # PortfolioRecord, ApplicantRecord, DINRecord (+ collectionsCommsDate), DealerProfile types
     │   │   ├── broker.ts             # BrokerProfile, BrokerAccount (+ veriffIdVerified), BrokerDealer, CRMInteraction, BrokerCommissionSummary, BrokerTab types
     │   │   ├── investor.ts          # InvestorProfile, InvestorLoan, InterestPayment, InvestorTab types
+    │   │   ├── collections.ts        # Collections module types (SnapshotRow, AIAnalysis, role-filtered responses)
     │   │   └── leaflet-heat.d.ts     # TypeScript declarations for leaflet.heat
     │   ├── migrations/
     │   │   ├── 001_users_table.sql    # Supabase: users table + RLS + auth trigger
     │   │   ├── 002_create_portfolio_data.sql  # Supabase: portfolio_data table + indexes
-    │   │   └── 003_add_last_login.sql # Add last_login + display_name columns to users table
+    │   │   ├── 003_add_last_login.sql # Add last_login + display_name columns to users table
+    │   │   └── 004_collections_tables.sql # Collections: daily_snapshots, ofr_snapshots, ai_analysis, chat_history + RLS
     │   ├── hooks/
     │   │   └── useIsMobile.ts          # Mobile detection hook (768px breakpoint)
     │   ├── lib/
@@ -431,6 +452,16 @@ projects/FF8/
     │       │   ├── BrokerBuybacksTab.tsx # Pending buybacks (DIN): expandable rows with BuybackTimeline, summary cards. UPPERCASE.
     │       │   ├── ActivityMap.tsx      # Admin-only: wrapper with data fetch, visits-only filter, date range, view mode toggle
     │       │   └── ActivityMapInner.tsx # Leaflet map: Markers (colored DivIcons) + Heatmap (leaflet.heat) modes. South Florida center.
+    │       ├── collections/            # Collections module components
+    │       │   ├── AdminDashboard.tsx  # Full admin view: KPIs, brackets, tabs (Queues/Dealers/Programs/Alerts/OFR), narrative, queue filter
+    │       │   ├── SupervisorDashboard.tsx # All queues, no financials, attention list
+    │       │   ├── CollectorDashboard.tsx  # Own queue only, priority contacts
+    │       │   ├── ChatPanel.tsx       # AI chat assistant (slide-over desktop, full-screen mobile)
+    │       │   ├── KPICard.tsx         # Metric card (light + dark variants)
+    │       │   ├── BracketBar.tsx      # Horizontal bracket distribution bar (clickable segments)
+    │       │   ├── AlertCard.tsx       # Severity-coded alert display
+    │       │   ├── TimeSlicer.tsx      # Date picker (Today/Yesterday/Pick)
+    │       │   └── AccountsTable.tsx   # Role-filtered accounts table with sortable columns
     │       └── ui/
     │           ├── MeshGradient.tsx    # 3 blobs CSS animados (blobDrift, 60-80s alternate)
     │           ├── FloatingShapes.tsx  # Paralelogramos FF8, variantes: light/dark/contact
@@ -453,7 +484,10 @@ projects/FF8/
     │   └── seed-portfolio.ts           # Import AMX XLSX → Supabase portfolio_data (npx tsx scripts/seed-portfolio.ts <file>)
     ├── netlify/
     │   └── functions/
-    │       └── portfolio-upload.js     # Netlify Function: recibe XLSX binary de Make.com → delete stale accounts per portfolio + upsert Supabase portfolio_data
+    │       ├── portfolio-upload.js     # Netlify Function: recibe XLSX binary de Make.com → delete stale accounts per portfolio + upsert Supabase portfolio_data
+    │       ├── collections-upload.js   # Netlify Function: recibe XLSX binary → parse → segment Active/OFR → upsert daily_snapshots + ofr_snapshots
+    │       ├── collections-analyze.js  # Netlify Function: pre-compute KPIs server-side → save ai_analysis → Claude generates narrative bullets
+    │       └── collections-chat.js     # Netlify Function: AI chat assistant — role-based context, conversation history, bilingual
     └── package.json                    # + recharts, xlsx, tsx (Phase 3) + react-leaflet, leaflet, leaflet.heat (Activity Map)
 ```
 
@@ -748,11 +782,45 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 - Portal legacy en Wix (flexflow8.com) operativo durante la migración
 - **Git workflow:** `dev` branch para desarrollo, merge a `main` para producción
 - **flexflow8-site:** Fase 1-5 completas + Admin Settings + Mobile Responsive + **Auth production fix** + **Portfolio Upload Automation** (con cleanup de cuentas cerradas) + **Security hardening** + **SEO audit** — sitio público (7 páginas + SEO con noindex login + absolute canonical + JSON-LD email fix + Lottie + OG image) + Supabase Auth (magic link + roles + portal routing, **client-side callback for Netlify**, `/api/auth/me` para role fetching) + Dealer Portal (4 tabs, Dashboard con **sortable drill-down columns** + **conditional columns** (ID Verification solo Pending Client Signatures, Expected Funding Date solo Pending Funding) + **Dealer column admin-only** + **UPPERCASE customer names** + **timezone-safe dates**, Portfolio con **Frequency column** desde Airtable, Buybacks con expandable BuybackTimeline, VERIFF filter, compact promise columns) + Broker Portal (5 tabs: Accounts dashboard con **VERIFF badges en drill-down** / Commissions + CSV export / Dealers / CRM con GPS Map links + "New CRM Entry" Fillout button / Pending Buybacks con expandable BuybackTimeline + badge; Activity Map admin-only visits-only con Leaflet heatmap+markers — todo UPPERCASE) + Investor Portal (3 tabs: My Investment / Active Loans con expandable payments / Payment History con filters + CSV export — read-only, Airtable FF8 Investors base, **case-insensitive email matching**) + Admin Portal (Dealer View con portfolio fix + **Dealer name en drill-down** | Broker View | Investor View | Settings con User Management CRUD + Activity Log + **role filter pills + sortable columns**) + **Mobile dark mode portals** (dealer 4 tabs con frequency en cards / broker 5 tabs / investor 3 tabs, CSS bars chart, MobileShell con favicon logo + LogOut icon, TimeSlicer, admin "Desktop Required") en Netlify
-- **Producción Netlify:** Login funcional con magic link en `incandescent-figolla-de25fc.netlify.app`. Requiere env vars configuradas en Netlify Dashboard (AIRTABLE_PAT, AIRTABLE_BASE_ID, AIRTABLE_DEALERS_TABLE, AIRTABLE_APPLICANTS_TABLE, AIRTABLE_BROKERS_TABLE, AIRTABLE_INVESTORS_BASE_ID, AIRTABLE_INVESTORS_TABLE, AIRTABLE_LOANS_TABLE, AIRTABLE_PAYMENTS_TABLE, AIRTABLE_CRM_INTERACTIONS_TABLE, AIRTABLE_CRM_DEALERS_TABLE, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, PORTFOLIO_UPLOAD_KEY)
+- **Producción Netlify:** Login funcional con magic link en `incandescent-figolla-de25fc.netlify.app`. Requiere env vars configuradas en Netlify Dashboard (AIRTABLE_PAT, AIRTABLE_BASE_ID, AIRTABLE_DEALERS_TABLE, AIRTABLE_APPLICANTS_TABLE, AIRTABLE_BROKERS_TABLE, AIRTABLE_INVESTORS_BASE_ID, AIRTABLE_INVESTORS_TABLE, AIRTABLE_LOANS_TABLE, AIRTABLE_PAYMENTS_TABLE, AIRTABLE_CRM_INTERACTIONS_TABLE, AIRTABLE_CRM_DEALERS_TABLE, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, PORTFOLIO_UPLOAD_KEY, COLLECTIONS_INGEST_KEY, ANTHROPIC_API_KEY)
 - **Service role client:** Shared `createServiceClient()` en `lib/supabase/server.ts` — todas las lecturas de `public.users` usan service role (bypassa RLS). Todos los Airtable table IDs en env vars (sin hardcoded `tbl...`)
 - **Portfolio Upload Automation (Make.com → Netlify Function):** Escenario Make.com "Portfolio Report → Supabase (New Portal)" recibe email con XLSX adjunto → sube a Google Drive → descarga bytes → POST a Netlify Function `/api/portfolio/upload` con binary body. Function (`netlify/functions/portfolio-upload.js`) parsea XLSX (row 3 = headers, row 4+ = data), mapea columnas → **delete stale accounts per portfolio** (solo los portfolios del reporte, no toca los demás) → upsert Supabase `portfolio_data`. Auth: `x-api-key` header validado contra `PORTFOLIO_UPLOAD_KEY` env var. Redirect en `netlify.toml`: `/api/portfolio/upload` → `/.netlify/functions/portfolio-upload`
 - Timestamp Camera Enterprise + Fillout funcionando para verificación de campo
 - Make.com automatizaciones operativas (incluye Portfolio Upload automation)
+- **Automatrix (AMX) — SQL Collection KPIs (Mar 2026):**
+  - 15 SQL reportes de FF8 en producción (eficiencia diaria/mensual, payments detail/summary, portfolio snapshot, cohort performance, collections worklist, out for repo, etc.)
+  - 5 SQL reportes de Get Financed analizados para adaptación (monthly collections, collections by queue, bracket movement semanal, behavioral efficiency, repo sold & buybacks)
+  - **3 nuevos SQL adaptados de Get Financed para FF8** (documentados en `FF8_Bracket_Movement_Reports.md`):
+    1. **Weekly Collections by Queue** — cobros semanales por queue (A-F / G-L+N / M-Z-N)
+    2. **Bracket Snapshot** — distribución de morosidad por pagos atrasados (normalizado por frecuencia: Weekly=7d, Bi-Weekly=14d) en 4 cortes semanales
+    3. **Bracket Movement** — migración entre brackets semana a semana (Improved/Same/Worsened), NET = leading indicator de efectividad de cobranza
+  - Adaptaciones clave vs Get Financed: brackets por **número de pagos** (no días fijos), threshold proporcional al ciclo, queues FF8, solo BHPH (sin LHPH), excluye COMPANY LOANS
+  - **Collections Master Report SQL v3.1** (`FF8_Collections_Master_Report.sql` + `FF8_Collections_Master_Report_Spec_v3.md`):
+    - Reporte maestro unificado: 1 fila por cuenta por fecha de corte, **36 columnas** en 5 bloques (A-E)
+    - Pipeline: AMX genera XLSX → email → Make mailhook → Claude AI analiza → API → Dashboard
+    - Columnas clave: identification (7), loan characteristics (9), account status (10, incluye `recency` y balance split principal/interest), bracket & queue (4, con `bracket_previous` y `bracket_movement`), period collections (6, desglosadas principal/interest/fees + YTD)
+    - **Fixes v3.1:** (1) `program_code` redondea FinanceAmount al tier real (PFA-1500/2000/2500/3000, BHPH-7000/10000), (2) filtro COMPANY LOANS con wildcard para doble espacio + `original_dealer_name` para CLOSED BUYBACKS, (3) balance separado en `current_principal_balance` + `current_interest_balance` (de GetAccountBalances), (4) APR hardcoded 30% (eliminado cálculo dinámico), (5) `dealer_code` = PortfolioId (único por dealer)
+    - **CLOSED BUYBACKS resuelto:** `DealsTable.ServicingBranchId` → `BookLoadCatalogTable.BookLoadCatalogId` (WHERE `Category='servicingbranch'`) → `Description` = dealer original. Ej: cuenta 8001301 → ServicingBranchId=13 → "Doral Motors Inc DBA Carman"
+    - **`GetAccountBalances` columnas reales:** AccountNumber, Principal, **Interest** (no InterestDue), AccruedInterest, SalesTax, LHPHSalesTax, CPI, CPIPayoff, SideNote, DeferredDown, NSF, MiscFee, LateFee, LastPaymentDate
+    - **`recency`** (col 26): días desde último pago recibido. Diferente a DPD (deuda vencida vs actividad). Umbrales: <14d/28d=activo, 35+=alerta, 60-70+=zona DIN
+    - Queue asignada por **apellido** (no nombre), brackets con **grace period de 4 días**
+  - **Pendiente adaptación:** Behavioral Efficiency (tendencia de pago individual) y Repo Sold & Buybacks (charge-off analysis)
+- **Collections Module (Phase 1-4 implementado, Mar 2026):**
+  - **Supabase tables:** `daily_snapshots` (Active, ~243 rows/day), `ofr_snapshots` (OFR, weekly), `ai_analysis` (pre-computed KPIs + Claude narrative), `chat_history` (admin chat)
+  - **Users table:** Added `collections_role` (admin/supervisor/collector) + `collections_queue` (A-F / G-L(+N) / M-Z(-N))
+  - **RLS:** Admin=all, supervisor=daily_snapshots+ai_analysis, collector=own queue only
+  - **Netlify Functions:** `collections-upload.js` (xlsx binary → parse → segment → upsert), `collections-analyze.js` (pre-compute KPIs in JS → save → Claude narrative), `collections-chat.js` (role-based AI assistant)
+  - **Dashboard:** 3 role-based views — Admin (full KPIs, tabs, queue filter, drill-down, OFR, AI narrative), Supervisor (no financials), Collector (own queue only). Chat FAB on all views
+  - **Architecture:** KPIs pre-computed server-side in JavaScript (no Claude dependency for dashboard). Claude only generates 4-6 bullet narrative lines (~500 char input, 512 max_tokens). Dashboard works even if Claude fails
+  - **6 Charts (Chart.js):** % Current Trend (line), Collections Trend (bars), Bracket + Payment Cycle Donut (side by side), Recency Heatmap (horizontal bars), Queue Comparison (vertical bars, identity colors), Dealer Scatter (bubbles). History API: `/api/collections/history`
+  - **Mobile dark theme:** `position: fixed` dark container (#0B1929 bg, #12233A cards), 12px content padding, Home nav button, all components receive `dark` prop
+  - **Dealer Mobile Light:** 4-tab dark theme (Dashboard with admin dealer selector, Portfolio with sort controls, Buybacks with totals card, Resources). Admin sees dealer dropdown filter
+  - **Admin mobile home:** Nav cards (Collections, Dealer Portal, Settings with user CRUD, Logout) replacing "Desktop Required" dead-end
+  - **ff8_team role:** New user role for FF8 team members. Redirects to `/portal/collections`. Sidebar shows Collections link. Auth callback + login page handle redirect correctly
+  - **Chat limits:** Daily message limits by role (admin=50, supervisor=30, collector=20). Topic restriction (collections-only questions)
+  - **Alert drill-down:** Clickable recency/new-behind alerts expand to filtered account lists. API supports `recency_gte` and `new_behind` filters
+  - **Env vars:** `COLLECTIONS_INGEST_KEY`, `ANTHROPIC_API_KEY`
+  - **Redirects:** `/api/collections/upload` → `collections-upload`, `/api/collections/analyze` → `collections-analyze`, `/api/collections/chat` → `collections-chat`
 - **Urgente:** Rotar API key de Airtable hardcodeada en Wix antes de migración
 - **Pendiente:** Implementar backup strategy (Make.com + Google Drive)
 - **Pendiente:** Automatización OCR de videos (necesaria cuando >10 reps activos)
@@ -773,4 +841,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 26 Mar 2026 — SAM: LangChain 1.x upgrade, combat turn tracking (COMBAT tag + initiative banner + input lock), context-aware prompting (DB history + campaign lock), typing indicator, character sheet responsive, gemini-2.5-flash. ~95% completitud. FF8: Phase 1-5 + Admin Settings + Mobile Responsive + Security hardening + SEO complete.*
+*Última actualización: 1 Abr 2026 — SAM: Admin panel completo (campaigns, invitations, user management, Neural Tuner → AI). Player presence (Supabase Presence API). Critical shadow variable fix (sender_name). Identity rule rewrite. Tab notifications. Visibility resync. stripSystemTags expanded. FF8: Collections Module complete.*
