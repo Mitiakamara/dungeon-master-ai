@@ -315,11 +315,11 @@ class AIHelper:
                 if isinstance(msg, dict):
                     role = msg.get("role", "user")
                     content = msg.get("content", "")
-                    sender_name = msg.get("sender_name", "")
+                    msg_sender = msg.get("sender_name", "")
                     if role == "user":
                         # Prefix with character name for multiplayer attribution
-                        if sender_name and sender_name not in ("S.A.M.", ""):
-                            messages.append(HumanMessage(content=f"[{sender_name}]: {content}"))
+                        if msg_sender and msg_sender not in ("S.A.M.", ""):
+                            messages.append(HumanMessage(content=f"[{msg_sender}]: {content}"))
                         else:
                             messages.append(HumanMessage(content=content))
                     elif role == "assistant":
@@ -334,13 +334,6 @@ class AIHelper:
             messages.append(SystemMessage(content="REMINDER: If this action changes HP, you MUST output the <UPDATE> tag at the end. Example: <UPDATE>{\"status\": {\"hp_current\": 15}}</UPDATE>"))
             
             # 3. Gemini Inference (With Tools)
-            print(f"🧠 SYSTEM PROMPT (first 500): {formatted_system_prompt[:500]}...")
-            print(f"🧠 SYSTEM PROMPT (last 500): ...{formatted_system_prompt[-500:]}")
-            print(f"🧠 Total messages to Gemini: {len(messages)}")
-            for i, m in enumerate(messages[-5:]):
-                content_preview = str(m.content)[:150] if hasattr(m, 'content') else str(m)[:150]
-                role = type(m).__name__
-                print(f"  🧠 [{i}] {role}: {content_preview}")
             try:
                 ai_msg = self.llm_with_tools.invoke(messages)
             except Exception as tool_error:
