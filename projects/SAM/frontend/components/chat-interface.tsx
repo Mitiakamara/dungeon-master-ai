@@ -110,6 +110,66 @@ export function ChatInterface({
     const isMyTurn = !isInCombat || isNpcTurn || combatState?.current_turn === characterName
     const turnMessage = isInCombat && !isMyTurn ? `${combatState.current_turn}'s turn` : null
 
+    // Tab notification state
+    const unreadCountRef = React.useRef(0)
+    const originalTitleRef = React.useRef('S.A.M. — AI Dungeon Master')
+    const prevMessageCountRef = React.useRef(0)
+
+    const playNotificationSound = React.useCallback(() => {
+        try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+            const oscillator = audioCtx.createOscillator()
+            const gainNode = audioCtx.createGain()
+            oscillator.connect(gainNode)
+            gainNode.connect(audioCtx.destination)
+            oscillator.frequency.value = 587.33
+            oscillator.type = 'sine'
+            gainNode.gain.value = 0.1
+            oscillator.start()
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3)
+            oscillator.stop(audioCtx.currentTime + 0.3)
+        } catch {}
+    }, [])
+
+    // Notify on new messages when tab is hidden
+    React.useEffect(() => {
+        if (messages.length <= prevMessageCountRef.current) {
+            prevMessageCountRef.current = messages.length
+            return
+        }
+        prevMessageCountRef.current = messages.length
+
+        if (document.visibilityState === 'hidden') {
+            const lastMessage = messages[messages.length - 1]
+            if (lastMessage && (lastMessage.role === 'assistant' || (lastMessage.senderId && lastMessage.senderId !== currentUserId))) {
+                unreadCountRef.current += 1
+                document.title = `(${unreadCountRef.current}) ⚔️ S.A.M. — New activity!`
+                playNotificationSound()
+            }
+        }
+    }, [messages, currentUserId, playNotificationSound])
+
+    // Combat turn notification
+    React.useEffect(() => {
+        if (combatState?.active && combatState?.current_turn === characterName && document.visibilityState === 'hidden') {
+            document.title = '🎯 YOUR TURN! — S.A.M.'
+            playNotificationSound()
+            setTimeout(playNotificationSound, 300)
+        }
+    }, [combatState?.current_turn, characterName, combatState?.active, playNotificationSound])
+
+    // Reset title when tab becomes visible
+    React.useEffect(() => {
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                unreadCountRef.current = 0
+                document.title = originalTitleRef.current
+            }
+        }
+        document.addEventListener('visibilitychange', handleVisibility)
+        return () => document.removeEventListener('visibilitychange', handleVisibility)
+    }, [])
+
     // Debug Inspector State
     const [debugOpen, setDebugOpen] = React.useState(false)
     const [currentDebugInfo, setCurrentDebugInfo] = React.useState<any>(null)
