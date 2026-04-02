@@ -304,6 +304,60 @@ d884ced feat: connect SAM Neural Tuner to AI — campaign settings affect system
 ca710b7 feat: admin panel — player role/status management, campaign controls, layout reorganization
 ```
 
+### Sesión 1 Abr 2026 — Multi-Agent Architecture Foundation
+
+**Refactorización arquitectónica mayor: monolito → sistema multi-agente**
+
+Análisis del pipeline existente en `ai.py` reveló que Gemini estaba haciendo aritmética de HP, generando JSON de loot, y emitiendo XML — tareas determinísticas que no necesitan LLM. Los dados de NPCs eran números inventados por Gemini, no `secrets.randbelow()`.
+
+**Nuevo paquete `backend/agents/` — 8 módulos:**
+
+1. **`dice.py`** — `DiceRoller` con `secrets.randbelow()`. Métodos: `roll(sides)`, `roll_multiple(count, sides)`, `roll_with_modifier(count, sides, modifier)`, `roll_advantage()`, `roll_disadvantage()`.
+
+2. **`rules.py`** — Tablas y cálculos D&D 5e puro Python: `XP_THRESHOLDS` (niveles 1-20), `get_level_for_xp()`, `xp_to_next_level()`, `calculate_hp_change()`, `check_hit()`, `check_save()`.
+
+3. **`combat_state.py`** — `CombatState`: máquina de estado de combate. `start_combat()` (rolls initiative de NPCs con dados reales), `advance_turn()`, `remove_combatant()`, `update_npc_hp()`, `end_combat()`. Serializable para `campaigns.settings.combat`.
+
+4. **`mechanic.py`** — `MechanicEngine`: motor de juego Python puro. Cero LLM.
+   - `process_spell()`: save de NPC (dados reales) o pending roll para spell attack
+   - `process_attack()`: pending roll para el jugador
+   - `process_player_roll()`: router para pending actions (weapon_attack/damage, spell_damage, spell_attack, skill_check)
+   - `resolve_npc_turn()`: turno NPC completo con acumulación de daño multi-ataque → `calculate_hp_change()` una sola vez
+   - `award_xp()`: split entre party, level-up check
+   - `get_results_summary()`: texto plano de hechos para el narrador
+   - `state_updates[]`: lista de mutaciones de BD listas para Supabase
+
+5. **`interpreter.py`** — `IntentInterpreter`: LLM con prompt de 40 líneas.
+   - SYSTEM EVENTs → regex puro (0 tokens): `{"type": "dice_roll", "result": 18, "rolls": [18]}`
+   - Texto libre → JSON estructurado: `{"type": "spell", "spell_name": "Sacred Flame", "target": "Guard 1"}`
+   - 8 tipos de acción: spell, attack, skill_check, movement, roleplay, item, ability, free_action
+   - Fallback a `{type: roleplay}` en error de JSON
+
+6. **`narrator.py`** — `Narrator`: LLM creativo con prompt de 60 líneas. 13 reglas duras: sin XML, sin math, sin dados inventados.
+   - `narrate_mechanics(facts)`: narra hechos pre-calculados del MechanicEngine
+   - `narrate_roleplay()`: exploración y diálogo sin mecánicas
+   - `narrate_scene()`: descripciones de ubicación
+
+7. **`orchestrator.py`** — `SAMOrchestrator`: coordinador del pipeline completo.
+   - `process_message()`: Interpreter → Mechanic → (RAG) → Narrator
+   - Resolución automática de turnos NPC consecutivos (safety valve: 20 iteraciones)
+   - Retorna `{narrative, state_updates, combat_state, prompt_player_roll}`
+
+8. **`__init__.py`** — documentación del sistema
+
+**Commits (1 Abr 2026):**
+```
+75693e1 feat: SAMOrchestrator — full pipeline coordinator connecting Interpreter → Mechanic → Narrator
+fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts without touching game logic
+619de53 feat: IntentInterpreter — LLM-powered action parser with structured JSON output
+5231b73 feat: MechanicEngine — complete D&D 5e game engine for spells, attacks, NPC turns, XP, and skill checks
+68d2226 feat: multi-agent foundation — DiceRoller, Rules engine, CombatState manager
+```
+
+**Estado:** Los 8 módulos están implementados. `ai.py` y `server.py` no han sido modificados — la integración es el siguiente paso.
+
+---
+
 ## 4. Estado Actual — Abril 2026
 
 ### Lo que funciona
@@ -341,10 +395,12 @@ ca710b7 feat: admin panel — player role/status management, campaign controls, 
 - **Visibility resync:** Re-fetch de mensajes/personaje/campaña al volver de background
 - **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile
 - **stripSystemTags:** Limpia SYSTEM EVENT echoes, Calculation lines, tool calls, COMBAT tags
+- **Multi-agent foundation:** `backend/agents/` con DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator (no conectado a server.py aún)
 
-### Completitud: ~95%
+### Completitud: ~95% (app funcional) + arquitectura multi-agente en progreso
 
 ### Pendiente para "done"
+- **Integrar SAMOrchestrator en server.py** — conectar el nuevo pipeline al endpoint `/api/chat`
 - Commlink: selector de destinatarios (usar party roster como lista)
 - Generated scene placeholder (tag `<IMAGE>` sin servicio de imágenes conectado)
 - Playtest completo con grupo de amigos
@@ -392,4 +448,4 @@ ca710b7 feat: admin panel — player role/status management, campaign controls, 
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 1 Abr 2026 — Admin panel completo, invitations, player presence, shadow variable fix, tab notifications, identity rule rewrite*
+*Última actualización: 1 Abr 2026 — Multi-agent architecture: DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator. Admin panel completo, invitations, player presence, shadow variable fix, tab notifications, identity rule rewrite.*
