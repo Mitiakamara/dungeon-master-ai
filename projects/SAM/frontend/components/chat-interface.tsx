@@ -707,9 +707,9 @@ export function ChatInterface({
     // SAM messages: senderId is null
 
     // [PHASE 16] Visualizer for DM Rolls
-    const renderMessageContent = (content: string) => {
+    const renderMessageContent = (content: string, role: string = 'assistant') => {
         // Safety net: strip any machine tags that survived processing
-        content = stripSystemTags(content)
+        content = stripSystemTags(content, role)
         // Split by the tag, keeping the delimiter (DM_ROLL has its own visual renderer)
         const parts = content.split(/(<DM_ROLL>[\s\S]*?<\/DM_ROLL>)/g);
 
@@ -813,7 +813,7 @@ export function ChatInterface({
                                     {displayName}
                                 </div>
                                 <div className={`text-sm leading-relaxed whitespace-pre-wrap ${bubbleClass}`}>
-                                    {renderMessageContent(msg.content)}
+                                    {renderMessageContent(msg.content, msg.role)}
                                 </div>
                                 {msg.imageUrl && (
                                     <div className="mt-2 rounded-lg overflow-hidden border">
