@@ -34,7 +34,7 @@ function repairJson(str: string): string {
 }
 
 // Strip machine-readable tags from message content for clean display
-function stripSystemTags(content: string): string {
+function stripSystemTags(content: string, role: string = 'assistant'): string {
     let cleaned = content
         // XML system tags
         .replace(/<LOOT>[\s\S]*?<\/LOOT>/g, '')
@@ -47,17 +47,16 @@ function stripSystemTags(content: string): string {
         .replace(/<\/?LOOT>/g, '')
         .replace(/<\/?UPDATE>/g, '')
         .replace(/<\/?COMBAT>/g, '')
-    // Gemini internal calculation text
-    cleaned = cleaned.replace(/Calculation:\s*-?\d+[\s]*[-+*/][\s]*-?\d+[\s]*=[\s]*-?\d+\.?/gi, '')
-    // Failed search results
-    cleaned = cleaned.replace(/No matching (monsters|spells|items) found\.?/gi, '')
-    // Tool call text leaked into narrative
-    cleaned = cleaned.replace(/apply_damage\([^)]*\)/gi, '')
-    cleaned = cleaned.replace(/apply_healing\([^)]*\)/gi, '')
-    cleaned = cleaned.replace(/give_loot\([^)]*\)/gi, '')
-    cleaned = cleaned.replace(/search_(spells|monsters|items)\([^)]*\)/gi, '')
-    // SYSTEM EVENT echoes
-    cleaned = cleaned.replace(/\[SYSTEM EVENT\][^\n]*/gi, '')
+    // Only strip Gemini artifacts from SAM's responses, not player messages
+    if (role === 'assistant') {
+        cleaned = cleaned.replace(/Calculation:\s*-?\d+[\s]*[-+*/][\s]*-?\d+[\s]*=[\s]*-?\d+\.?/gi, '')
+        cleaned = cleaned.replace(/No matching (monsters|spells|items) found\.?/gi, '')
+        cleaned = cleaned.replace(/apply_damage\([^)]*\)/gi, '')
+        cleaned = cleaned.replace(/apply_healing\([^)]*\)/gi, '')
+        cleaned = cleaned.replace(/give_loot\([^)]*\)/gi, '')
+        cleaned = cleaned.replace(/search_(spells|monsters|items)\([^)]*\)/gi, '')
+        cleaned = cleaned.replace(/\[SYSTEM EVENT\][^\n]*/gi, '')
+    }
     // Clean excess whitespace
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
     return cleaned.trim()
@@ -479,7 +478,7 @@ export function ChatInterface({
             const history: Message[] = data.map((msg: any) => ({
                 id: msg.id,
                 role: msg.role as "user" | "assistant" | "system",
-                content: stripSystemTags(msg.content),
+                content: stripSystemTags(msg.content, msg.role),
                 timestamp: new Date(msg.created_at),
                 imageUrl: msg.image_url,
                 debugInfo: msg.role === "assistant" ? msg.metadata : undefined,
