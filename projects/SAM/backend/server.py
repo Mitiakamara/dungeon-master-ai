@@ -5,12 +5,19 @@ from typing import List, Optional, Dict, Union
 import asyncio
 import re
 import json
+import os
 
 # Import S.A.M. Core Modules
 from app.core.dice import DiceRoller, Visibility
 from app.services.ai import sam_brain
 from app.services.admin import AdminService
 from app.routers import characters, campaigns, messages, invitations
+
+# Import Multi-Agent System
+from agents.orchestrator import SAMOrchestrator
+from agents.knowledge import KnowledgeService
+from langchain_google_genai import ChatGoogleGenerativeAI
+from google import genai
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -40,6 +47,25 @@ class ChatRequest(BaseModel):
 class RollRequest(BaseModel):
     expression: str # e.g. "1d20+5"
     visibility: Visibility = Visibility.PUBLIC
+
+# --- Multi-Agent Orchestrator ---
+try:
+    _google_api_key = os.getenv("GOOGLE_API_KEY")
+    _interpreter_llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash", temperature=0.1,
+        google_api_key=_google_api_key
+    )
+    _narrator_llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash", temperature=0.9,
+        google_api_key=_google_api_key
+    )
+    _genai_client = genai.Client(api_key=_google_api_key)
+    _knowledge = KnowledgeService(sam_brain.supabase, _genai_client)
+    sam_orchestrator = SAMOrchestrator(_interpreter_llm, _narrator_llm, _knowledge)
+    print("✅ SAMOrchestrator initialized")
+except Exception as e:
+    print(f"⚠️ SAMOrchestrator init failed, will use legacy SAMBrain only: {e}")
+    sam_orchestrator = None
 
 # Lock per campaign to prevent simultaneous SAM responses
 _campaign_locks: dict[str, asyncio.Lock] = {}
@@ -178,36 +204,123 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 except Exception as e:
                     print(f"⚠️ Failed to fetch campaign settings: {e}")
 
-            response = sam_brain.generate_response(
-                request.message,
-                db_history if db_history else request.history,
-                request.character_context,
-                sender_name=char_name,
-                campaign_settings=campaign_settings
-            )
+            # --- Try multi-agent orchestrator first, fallback to legacy ---
+            ai_response_text = ""
+            image_url = None
+            debug_info = None
+            sam_orchestrator_failed = False
 
-            # Parse and strip <COMBAT> tag, update campaign settings
-            ai_text = response.get('response', '')
-            combat_match = re.search(r'<COMBAT>(.*?)</COMBAT>', ai_text, re.DOTALL)
-            if combat_match and cid:
+            if sam_orchestrator:
                 try:
-                    combat_data = json.loads(combat_match.group(1))
-                    sam_brain.supabase.table("campaigns").update({
-                        "settings": {"combat": combat_data}
-                    }).eq("id", cid).execute()
-                    print(f"⚔️ Combat state updated: turn={combat_data.get('current_turn')}, round={combat_data.get('round')}, active={combat_data.get('active')}")
-                except Exception as combat_e:
-                    print(f"WARNING: Failed to parse/save combat state: {combat_e}")
-                # Strip COMBAT tag from response before saving to DB
-                response['response'] = re.sub(r'<COMBAT>.*?</COMBAT>', '', ai_text, flags=re.DOTALL).strip()
+                    # Parse character context
+                    try:
+                        char_ctx = json.loads(request.character_context) if isinstance(request.character_context, str) else request.character_context
+                    except (json.JSONDecodeError, TypeError):
+                        char_ctx = {}
+
+                    # Fetch party characters
+                    party_result = sam_brain.supabase.table("characters").select("*").eq("campaign_id", cid).execute() if cid else None
+                    party_characters = party_result.data if party_result and party_result.data else []
+
+                    # Build DM style
+                    dm_style = sam_brain._build_dm_style(campaign_settings) if campaign_settings else ""
+
+                    # Get combat state
+                    combat_data = campaign_settings.get("combat", None) if campaign_settings else None
+
+                    # Call orchestrator
+                    result = sam_orchestrator.process_message(
+                        message=request.message,
+                        sender_name=char_name,
+                        character_context=char_ctx,
+                        party_characters=party_characters,
+                        combat_data=combat_data,
+                        campaign_context="",
+                        dm_style=dm_style,
+                        history=db_history if db_history else request.history,
+                    )
+
+                    ai_response_text = result["narrative"]
+                    print(f"🤖 Orchestrator response ({len(ai_response_text)} chars)")
+
+                    # Apply state updates (HP, XP, inventory)
+                    for update in result.get("state_updates", []):
+                        try:
+                            if update.get("type") == "player_hp":
+                                for char in party_characters:
+                                    if char.get("name") == update.get("character_name"):
+                                        merged = {**char.get("status", {}), "hp_current": update["new_hp"]}
+                                        sam_brain.supabase.table("characters").update({"status": merged}).eq("id", char["id"]).execute()
+                                        print(f"💚 HP updated: {update['character_name']} → {update['new_hp']}")
+                                        break
+
+                            elif update.get("type") == "xp_update":
+                                for char in party_characters:
+                                    if char.get("name") == update.get("character_name"):
+                                        merged = {**char.get("status", {}), "xp": update["new_xp"]}
+                                        update_data = {"status": merged}
+                                        if update.get("leveled_up"):
+                                            update_data["level"] = update["new_level"]
+                                            print(f"🎉 LEVEL UP! {update['character_name']} → Level {update['new_level']}")
+                                        sam_brain.supabase.table("characters").update(update_data).eq("id", char["id"]).execute()
+                                        break
+                        except Exception as upd_e:
+                            print(f"⚠️ State update failed: {upd_e}")
+
+                    # Update combat state
+                    combat_state = result.get("combat_state")
+                    if combat_state and cid:
+                        try:
+                            sam_brain.supabase.table("campaigns").update({
+                                "settings": {**campaign_settings, "combat": combat_state}
+                            }).eq("id", cid).execute()
+                            if combat_state.get("active"):
+                                print(f"⚔️ Combat: round {combat_state.get('round')}")
+                        except Exception as combat_e:
+                            print(f"⚠️ Combat state update failed: {combat_e}")
+
+                except Exception as orch_e:
+                    print(f"⚠️ Orchestrator failed, falling back to legacy SAMBrain: {orch_e}")
+                    import traceback
+                    traceback.print_exc()
+                    sam_orchestrator_failed = True
+                else:
+                    sam_orchestrator_failed = False
+
+            if not sam_orchestrator or (sam_orchestrator and sam_orchestrator_failed):
+                # Legacy fallback
+                print("📜 Using legacy SAMBrain")
+                response = sam_brain.generate_response(
+                    request.message,
+                    db_history if db_history else request.history,
+                    request.character_context,
+                    sender_name=char_name,
+                    campaign_settings=campaign_settings
+                )
+                ai_response_text = response.get('response', '')
+                image_url = response.get('image_url')
+                debug_info = response.get('debug_info')
+
+                # Parse and strip <COMBAT> tag (legacy path)
+                combat_match = re.search(r'<COMBAT>(.*?)</COMBAT>', ai_response_text, re.DOTALL)
+                if combat_match and cid:
+                    try:
+                        combat_data = json.loads(combat_match.group(1))
+                        sam_brain.supabase.table("campaigns").update({
+                            "settings": {"combat": combat_data}
+                        }).eq("id", cid).execute()
+                        print(f"⚔️ Combat state updated (legacy): turn={combat_data.get('current_turn')}")
+                    except Exception as combat_e:
+                        print(f"WARNING: Failed to parse/save combat state: {combat_e}")
+                    ai_response_text = re.sub(r'<COMBAT>.*?</COMBAT>', '', ai_response_text, flags=re.DOTALL).strip()
 
             # [PHASE 13] PERSISTENCE LAYER - SAVE AI MESSAGE
             try:
                 ai_payload = {
                     "role": "assistant",
-                    "content": response['response'],
-                    "image_url": response.get('image_url'),
-                    "metadata": response.get('debug_info'),
+                    "content": ai_response_text,
+                    "image_url": image_url,
+                    "metadata": debug_info,
                     "user_id": user_id
                 }
                 if cid:
@@ -217,7 +330,7 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
             except Exception as e:
                 print(f"FAILED TO SAVE AI MESSAGE: {e}")
 
-            return response # Returns {"response": "...", "image_url": "..."}
+            return {"response": ai_response_text, "image_url": image_url}
 
         finally:
             if lock and lock.locked():
