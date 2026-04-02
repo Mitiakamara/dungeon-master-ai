@@ -115,7 +115,7 @@ projects/SAM/
 │   │       ├── parse_*.py           # Parsers de JSON D&D 5e
 │   │       └── *_data.json          # Datos compendio: items, monsters, spells
 │   │
-│   ├── agents/                      # Multi-agent system (nuevo, no conectado a server.py aún)
+│   ├── agents/                      # Multi-agent system (conectado a server.py, ai.py como fallback)
 │   │   ├── __init__.py
 │   │   ├── dice.py              # DiceRoller: secrets.randbelow(), roll_advantage/disadvantage
 │   │   ├── rules.py             # XP_THRESHOLDS, calculate_hp_change, check_hit, check_save
@@ -123,6 +123,7 @@ projects/SAM/
 │   │   ├── mechanic.py          # MechanicEngine: motor D&D 5e Python puro (cero LLM)
 │   │   ├── interpreter.py       # IntentInterpreter: LLM prompt corto → JSON intent estructurado
 │   │   ├── narrator.py          # Narrator: LLM creativo que narra hechos pre-calculados
+│   │   ├── knowledge.py         # KnowledgeService: RAG sobre módulos de campaña + compendio D&D 5e
 │   │   └── orchestrator.py      # SAMOrchestrator: pipeline Interpreter→Mechanic→Narrator
 │   │
 │   └── schema*.sql                  # Esquemas de BD (iterativos, el más reciente es phase11_schema.sql)
@@ -262,7 +263,7 @@ lucide-react, sonner, next-themes
 - **SAM Neural Tuner → AI:** Difficulty/creativity/lethality en `campaigns.settings` afectan system prompt dinámicamente
 - **Status fields normalizados:** `hp→hp_current`, `wallet→money`. Migration script ejecutado.
 - **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile.
-- **stripSystemTags expandido:** Limpia `[SYSTEM EVENT]` echoes, Calculation lines, tool call text, `<COMBAT>` tags, failed search results.
+- **stripSystemTags expandido:** Limpia `[SYSTEM EVENT]` echoes, Calculation lines, tool call text, `<COMBAT>` tags, failed search results. Role-aware: solo limpia artifacts de Gemini en mensajes de SAM, no en tiradas de dados de jugadores.
 - **Multiplayer pendiente:** commlink recipients (selector de destinatarios)
 - **Multi-agent architecture (1 Abr 2026):** Nuevo paquete `backend/agents/` con separación de responsabilidades. `DiceRoller` (secrets.randbelow), `Rules` (tablas D&D 5e), `CombatState` (máquina de estado), `MechanicEngine` (Python puro, cero LLM), `IntentInterpreter` (LLM prompt corto → JSON), `Narrator` (LLM creativo solo narra), `SAMOrchestrator` (coordinador del pipeline). `ai.py` y `server.py` sin modificar — integración pendiente.
 - **Completitud: ~95%** (app funcional) + arquitectura multi-agente en progreso
@@ -852,4 +853,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 1 Abr 2026 — SAM: Admin panel completo (campaigns, invitations, user management, Neural Tuner → AI). Player presence (Supabase Presence API). Critical shadow variable fix (sender_name). Identity rule rewrite. Tab notifications. Visibility resync. stripSystemTags expanded. FF8: Collections Module complete.*
+*Última actualización: 2 Abr 2026 — SAM: Multi-agent architecture integrated (SAMOrchestrator + KnowledgeService connected to server.py, ai.py as fallback). stripSystemTags role-aware fix. Character context from DB. FF8: Collections Module complete.*

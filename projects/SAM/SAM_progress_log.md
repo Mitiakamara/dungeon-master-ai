@@ -354,7 +354,34 @@ fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts 
 68d2226 feat: multi-agent foundation — DiceRoller, Rules engine, CombatState manager
 ```
 
-**Estado:** Los 8 módulos están implementados. `ai.py` y `server.py` no han sido modificados — la integración es el siguiente paso.
+**Estado:** Los 8 módulos están implementados y conectados a `server.py` con fallback a `ai.py`.
+
+### Sesión 2 Abr 2026 — Orchestrator Integration + stripSystemTags Fix
+
+**Integración del orquestador multi-agente en server.py:**
+1. **`agents/knowledge.py`** — KnowledgeService que encapsula RAG existente. Usa `genai.Client.models.embed_content()` (768d) + RPCs `match_documents` y `match_compendium` de Supabase. Métodos: `search_campaign_context()`, `search_spell/monster/item()`, `search()`.
+2. **Orchestrator conectado a `/api/chat`** — Pipeline: Interpreter (temp=0.1) → MechanicEngine → Knowledge → Narrator (temp=0.9). State updates (HP, XP) se aplican directamente a la BD sin depender de tags XML. Combat state se actualiza directamente.
+3. **Legacy fallback** — Si el orquestador falla por cualquier razón, cae automáticamente a `SAMBrain.generate_response()` con todo el pipeline original (tools, COMBAT tags, etc.). `ai.py` no se borró ni modificó.
+4. **Character context de BD** — `server.py` ahora fetcha el personaje real de la BD (`characters` table) en vez de parsear el string formateado del frontend. Resuelve `KeyError: 'name'` que causaba el crash del orquestador.
+
+**Bug Fixes:**
+1. **`character["name"]` → `character.get("name", "Unknown")`** — 7 instancias en `mechanic.py` convertidas a acceso defensivo.
+2. **`stripSystemTags` solo para SAM** — La función ahora recibe `role` como parámetro. Gemini artifacts (`[SYSTEM EVENT]`, `Calculation:`, tool calls) solo se limpian de mensajes con `role === 'assistant'`. Los mensajes de jugadores (tiradas de dados) mantienen su contenido intacto.
+3. **`renderMessageContent` con role** — La función de render pasaba todo por `stripSystemTags` sin role (default `'assistant'`), eliminando `[SYSTEM EVENT]` de las tiradas de dados de jugadores. Fix: se pasa `msg.role` al renderizar.
+
+### Commits en main (2 Abr 2026)
+```
+87381e9 fix: pass role to renderMessageContent to prevent stripping SYSTEM EVENT from player dice rolls
+8608fa2 fix: only strip SYSTEM EVENT text from SAM responses, not from player dice roll messages
+0dce0e0 fix: defensive character_context access in mechanic + orchestrator — handle missing 'name' key
+2ae8662 feat: integrate SAMOrchestrator into server.py — multi-agent pipeline replaces monolithic SAMBrain with legacy fallback
+1bba20d docs: update CLAUDE.md and SAM_progress_log with multi-agent architecture session
+75693e1 feat: SAMOrchestrator — full pipeline coordinator connecting Interpreter → Mechanic → Narrator
+fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts without touching game logic
+619de53 feat: IntentInterpreter — LLM-powered action parser with structured JSON output
+5231b73 feat: MechanicEngine — complete D&D 5e game engine for spells, attacks, NPC turns, XP, and skill checks
+68d2226 feat: multi-agent foundation — DiceRoller, Rules engine, CombatState manager
+```
 
 ---
 
@@ -394,13 +421,12 @@ fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts 
 - **Tab notifications:** Unread count, sonido, alerta de turno
 - **Visibility resync:** Re-fetch de mensajes/personaje/campaña al volver de background
 - **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile
-- **stripSystemTags:** Limpia SYSTEM EVENT echoes, Calculation lines, tool calls, COMBAT tags
-- **Multi-agent foundation:** `backend/agents/` con DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator (no conectado a server.py aún)
+- **stripSystemTags:** Limpia SYSTEM EVENT echoes, Calculation lines, tool calls, COMBAT tags — solo en mensajes de SAM (role-aware)
+- **Multi-agent architecture:** `backend/agents/` con DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator + KnowledgeService. Conectado a `server.py` con fallback a `ai.py` legacy.
 
-### Completitud: ~95% (app funcional) + arquitectura multi-agente en progreso
+### Completitud: ~95% (app funcional) + arquitectura multi-agente integrada
 
 ### Pendiente para "done"
-- **Integrar SAMOrchestrator en server.py** — conectar el nuevo pipeline al endpoint `/api/chat`
 - Commlink: selector de destinatarios (usar party roster como lista)
 - Generated scene placeholder (tag `<IMAGE>` sin servicio de imágenes conectado)
 - Playtest completo con grupo de amigos
@@ -448,4 +474,4 @@ fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts 
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 1 Abr 2026 — Multi-agent architecture: DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator. Admin panel completo, invitations, player presence, shadow variable fix, tab notifications, identity rule rewrite.*
+*Última actualización: 2 Abr 2026 — Multi-agent architecture integrated into server.py with legacy fallback. KnowledgeService RAG. stripSystemTags role-aware. Character context from DB.*
