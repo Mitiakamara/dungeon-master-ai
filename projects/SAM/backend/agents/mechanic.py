@@ -132,7 +132,7 @@ class MechanicEngine:
         """
         result = {
             "action": "skill_check",
-            "character": character["name"],
+            "character": character.get("name", "Unknown"),
             "skill": skill,
             "dc": dc,
             "needs_player_roll": True,
@@ -158,7 +158,7 @@ class MechanicEngine:
         pending = self.pending_player_roll
         if not pending:
             # No pending action — this might be initiative or a freeform roll
-            return {"action": "freeform_roll", "roll": roll_data, "character": character["name"]}
+            return {"action": "freeform_roll", "roll": roll_data, "character": character.get("name", "Unknown")}
 
         self.pending_player_roll = None  # Clear pending
 
@@ -182,7 +182,7 @@ class MechanicEngine:
 
         result = {
             "action": "spell_damage_applied",
-            "caster": character["name"],
+            "caster": character.get("name", "Unknown"),
             "spell": pending["spell"],
             "target": target["name"],
             "damage": damage,
@@ -220,7 +220,7 @@ class MechanicEngine:
 
         result = {
             "action": "weapon_attack_result",
-            "attacker": character["name"],
+            "attacker": character.get("name", "Unknown"),
             "weapon": weapon["name"],
             "target": target["name"],
             "attack_roll": raw_roll,
@@ -276,7 +276,7 @@ class MechanicEngine:
 
         result = {
             "action": "weapon_damage_applied",
-            "attacker": character["name"],
+            "attacker": character.get("name", "Unknown"),
             "weapon": pending["weapon"]["name"],
             "target": target["name"],
             "damage_rolls": roll_data.get("rolls", []),
@@ -309,7 +309,7 @@ class MechanicEngine:
 
         result = {
             "action": "spell_attack_result",
-            "caster": character["name"],
+            "caster": character.get("name", "Unknown"),
             "spell": pending["spell"],
             "target": target["name"],
             "attack_roll": raw_roll,
@@ -344,7 +344,7 @@ class MechanicEngine:
 
         result = {
             "action": "skill_check_result",
-            "character": character["name"],
+            "character": character.get("name", "Unknown"),
             "skill": pending["skill"],
             "roll": raw_roll,
             "modifier": modifier,

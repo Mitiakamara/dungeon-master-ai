@@ -212,15 +212,22 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
 
             if sam_orchestrator:
                 try:
-                    # Parse character context
-                    try:
-                        char_ctx = json.loads(request.character_context) if isinstance(request.character_context, str) else request.character_context
-                    except (json.JSONDecodeError, TypeError):
-                        char_ctx = {}
-
-                    # Fetch party characters
-                    party_result = sam_brain.supabase.table("characters").select("*").eq("campaign_id", cid).execute() if cid else None
-                    party_characters = party_result.data if party_result and party_result.data else []
+                    # Fetch actual character from DB (not the frontend text string)
+                    char_ctx = {}
+                    party_characters = []
+                    if cid:
+                        party_result = sam_brain.supabase.table("characters").select("*").eq("campaign_id", cid).execute()
+                        party_characters = party_result.data if party_result and party_result.data else []
+                        # Find the sender's character
+                        for pc in party_characters:
+                            if pc.get("user_id") == user_id:
+                                char_ctx = pc
+                                break
+                    if not char_ctx:
+                        # Fallback: try to find any character for this user
+                        char_result = sam_brain.supabase.table("characters").select("*").eq("user_id", user_id).limit(1).execute()
+                        char_ctx = char_result.data[0] if char_result and char_result.data else {}
+                    print(f"🔍 char_ctx: name={char_ctx.get('name', 'MISSING')}, keys={list(char_ctx.keys())[:8]}")
 
                     # Build DM style
                     dm_style = sam_brain._build_dm_style(campaign_settings) if campaign_settings else ""
