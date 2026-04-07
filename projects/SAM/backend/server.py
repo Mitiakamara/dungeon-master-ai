@@ -227,7 +227,6 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                         # Fallback: try to find any character for this user
                         char_result = sam_brain.supabase.table("characters").select("*").eq("user_id", user_id).limit(1).execute()
                         char_ctx = char_result.data[0] if char_result and char_result.data else {}
-                    print(f"🔍 char_ctx: name={char_ctx.get('name', 'MISSING')}, keys={list(char_ctx.keys())[:8]}")
 
                     # Build DM style
                     dm_style = sam_brain._build_dm_style(campaign_settings) if campaign_settings else ""

@@ -110,9 +110,25 @@ class SAMOrchestrator:
             mechanical_facts = engine.get_results_summary()
             prompt_player_roll = f"Tira 1d20 para {skill}."
 
+        elif intent["type"] == "self_damage":
+            # Self-inflicted or environmental damage — ask for damage roll, then apply to self
+            damage_dice = intent.get("damage_dice", "1d4")
+            description = intent.get("description", "self-inflicted damage")
+            mechanical_facts = f"{sender_name} is taking {description}. Awaiting damage roll: {damage_dice}"
+            prompt_player_roll = f"Tira {damage_dice} de daño."
+            engine.pending_player_roll = {
+                "type": "self_damage",
+                "character_name": sender_name,
+                "character_data": character_context,
+            }
+
         elif intent["type"] in ("roleplay", "movement", "free_action", "item", "ability"):
             # No mechanics — pure narration
             mechanical_facts = ""
+
+        # Warning if a dice roll happened but no state updates were generated
+        if intent["type"] == "dice_roll" and not engine.state_updates:
+            print(f"⚠️ Dice roll processed but no state_updates generated — damage may be narrative-only")
 
         # ─── STEP 3: RAG lookup if needed ───
         rag_context = ""
@@ -345,6 +361,8 @@ class SAMOrchestrator:
             return f"Tira el daño de {pending.get('spell', 'tu hechizo')}."
         elif ptype == "skill_check":
             return f"Tira 1d20 para {pending.get('skill', 'tu check')}."
+        elif ptype == "self_damage":
+            return "Tira el daño correspondiente."
         return "Tira los dados."
 
     def _format_character_context(self, ctx: dict) -> str:

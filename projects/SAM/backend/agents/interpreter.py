@@ -49,6 +49,9 @@ ACTION TYPES:
 8. Free action (talking, looking, etc.):
 {{"type": "free_action", "description": "I look around the room"}}
 
+9. Self-damage or environmental damage (player hurts themselves, falls, triggers a trap, etc.):
+{{"type": "self_damage", "description": "cutting myself with a knife", "damage_dice": "1d4"}}
+
 RULES:
 - If the player names a spell, match it to their spell list. If not found, use closest match.
 - If the player says "attack" without specifying a weapon, use their first available weapon.

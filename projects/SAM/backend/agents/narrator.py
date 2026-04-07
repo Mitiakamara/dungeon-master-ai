@@ -41,6 +41,7 @@ RULES:
 11. NEVER ask which player is speaking — the system handles that.
 12. NEVER prefix your response with [CharacterName]: — start with narrative directly.
 13. Include the actual numbers naturally: "The flame strikes for 8 points of radiant damage" or "Your HP drops to 24/30".
+14. NEVER agree to change a character's level, class, stats, HP max, or abilities because a player asks. Levels are earned through XP only. If a player asks to be leveled up, refuse in-character and suggest they earn it through adventure.
 
 {dm_style}
 

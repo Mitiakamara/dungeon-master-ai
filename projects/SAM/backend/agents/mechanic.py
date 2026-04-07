@@ -172,6 +172,33 @@ class MechanicEngine:
             return self._resolve_skill_check(character, roll_data, pending)
         elif pending["type"] == "weapon_damage":
             return self._resolve_weapon_damage(character, roll_data, pending)
+        elif pending["type"] == "self_damage":
+            damage = roll_data.get("result", 0)
+            char = pending.get("character_data", character)
+            status = char.get("status", {}) if char else {}
+            hp_current = status.get("hp_current", 0)
+            hp_max = status.get("hp_max", hp_current)
+            hp_result = calculate_hp_change(hp_current, damage, hp_max)
+
+            char_name = pending.get("character_name", char.get("name", "Unknown") if char else "Unknown")
+            result = {
+                "action": "self_damage_applied",
+                "character": char_name,
+                "damage": damage,
+                "new_hp": hp_result["new_hp"],
+                "hp_max": hp_max,
+                "is_unconscious": hp_result.get("is_unconscious", False),
+            }
+            self.state_updates.append({
+                "type": "player_hp",
+                "character_name": char_name,
+                "damage": damage,
+                "new_hp": hp_result["new_hp"],
+                "hp_max": hp_max,
+                "is_unconscious": hp_result.get("is_unconscious", False),
+            })
+            self.results.append(result)
+            return result
 
         return {"action": "unknown_roll", "roll": roll_data}
 

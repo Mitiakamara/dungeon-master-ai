@@ -855,7 +855,7 @@ export function ChatInterface({
             )}
 
             {/* Input Area */}
-            <div className="p-4 border-t bg-background shrink-0">
+            <div className="p-4 border-t bg-background shrink-0 pb-safe">
                 <form onSubmit={(e) => handleSendMessage(e)} className="flex gap-4">
                     <Input
                         value={input}

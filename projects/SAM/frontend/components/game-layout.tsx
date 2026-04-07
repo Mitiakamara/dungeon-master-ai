@@ -35,6 +35,7 @@ export default function GameLayout() {
     const [campaignName, setCampaignName] = useState<string>("")
     const [currentUserId, setCurrentUserId] = useState<string>("")
     const [combatState, setCombatState] = useState<any>(null)
+    const [diceSheetOpen, setDiceSheetOpen] = useState(false)
 
     // Derived campaign ID from selected character
     const campaignId = selectedCharacter?.campaign_id || ""
@@ -254,7 +255,7 @@ export default function GameLayout() {
     }
 
     return (
-        <div className="flex flex-col md:flex-row h-screen w-full overflow-hidden bg-background">
+        <div className="flex flex-col md:flex-row h-[100dvh] w-full overflow-hidden bg-background">
 
             {/* --- MOBILE HEADER (Visible only on small screens) --- */}
             <header className="flex md:hidden h-14 items-center justify-between border-b px-4 bg-muted/40 shrink-0">
@@ -282,14 +283,21 @@ export default function GameLayout() {
                 <div className="font-bold text-sm">S.A.M. Mobile</div>
 
                 {/* 2. Right Dice Sheet */}
-                <Sheet>
+                <Sheet open={diceSheetOpen} onOpenChange={setDiceSheetOpen}>
                     <SheetTrigger asChild>
                         <Button variant="ghost" size="icon">
                             <Dices className="h-5 w-5" />
                         </Button>
                     </SheetTrigger>
                     <SheetContent side="right" className="p-0 w-[300px]">
-                        <SidebarRight onRoll={(msg) => setRollEvent(msg)} characterName={selectedCharacter?.name} />
+                        <SidebarRight
+                            onRoll={(msg) => {
+                                setRollEvent(msg)
+                                // Auto-close on mobile after rolling
+                                setTimeout(() => setDiceSheetOpen(false), 500)
+                            }}
+                            characterName={selectedCharacter?.name}
+                        />
                     </SheetContent>
                 </Sheet>
             </header>

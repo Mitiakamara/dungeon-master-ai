@@ -80,17 +80,17 @@ export function DiceTray({ onRoll, characterName }: { onRoll?: (msg: string) => 
             </div>
 
             {/* Dice Grid */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-2 gap-1 sm:gap-2">
                 {[20, 12, 10, 8, 6, 4].map((sides) => (
                     <Button
                         key={sides}
                         variant="outline"
-                        className="h-20 flex-col hover:border-primary hover:bg-primary/5 transition-all"
+                        className="h-14 sm:h-20 flex-col hover:border-primary hover:bg-primary/5 transition-all"
                         onClick={() => handleRoll(sides)}
                         disabled={rolling}
                     >
-                        {rolling ? <Loader2 className="h-6 w-6 animate-spin" /> : <span className="text-2xl font-bold">d{sides}</span>}
-                        <span className="text-xs text-muted-foreground mt-1">
+                        {rolling ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="text-lg sm:text-2xl font-bold">d{sides}</span>}
+                        <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
                             {multiplier}d{sides}
                         </span>
                     </Button>
