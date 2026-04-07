@@ -383,6 +383,30 @@ fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts 
 68d2226 feat: multi-agent foundation — DiceRoller, Rules engine, CombatState manager
 ```
 
+### Sesión 3 Abr 2026 — Multi-Agent Polish, Self-Damage, Mobile UX, Pending Roll Persistence
+
+**Features implementados:**
+1. **Self-damage intent** — Nuevo tipo `self_damage` en `IntentInterpreter` con `damage_dice`. `MechanicEngine.process_player_roll()` resuelve self-damage aplicando `calculate_hp_change()` al personaje + `state_updates`. `SAMOrchestrator` enruta el intent y emite `pending_player_roll` para esperar la tirada de daño. Cubre auto-lesiones, caídas, trampas.
+2. **Pending player roll persistence** — `pending_player_roll` ahora se persiste en `combat_state["pending_player_roll"]` al final de `process_message()` y se restaura al inicio. Sobrevive entre requests, permitiendo flujos como "tira de daño" → siguiente mensaje del jugador con su tirada.
+3. **Warning log para daño no rastreado** — Si un `dice_roll` se procesa sin generar `state_updates`, se loguea un warning. Útil para detectar daño narrativo que el motor no captura.
+
+**Bug Fixes:**
+1. **Narrator nunca cambia stats por pedido** — Regla 14 agregada al `Narrator` SYSTEM_PROMPT: "NEVER agree to change a character's level, class, stats, HP max, or abilities because a player asks. Levels are earned through XP only."
+2. **Debug logs removidos** — `🔍 char_ctx` print removido de `server.py`. Presence `🟢` console.logs removidos de `use-presence.ts`.
+
+**Frontend mobile UX:**
+1. **`h-screen` → `h-[100dvh]`** — Layout principal usa `100dvh` (dynamic viewport height) para que el input no quede oculto bajo la barra del browser en mobile.
+2. **`pb-safe` class** — Nueva clase utility en `globals.css` con `padding-bottom: env(safe-area-inset-bottom)` aplicada al input area del chat para iOS notch / Android nav bar.
+3. **Dice tray compacto** — Botones `h-14` en mobile (vs `h-20` desktop), `text-lg` (vs `text-2xl`), grid `3 cols` (vs `2 cols`), gap `1` (vs `2`). Auto-cierre del Sheet 500ms después del roll.
+4. **Header chat compacto en mobile** — `h-9 sm:h-14`, `text-xs sm:text-lg`, padding `px-3 sm:px-6`. Status text reducido a "OK"/"..." en mobile. Título con `truncate`.
+5. **Input area más compacto** — `p-2 sm:p-4`, `mb-2 sm:mb-0` para más espacio vertical para escribir en mobile.
+
+### Commits en main (3 Abr 2026)
+```
+f7cfcc1 fix: persist pending_player_roll between requests + compact mobile header for more input space
+3f32334 fix: consolidated fixes — self-damage tracking, mobile input/dice tray, no level-up by request, cleanup debug logs
+```
+
 ---
 
 ## 4. Estado Actual — Abril 2026
@@ -422,7 +446,10 @@ fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts 
 - **Visibility resync:** Re-fetch de mensajes/personaje/campaña al volver de background
 - **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile
 - **stripSystemTags:** Limpia SYSTEM EVENT echoes, Calculation lines, tool calls, COMBAT tags — solo en mensajes de SAM (role-aware)
-- **Multi-agent architecture:** `backend/agents/` con DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator + KnowledgeService. Conectado a `server.py` con fallback a `ai.py` legacy.
+- **Multi-agent architecture:** `backend/agents/` con DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator + KnowledgeService. Conectado a `server.py` con fallback a `ai.py` legacy. **`pending_player_roll` persiste entre requests** via `combat_state`.
+- **Self-damage flow:** Intent type `self_damage` → MechanicEngine resuelve daño → state_update aplica HP. Cubre auto-lesiones, caídas, trampas.
+- **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
+- **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
 
 ### Completitud: ~95% (app funcional) + arquitectura multi-agente integrada
 
@@ -474,4 +501,4 @@ fedfb7a feat: Narrator agent — LLM storyteller that narrates mechanical facts 
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 2 Abr 2026 — Multi-agent architecture integrated into server.py with legacy fallback. KnowledgeService RAG. stripSystemTags role-aware. Character context from DB.*
+*Última actualización: 3 Abr 2026 — Self-damage intent flow, pending_player_roll persistence, Narrator no-level-up rule, mobile UX (100dvh, pb-safe, compact header, dice tray auto-close).*

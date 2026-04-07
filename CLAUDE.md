@@ -265,8 +265,11 @@ lucide-react, sonner, next-themes
 - **Character sheet responsive:** Tabs scrollables, grids adaptativos, padding compacto mobile.
 - **stripSystemTags expandido:** Limpia `[SYSTEM EVENT]` echoes, Calculation lines, tool call text, `<COMBAT>` tags, failed search results. Role-aware: solo limpia artifacts de Gemini en mensajes de SAM, no en tiradas de dados de jugadores.
 - **Multiplayer pendiente:** commlink recipients (selector de destinatarios)
-- **Multi-agent architecture (1 Abr 2026):** Nuevo paquete `backend/agents/` con separación de responsabilidades. `DiceRoller` (secrets.randbelow), `Rules` (tablas D&D 5e), `CombatState` (máquina de estado), `MechanicEngine` (Python puro, cero LLM), `IntentInterpreter` (LLM prompt corto → JSON), `Narrator` (LLM creativo solo narra), `SAMOrchestrator` (coordinador del pipeline). `ai.py` y `server.py` sin modificar — integración pendiente.
-- **Completitud: ~95%** (app funcional) + arquitectura multi-agente en progreso
+- **Multi-agent architecture (integrado 2 Abr 2026):** `backend/agents/` con separación de responsabilidades. `DiceRoller` (secrets.randbelow), `Rules` (tablas D&D 5e), `CombatState` (máquina de estado), `MechanicEngine` (Python puro, cero LLM), `IntentInterpreter` (LLM prompt corto → JSON), `Narrator` (LLM creativo solo narra, regla no-level-up), `SAMOrchestrator` (coordinador del pipeline), `KnowledgeService` (RAG). Conectado a `server.py` con fallback a `ai.py` legacy.
+- **Self-damage flow:** Intent type `self_damage` permite que jugadores se autolesionen, caigan en trampas, etc. MechanicEngine aplica el daño, state_updates lo persiste.
+- **`pending_player_roll` persistence:** Sobrevive entre requests via `combat_state` en `campaigns.settings`. Permite flujos como "tira de daño" → siguiente mensaje del jugador con su tirada.
+- **Mobile UX:** `h-[100dvh]` (dynamic viewport), `pb-safe` (iOS notch), header compacto en mobile (h-9), dice tray con botones pequeños + auto-close al rolear, input area con `mb-2` extra.
+- **Completitud: ~95%** (app funcional) con arquitectura multi-agente integrada
 - Ver `SAM_progress_log.md` para detalle completo
 
 ---
@@ -831,6 +834,14 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
   - **ff8_team role:** New user role for FF8 team members. Redirects to `/portal/collections`. Sidebar shows Collections link. Auth callback + login page handle redirect correctly
   - **Chat limits:** Daily message limits by role (admin=50, supervisor=30, collector=20). Topic restriction (collections-only questions)
   - **Alert drill-down:** Clickable recency/new-behind alerts expand to filtered account lists. API supports `recency_gte` and `new_behind` filters
+  - **Collector priority system:** Priority scoring (recency zones + bracket deterioration + payment amount), "START HERE" top 10 with reason tags, collapsible Strategy Guide, performance card (recovery rate, improved/worsened counts)
+  - **Supervisor view toggle:** "SUPERVISOR VIEW" | "MY QUEUE: A-F" pill toggle. Switches between overview and CollectorDashboard with supervisor's assigned queue
+  - **TimeSlicer on all views:** Admin, Supervisor, and Collector dashboards all have Today/Yesterday/Pick/Range date selection
+  - **AI Insights popup:** Narrative moved from bottom to on-demand modal (Sparkles button + "AI INSIGHTS" label, red dot for HIGH alerts)
+  - **Collections KPI card redesign:** "YESTERDAY'S COLLECTIONS (MAR 31)" label, progress bar vs daily_target (computed from current accounts × scheduled_payment / cycle_days), 7-day average, OFR subtotal (admin only)
+  - **Bracket cycle filter:** ALL | BW | W | M pills above bracket bar. `brackets_by_cycle` pre-computed in analyze endpoint
+  - **OFR period NET:** `ofr_period_net` added to portfolio_summary. Admin KPI shows Active + OFR = TOTAL
+  - **Favicon:** `icons: { icon: "/icon.png" }` in root layout metadata — works for all roles
   - **Env vars:** `COLLECTIONS_INGEST_KEY`, `ANTHROPIC_API_KEY`
   - **Redirects:** `/api/collections/upload` → `collections-upload`, `/api/collections/analyze` → `collections-analyze`, `/api/collections/chat` → `collections-chat`
 - **Urgente:** Rotar API key de Airtable hardcodeada en Wix antes de migración
@@ -853,4 +864,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 2 Abr 2026 — SAM: Multi-agent architecture integrated (SAMOrchestrator + KnowledgeService connected to server.py, ai.py as fallback). stripSystemTags role-aware fix. Character context from DB. FF8: Collections Module complete.*
+*Última actualización: 3 Abr 2026 — SAM: Self-damage intent flow, pending_player_roll persistence between requests, Narrator no-level-up rule, mobile UX (100dvh, pb-safe, compact header, dice tray auto-close). FF8: Collections Module complete.*
