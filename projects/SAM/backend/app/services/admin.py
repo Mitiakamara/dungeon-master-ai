@@ -41,6 +41,14 @@ class AdminService:
                 return AdminService.load_checkpoint(" ".join(args), user_id)
             elif cmd == "/list":
                 return AdminService.list_checkpoints()
+            elif cmd == "/delegate":
+                if not args:
+                    return "Usage: /delegate [character_name]"
+                return AdminService.delegate_character(" ".join(args), user_id)
+            elif cmd == "/undelegate":
+                if not args:
+                    return "Usage: /undelegate [character_name]"
+                return AdminService.undelegate_character(" ".join(args), user_id)
             else:
                 return f"Unknown command: {cmd}. Type /help for list."
         except Exception as e:
@@ -58,6 +66,8 @@ class AdminService:
 *   `/load [name]` - Restore a saved state (Wipes current chat).
 *   `/reset` - Wipe chat history & Restore HP.
 *   `/list` - Show all checkpoints.
+*   `/delegate [character]` - Hand control of a player character to S.A.M.
+*   `/undelegate [character]` - Return character to player control.
 *   `/help` - Show this menu.
 """
 
@@ -195,4 +205,50 @@ class AdminService:
             import traceback
             print(f"RESET ERROR: {traceback.format_exc()}")
             return f"❌ Reset Error: {e}"
+
+    @staticmethod
+    def _find_character_in_active_campaign(name: str, gm_user_id: str):
+        """Find a character by name in the GM's active campaign."""
+        camp_res = supabase.table("campaigns").select("id").eq("gm_id", gm_user_id).limit(1).execute()
+        if not camp_res.data:
+            return None, None
+        cid = camp_res.data[0]["id"]
+        char_res = supabase.table("characters").select("id, name, user_id").eq("campaign_id", cid).execute()
+        target_lower = name.lower()
+        for c in (char_res.data or []):
+            if target_lower in (c.get("name", "") or "").lower():
+                return c, cid
+        return None, cid
+
+    @staticmethod
+    def delegate_character(name: str, user_id: str) -> str:
+        try:
+            target_char, cid = AdminService._find_character_in_active_campaign(name, user_id)
+            if not cid:
+                return "No active campaign found for GM."
+            if not target_char:
+                return f"Character '{name}' not found in campaign."
+            supabase.table("characters").update({"controlled_by": user_id}).eq("id", target_char["id"]).execute()
+            print(f"🤖 Delegated: {target_char['name']} → SAM/GM control")
+            return f"🤖 **{target_char['name']}** is now delegated to S.A.M. control. SAM will act for them in combat."
+        except Exception as e:
+            import traceback
+            print(f"DELEGATE ERROR: {traceback.format_exc()}")
+            return f"❌ Delegate Error: {e}"
+
+    @staticmethod
+    def undelegate_character(name: str, user_id: str) -> str:
+        try:
+            target_char, cid = AdminService._find_character_in_active_campaign(name, user_id)
+            if not cid:
+                return "No active campaign found for GM."
+            if not target_char:
+                return f"Character '{name}' not found in campaign."
+            supabase.table("characters").update({"controlled_by": None}).eq("id", target_char["id"]).execute()
+            print(f"✅ Undelegated: {target_char['name']} → player control")
+            return f"✅ **{target_char['name']}** returned to player control."
+        except Exception as e:
+            import traceback
+            print(f"UNDELEGATE ERROR: {traceback.format_exc()}")
+            return f"❌ Undelegate Error: {e}"
 

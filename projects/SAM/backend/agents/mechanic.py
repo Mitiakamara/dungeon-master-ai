@@ -172,6 +172,49 @@ class MechanicEngine:
             return self._resolve_skill_check(character, roll_data, pending)
         elif pending["type"] == "weapon_damage":
             return self._resolve_weapon_damage(character, roll_data, pending)
+        elif pending["type"] == "healing":
+            # Parse modifier from healing dice notation (e.g. "2d4+2" → +2)
+            healing_dice = pending.get("healing_dice", "")
+            heal_mod = 0
+            if "+" in healing_dice:
+                try:
+                    heal_mod = int(healing_dice.split("+")[1])
+                except (ValueError, IndexError):
+                    pass
+
+            total_healing = roll_data.get("result", 0) + heal_mod
+            target = pending.get("target_data", {}) or {}
+            target_name = pending.get("target_name", "Unknown")
+            target_status = target.get("status", {}) if target else {}
+            hp_current = target_status.get("hp_current", 0)
+            hp_max = target_status.get("hp_max", hp_current)
+
+            hp_result = calculate_hp_change(hp_current, total_healing, hp_max, is_damage=False)
+
+            result = {
+                "action": "healing_applied",
+                "healer": character.get("name", "Unknown"),
+                "target": target_name,
+                "item": pending.get("item", ""),
+                "healing_rolls": roll_data.get("rolls", []),
+                "healing_modifier": heal_mod,
+                "total_healing": hp_result.get("actual_change", total_healing),
+                "new_hp": hp_result["new_hp"],
+                "hp_max": hp_max,
+            }
+
+            self.state_updates.append({
+                "type": "player_hp",
+                "character_name": target_name,
+                "damage": -total_healing,  # Negative = healing
+                "new_hp": hp_result["new_hp"],
+                "hp_max": hp_max,
+                "is_unconscious": False,
+            })
+
+            self.results.append(result)
+            return result
+
         elif pending["type"] == "self_damage":
             damage = roll_data.get("result", 0)
             char = pending.get("character_data", character)
@@ -637,6 +680,21 @@ class MechanicEngine:
                 lines.append(
                     f"{r['character']} {r['skill']} check: "
                     f"rolled {r['roll']}+{r['modifier']}={r['total']}{dc_text}"
+                )
+
+            elif action == "healing_applied":
+                lines.append(
+                    f"{r['healer']} uses {r.get('item', 'healing')} on {r['target']}. "
+                    f"Healing: {r.get('healing_rolls', [])} + {r.get('healing_modifier', 0)} = "
+                    f"{r['total_healing']} HP restored. "
+                    f"{r['target']} HP: {r['new_hp']}/{r['hp_max']}."
+                )
+
+            elif action == "self_damage_applied":
+                lines.append(
+                    f"{r['character']} takes {r['damage']} self-inflicted damage. "
+                    f"HP: {r['new_hp']}/{r['hp_max']}."
+                    f"{' UNCONSCIOUS!' if r.get('is_unconscious') else ''}"
                 )
 
         return "\n".join(lines)

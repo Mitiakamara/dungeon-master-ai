@@ -20,7 +20,7 @@ from .mechanic import MechanicEngine
 from .narrator import Narrator
 from .combat_state import CombatState
 from .dice import DiceRoller
-from .rules import get_level_for_xp
+from .rules import get_level_for_xp, get_recommended_cr_range
 
 
 class SAMOrchestrator:
@@ -126,7 +126,30 @@ class SAMOrchestrator:
                 "character_data": character_context,
             }
 
-        elif intent["type"] in ("roleplay", "movement", "free_action", "item", "ability"):
+        elif intent["type"] == "item":
+            item_name = intent.get("item", "")
+            is_healing = intent.get("is_healing", False)
+            target = intent.get("target", "self")
+
+            if is_healing:
+                healing_dice = intent.get("healing_dice", "2d4+2")
+                heal_target_name = sender_name if target == "self" else target
+                target_data = character_context if target == "self" else self._find_party_member(heal_target_name, party_characters)
+
+                mechanical_facts = f"{sender_name} uses {item_name} on {heal_target_name}. Roll {healing_dice} for healing."
+                prompt_player_roll = f"Tira {healing_dice} de curación."
+
+                engine.pending_player_roll = {
+                    "type": "healing",
+                    "item": item_name,
+                    "healing_dice": healing_dice,
+                    "target_name": heal_target_name,
+                    "target_data": target_data,
+                }
+            else:
+                mechanical_facts = ""
+
+        elif intent["type"] in ("roleplay", "movement", "free_action", "ability"):
             # No mechanics — pure narration
             mechanical_facts = ""
 
@@ -145,6 +168,20 @@ class SAMOrchestrator:
         full_campaign_context = campaign_context
         if rag_context:
             full_campaign_context = f"{campaign_context}\n\nRELEVANT CAMPAIGN INFO:\n{rag_context}"
+
+        # Encounter balance info for the narrator (CR guidance)
+        try:
+            party_levels = [p.get("level", 1) for p in party_characters] if party_characters else [1]
+            cr_range = get_recommended_cr_range(party_levels)
+            encounter_info = (
+                f"Party: {len(party_levels)} players, avg level {cr_range['avg_party_level']:.0f}. "
+                f"Recommended single monster CR: {cr_range['single_monster_cr']}. "
+                f"Boss CR (hard): {cr_range['boss_cr']}. "
+                f"DO NOT use monsters above CR {cr_range['boss_cr']} unless the story absolutely demands it."
+            )
+            full_campaign_context = f"{full_campaign_context}\n\nENCOUNTER BALANCE:\n{encounter_info}".strip()
+        except Exception as e:
+            print(f"⚠️ Encounter balance calc failed: {e}")
 
         # ─── STEP 4: Generate narrative ───
         character_context_str = self._format_character_context(character_context)
@@ -261,12 +298,33 @@ class SAMOrchestrator:
             if not current:
                 break
 
+            # If this is a player's turn, check if they're delegated to SAM
+            delegated_char = None
             if not current.get("is_npc", False):
-                # It's a player's turn — stop resolving
-                break
+                char_name = current.get("name", "")
+                for p in party_characters:
+                    if p.get("name") == char_name and p.get("controlled_by"):
+                        delegated_char = p
+                        break
+                if not delegated_char:
+                    # Real player turn — stop resolving
+                    break
 
-            # Resolve NPC turn
-            npc_data = current
+            # Resolve NPC turn (or delegated player turn)
+            if delegated_char:
+                status = delegated_char.get("status", {}) or {}
+                attacks = status.get("attacks") or [{"name": "Unarmed Strike", "bonus": "+2", "damage": "1d4"}]
+                npc_data = {
+                    "name": delegated_char.get("name", "Unknown"),
+                    "is_npc": True,
+                    "hp": status.get("hp_current", 10),
+                    "hp_max": status.get("hp_max", 10),
+                    "ac": status.get("ac", 10),
+                    "attacks": attacks,
+                }
+                npc_facts_lines.append(f"\n--- {delegated_char.get('name', 'Unknown')}'s turn (SAM-controlled) ---")
+            else:
+                npc_data = current
             players_in_combat = [
                 p for p in party_characters
                 if p.get("name") in [c["name"] for c in combat.initiative_order if not c.get("is_npc")]
@@ -274,7 +332,8 @@ class SAMOrchestrator:
 
             if players_in_combat:
                 results = engine.resolve_npc_turn(npc_data, players_in_combat)
-                npc_facts_lines.append(f"\n--- {current['name']}'s turn ---")
+                if not delegated_char:
+                    npc_facts_lines.append(f"\n--- {current['name']}'s turn ---")
                 for r in results:
                     if r.get("action") == "npc_attack":
                         hit = "CRITICAL!" if r.get("critical") else "HIT!" if r["hit"] else "MISS"
@@ -335,6 +394,16 @@ class SAMOrchestrator:
                 return a
 
         return None
+
+    def _find_party_member(self, name: str, party: list[dict]) -> dict:
+        """Find a party member by name (case-insensitive partial match)."""
+        if not name:
+            return {}
+        name_lower = name.lower()
+        for p in party:
+            if name_lower in (p.get("name", "") or "").lower():
+                return p
+        return {}
 
     def _find_target(self, target_name: str, combat: CombatState) -> Optional[dict]:
         """Find a target in the combat state."""

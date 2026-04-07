@@ -40,8 +40,17 @@ ACTION TYPES:
 5. Roleplay/dialogue:
 {{"type": "roleplay", "description": "I ask the merchant about the gem"}}
 
-6. Item use:
-{{"type": "item", "item": "Potion of Healing", "target": "self"}}
+6. Item use (potions, scrolls, consumables):
+{{"type": "item", "item": "Potion of Healing", "target": "self", "is_healing": true, "healing_dice": "2d4+2"}}
+{{"type": "item", "item": "Potion of Healing (Greater)", "target": "Baol Gortsh", "is_healing": true, "healing_dice": "4d4+4"}}
+{{"type": "item", "item": "Oil", "target": "ground", "is_healing": false}}
+
+Common healing potions:
+- Potion of Healing: 2d4+2
+- Potion of Healing (Greater): 4d4+4
+- Potion of Healing (Superior): 8d4+8
+- Potion of Healing (Supreme): 10d4+20
+- Elixir of Health: removes conditions (no HP heal)
 
 7. Class ability:
 {{"type": "ability", "ability": "Channel Divinity: Touch of Death", "target": "Guard 1"}}
