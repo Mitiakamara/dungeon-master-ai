@@ -61,6 +61,10 @@ class SAMOrchestrator:
         engine = MechanicEngine(combat)
         engine.reset_turn()
 
+        # Restore pending_player_roll from persisted state (survives across requests)
+        if combat_data and combat_data.get("pending_player_roll"):
+            engine.pending_player_roll = combat_data["pending_player_roll"]
+
         # ─── STEP 1: Parse intent ───
         targets = self._get_target_options(combat)
         intent = self.interpreter.parse_intent(
@@ -179,10 +183,16 @@ class SAMOrchestrator:
             )
 
         # ─── STEP 5: Compile response ───
+        combat_dict = combat.to_dict() if combat.active else {"active": False}
+        if engine.pending_player_roll:
+            combat_dict["pending_player_roll"] = engine.pending_player_roll
+        else:
+            combat_dict.pop("pending_player_roll", None)
+
         return {
             "narrative": narrative,
             "state_updates": engine.state_updates,
-            "combat_state": combat.to_dict() if combat.active else {"active": False},
+            "combat_state": combat_dict,
             "prompt_player_roll": prompt_player_roll,
         }
 

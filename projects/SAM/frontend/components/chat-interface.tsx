@@ -740,11 +740,12 @@ export function ChatInterface({
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
-            <header className="flex h-14 items-center gap-4 border-b bg-muted/40 px-6 shrink-0">
-                <h1 className="text-lg font-semibold">{campaignName ? `Campaign: ${campaignName}` : "S.A.M."}</h1>
-                <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            <header className="flex h-9 sm:h-14 items-center gap-2 sm:gap-4 border-b bg-muted/40 px-3 sm:px-6 shrink-0">
+                <h1 className="text-xs sm:text-lg font-semibold truncate">{campaignName ? `Campaign: ${campaignName}` : "S.A.M."}</h1>
+                <div className="ml-auto flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-sm text-muted-foreground">
                     <span className={`flex h-2 w-2 rounded-full ${isLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`} />
-                    S.A.M. {isLoading ? "Thinking..." : "Active"}
+                    <span className="hidden sm:inline">S.A.M. {isLoading ? "Thinking..." : "Active"}</span>
+                    <span className="sm:hidden">{isLoading ? "..." : "OK"}</span>
                 </div>
             </header>
 
@@ -855,7 +856,7 @@ export function ChatInterface({
             )}
 
             {/* Input Area */}
-            <div className="p-4 border-t bg-background shrink-0 pb-safe">
+            <div className="p-2 sm:p-4 border-t bg-background shrink-0 mb-2 sm:mb-0 pb-safe">
                 <form onSubmit={(e) => handleSendMessage(e)} className="flex gap-4">
                     <Input
                         value={input}
