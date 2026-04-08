@@ -534,7 +534,7 @@ class AIHelper:
             6. **Inventory**: Extract ALL items from the Equipment section — armor, weapons, potions, tools, adventuring gear, everything. Money (CP/SP/EP/GP/PP) must be extracted separately into the money object. Do NOT skip items even if the list is long.
             7. **Features**: "Features & Traits". Extract as a LIST of objects: {"name": "Feature Name", "source": "Source (Race/Class)", "description": "Brief summary"}.
             8. **Spells**: Extract ALL spells from ALL pages and ALL spell levels. Group them with level field ('Cantrip', '1', '2', '3', etc). This character sheet may have multiple pages of spells — extract every single one. Do NOT truncate.
-            9. **Actions/Bonus/Reactions**: Extract "Actions", "Bonus Actions", and "Reactions" as LISTS of objects: {"name": "Action Name", "description": "Effect"}.
+            9. **Actions/Bonus/Reactions**: Extract "Actions", "Bonus Actions", and "Reactions" as LISTS of objects: {"name": "Action Name", "description": "Effect"}. Only include SPECIAL or UNIQUE actions. Do NOT list standard actions like Attack, Dash, Dodge, Help, Hide, Ready, Search, Use Object — those are universally available to every character.
             10. **Bio**: "Background/Traits". Summarize into multiple paragraphs separated by "\n\n" for readability.
             11. **Spell Slots**: Extract spell slot totals per level. Format as spell_slots object: {'1': {'total': 4, 'used': 0}, '2': {'total': 3, 'used': 0}, ...}. Set 'used' to 0 by default.
 
@@ -559,9 +559,9 @@ class AIHelper:
                     "languages": "",
                     "proficiencies": "",
                     "money": { "cp": 0, "sp": 0, "ep": 0, "gp": 10, "pp": 0 },
-                    "actions": [{"name": "Dash", "description": "Double speed"}], 
-                    "bonus_actions": [{"name": "Cunning Action", "description": "Dash/Disengage/Hide"}],
-                    "reactions": [{"name": "Uncanny Dodge", "description": "Half damage"}],
+                    "actions": [],
+                    "bonus_actions": [],
+                    "reactions": [],
                     "features": [{"name": "Sneak Attack", "source": "Rogue", "description": "Extra damage on advantage"}],
                     "attacks": [{"name": "Shortsword", "bonus": "+5", "damage": "1d6+3", "type": "Piercing"}],
                     "inventory": [{"item": "Rope", "qty": 1, "weight": "10lb"}],
@@ -592,9 +592,13 @@ class AIHelper:
                     prompt,
                 ],
                 config=types.GenerateContentConfig(
-                    max_output_tokens=8192,
+                    max_output_tokens=65536,
                     temperature=0.1,
                     response_mime_type="application/json",
+                    # Disable thinking budget — PDF extraction is structured, no reasoning needed.
+                    # Without this, gemini-2.5-flash burns most of max_output_tokens on internal
+                    # thinking tokens and truncates the visible JSON.
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             log("Response received from Gemini.")
