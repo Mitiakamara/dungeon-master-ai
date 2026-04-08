@@ -627,7 +627,8 @@ class AIHelper:
             except json.JSONDecodeError as e1:
                 log(f"First parse attempt failed: {e1}")
                 print(f"PDF Parse Error (1st attempt): {e1}")
-                print(f"Raw JSON (first 200 chars): {json_text[:200]}")
+                print(f"Raw JSON length: {len(json_text)}")
+                print(f"Raw JSON chars 600-900: {json_text[600:900]}")
 
                 # Second attempt: more aggressive cleanup
                 aggressive = json_text
@@ -643,7 +644,8 @@ class AIHelper:
                 except json.JSONDecodeError as e2:
                     log(f"Second parse attempt also failed: {e2}")
                     print(f"PDF Parse Error (2nd attempt): {e2}")
-                    print(f"Raw JSON (first 200 chars): {aggressive[:200]}")
+                    print(f"Raw JSON length: {len(aggressive)}")
+                    print(f"Raw JSON chars 600-900: {aggressive[600:900]}")
                     raise
             else:
                 log("JSON parsed successfully.")
