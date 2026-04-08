@@ -606,16 +606,47 @@ class AIHelper:
             # Robust JSON extraction: Find first { and last }
             start = text.find("{")
             end = text.rfind("}") + 1
-            
+
             if start != -1 and end != -1:
                 text = text[start:end]
             else:
                 log("ERROR: No JSON braces found!")
                 print("DEBUG: No JSON braces found in response")
-            
+
+            # Clean common Gemini JSON errors
+            import re
+            json_text = text
+            # Strip stray markdown fences if the model wrapped the JSON
+            json_text = json_text.replace("```json", "").replace("```", "").strip()
+            # Remove trailing commas before } or ]
+            json_text = re.sub(r",\s*([}\]])", r"\1", json_text)
+
             log("Attempting `json.loads`...")
-            data = json.loads(text)
-            log("JSON parsed successfully.")
+            try:
+                data = json.loads(json_text)
+            except json.JSONDecodeError as e1:
+                log(f"First parse attempt failed: {e1}")
+                print(f"PDF Parse Error (1st attempt): {e1}")
+                print(f"Raw JSON (first 200 chars): {json_text[:200]}")
+
+                # Second attempt: more aggressive cleanup
+                aggressive = json_text
+                # Replace single quotes with double quotes (only outside of string content — best-effort)
+                aggressive = aggressive.replace("'", '"')
+                # Strip ASCII control characters (except \n, \r, \t which json allows in strings via escapes)
+                aggressive = "".join(ch for ch in aggressive if ord(ch) >= 32 or ch in "\n\r\t")
+                # Remove trailing commas again after the substitutions
+                aggressive = re.sub(r",\s*([}\]])", r"\1", aggressive)
+                try:
+                    data = json.loads(aggressive)
+                    log("JSON parsed successfully on 2nd attempt (aggressive cleanup).")
+                except json.JSONDecodeError as e2:
+                    log(f"Second parse attempt also failed: {e2}")
+                    print(f"PDF Parse Error (2nd attempt): {e2}")
+                    print(f"Raw JSON (first 200 chars): {aggressive[:200]}")
+                    raise
+            else:
+                log("JSON parsed successfully.")
 
             # Normalize status field names (Gemini sometimes returns hp instead of hp_current)
             if "status" in data and isinstance(data["status"], dict):
