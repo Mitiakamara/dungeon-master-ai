@@ -531,11 +531,12 @@ class AIHelper:
             3. **Senses**: Look for "Passive Wisdom (Perception)" text. Also add any special senses (Darkvision) found in "Features & Traits".
             4. **Proficiencies & Languages**: Look for the box often labeled "Proficiencies & Languages". List ALL armor, weapons, tools, and languages.
             5. **Attacks**: Section "Attacks & Spellcasting". Extract as a LIST of objects. Structure: Name, Atk Bonus, Damage/Type.
-            6. **Inventory**: Look for "Equipment" or "Gear". Extract **Money** (CP, SP, EP, GP, PP) separately. Extract remaining items as a LIST of objects: {"item": "Name", "qty": 1, "weight": "X lb"}.
+            6. **Inventory**: Extract ALL items from the Equipment section — armor, weapons, potions, tools, adventuring gear, everything. Money (CP/SP/EP/GP/PP) must be extracted separately into the money object. Do NOT skip items even if the list is long.
             7. **Features**: "Features & Traits". Extract as a LIST of objects: {"name": "Feature Name", "source": "Source (Race/Class)", "description": "Brief summary"}.
-            8. **Spells**: If present, list Spells as objects: {"name": "Spell Name", "level": "Lvl x", "notes": "School/Ritual"}.
+            8. **Spells**: Extract ALL spells from ALL pages and ALL spell levels. Group them with level field ('Cantrip', '1', '2', '3', etc). This character sheet may have multiple pages of spells — extract every single one. Do NOT truncate.
             9. **Actions/Bonus/Reactions**: Extract "Actions", "Bonus Actions", and "Reactions" as LISTS of objects: {"name": "Action Name", "description": "Effect"}.
             10. **Bio**: "Background/Traits". Summarize into multiple paragraphs separated by "\n\n" for readability.
+            11. **Spell Slots**: Extract spell slot totals per level. Format as spell_slots object: {'1': {'total': 4, 'used': 0}, '2': {'total': 3, 'used': 0}, ...}. Set 'used' to 0 by default.
 
             CRITICAL OUTPUT RULES:
             - Output MUST be valid, parseable JSON.
@@ -565,19 +566,22 @@ class AIHelper:
                     "attacks": [{"name": "Shortsword", "bonus": "+5", "damage": "1d6+3", "type": "Piercing"}],
                     "inventory": [{"item": "Rope", "qty": 1, "weight": "10lb"}],
                     "spells": [{
-                        "name": "Firebolt", 
-                        "level": "Cantrip", 
-                        "school": "Evocation", 
-                        "time": "1A", 
-                        "range": "120ft", 
-                        "duration": "Instant", 
-                        "components": "V,S", 
-                        "notes": "1d10 Fire" 
+                        "name": "Firebolt",
+                        "level": "Cantrip",
+                        "school": "Evocation",
+                        "time": "1A",
+                        "range": "120ft",
+                        "duration": "Instant",
+                        "components": "V,S",
+                        "notes": "1d10 Fire"
                     }],
+                    "spell_slots": {"1": {"total": 4, "used": 0}, "2": {"total": 3, "used": 0}},
                     "saving_throws": {"str": false, "dex": false, "con": false, "int": false, "wis": false, "cha": false}
                 },
                 "bio": "Background...\n\nTrait..."
             }
+
+            IMPORTANT: This PDF may have 4-6 pages. Extract data from ALL pages. Do not stop early. The spell list and equipment list may span multiple pages.
             """
             
             log("Sending request to Gemini...")
@@ -587,6 +591,10 @@ class AIHelper:
                     types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
                     prompt,
                 ],
+                config=types.GenerateContentConfig(
+                    max_output_tokens=8192,
+                    temperature=0.1,
+                ),
             )
             log("Response received from Gemini.")
 
