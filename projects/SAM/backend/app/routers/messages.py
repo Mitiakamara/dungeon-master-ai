@@ -17,7 +17,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # --- Models ---
 class PrivateMessageCreate(BaseModel):
     campaign_id: str
-    receiver_id: str # User ID
+    receiver_id: Optional[str] = None  # User ID — null when sending to S.A.M./system
     content: str
     subject: Optional[str] = None
     sender_character_id: Optional[str] = None
