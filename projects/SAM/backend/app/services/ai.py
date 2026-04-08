@@ -594,9 +594,17 @@ class AIHelper:
                 config=types.GenerateContentConfig(
                     max_output_tokens=8192,
                     temperature=0.1,
+                    response_mime_type="application/json",
                 ),
             )
             log("Response received from Gemini.")
+
+            raw_response = response.text
+            print(f"📄 PDF Parse: Gemini returned {len(raw_response)} chars")
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'finish_reason'):
+                    print(f"📄 PDF Parse: finish_reason = {candidate.finish_reason}")
 
             # Clean up response more robustly
             text = response.text
@@ -632,8 +640,6 @@ class AIHelper:
 
                 # Second attempt: more aggressive cleanup
                 aggressive = json_text
-                # Replace single quotes with double quotes (only outside of string content — best-effort)
-                aggressive = aggressive.replace("'", '"')
                 # Strip ASCII control characters (except \n, \r, \t which json allows in strings via escapes)
                 aggressive = "".join(ch for ch in aggressive if ord(ch) >= 32 or ch in "\n\r\t")
                 # Remove trailing commas again after the substitutions
