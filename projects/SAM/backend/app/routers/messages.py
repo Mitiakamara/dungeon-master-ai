@@ -37,6 +37,44 @@ class PrivateMessageResponse(BaseModel):
 
 # --- Endpoints ---
 
+@router.get("/recipients")
+def list_recipients(campaign_id: str, user: dict = Depends(verify_token)):
+    """
+    List private message recipients for a campaign:
+    - All other player characters in the campaign (excludes the caller's own character)
+    - A special S.A.M. (DM) entry with null sender_id for messaging the GM/AI
+    """
+    user_id = user['sub']
+    response = (
+        supabase.table("characters")
+        .select("id, name, user_id, class, level")
+        .eq("campaign_id", campaign_id)
+        .execute()
+    )
+
+    recipients = []
+    for c in response.data or []:
+        if c.get("user_id") == user_id:
+            continue
+        recipients.append({
+            "character_id": c.get("id"),
+            "character_name": c.get("name"),
+            "user_id": c.get("user_id"),
+            "class": c.get("class"),
+            "level": c.get("level"),
+        })
+
+    # Special "send to GM / S.A.M." entry — null sender_id is the convention for AI/system
+    recipients.append({
+        "character_id": None,
+        "character_name": "S.A.M. (DM)",
+        "user_id": None,
+        "class": None,
+        "level": None,
+    })
+
+    return recipients
+
 @router.get("/", response_model=List[PrivateMessageResponse])
 def get_my_messages(user: dict = Depends(verify_token)):
     user_id = user['sub']
