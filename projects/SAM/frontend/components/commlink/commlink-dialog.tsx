@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { authenticatedFetch } from "@/lib/api"
+import { createClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -12,6 +13,16 @@ import { formatDistanceToNow } from "date-fns"
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
+interface Recipient {
+    character_id: string | null
+    character_name: string
+    user_id: string | null
+    class?: string | null
+    level?: number | null
+}
+
+const SAM_VALUE = "__sam__"
+
 export function Commlink({ campaignId }: { campaignId?: string }) {
     const [open, setOpen] = useState(false)
     const [messages, setMessages] = useState<any[]>([])
@@ -21,11 +32,27 @@ export function Commlink({ campaignId }: { campaignId?: string }) {
     // Compose State
     const [subject, setSubject] = useState("")
     const [content, setContent] = useState("")
-    const [recipientId, setRecipientId] = useState("") // Ideally a select dropdown
+    const [recipientValue, setRecipientValue] = useState("") // user_id, or SAM_VALUE for S.A.M.
+
+    // Recipients + current user
+    const [recipients, setRecipients] = useState<Recipient[]>([])
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+    const [myCharacterName, setMyCharacterName] = useState<string>("You")
+
+    // Get current user id once
+    useEffect(() => {
+        const supabase = createClient()
+        supabase.auth.getUser().then(({ data: { user } }: { data: { user: any } }) => {
+            if (user) setCurrentUserId(user.id)
+        })
+    }, [])
 
     useEffect(() => {
-        if (open) fetchMessages()
-    }, [open])
+        if (open) {
+            fetchMessages()
+            fetchRecipients()
+        }
+    }, [open, campaignId])
 
     const fetchMessages = async () => {
         setLoading(true)
@@ -42,18 +69,44 @@ export function Commlink({ campaignId }: { campaignId?: string }) {
         }
     }
 
+    const fetchRecipients = async () => {
+        if (!campaignId) { setRecipients([]); return }
+        try {
+            const res = await authenticatedFetch(`/api/messages/recipients?campaign_id=${campaignId}`)
+            if (res.ok) {
+                const data: Recipient[] = await res.json()
+                setRecipients(data)
+                // Try to derive my own character name from full party fetch
+                try {
+                    const partyRes = await authenticatedFetch(`/api/characters/campaign/${campaignId}`)
+                    if (partyRes.ok && currentUserId) {
+                        const allChars = await partyRes.json()
+                        const mine = allChars.find((c: any) => c.user_id === currentUserId)
+                        if (mine?.name) setMyCharacterName(mine.name)
+                    }
+                } catch { /* ignore */ }
+            }
+        } catch (e) {
+            console.error("Failed to fetch recipients:", e)
+        }
+    }
+
+    const senderLabel = (msg: any): string => {
+        if (msg.sender_id == null) return "S.A.M."
+        if (currentUserId && msg.sender_id === currentUserId) return myCharacterName || "You"
+        const found = recipients.find((r) => r.user_id === msg.sender_id)
+        return found?.character_name || "Unknown"
+    }
+
     const handleSend = async () => {
         if (!content) return
+        if (!recipientValue) {
+            toast.error("Select a recipient first")
+            return
+        }
 
-        // For prototype, we might need to know WHO to send to. 
-        // We'll hardcode to "GM" (User ID?) or S.A.M. (null)?
-        // Or fetch list of users.
-        // For this iteration, let's allow sending to "Campaign Chat" (Broadcast?) No, this is PRIVATE.
-        // We need a user list. 
-        // Let's assume sending to S.A.M. (AI) for now if we don't have user list.
-        // Or implement user list fetching.
-
-        // Let's just create the UI for now and allow typing an ID (debug) or just "S.A.M.".
+        const isSam = recipientValue === SAM_VALUE
+        const target = isSam ? null : recipients.find((r) => r.user_id === recipientValue)
 
         try {
             const res = await authenticatedFetch('/api/messages/', {
@@ -61,9 +114,10 @@ export function Commlink({ campaignId }: { campaignId?: string }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     campaign_id: campaignId || "",
-                    receiver_id: recipientId,
+                    receiver_id: isSam ? null : (target?.user_id ?? null),
+                    receiver_character_id: isSam ? null : (target?.character_id ?? null),
                     content,
-                    subject
+                    subject,
                 })
             })
             if (res.ok) {
@@ -71,6 +125,10 @@ export function Commlink({ campaignId }: { campaignId?: string }) {
                 setView('inbox')
                 fetchMessages()
                 setContent("")
+                setSubject("")
+                setRecipientValue("")
+            } else {
+                toast.error("Transmission Failed")
             }
         } catch (e) {
             toast.error("Transmission Failed")
@@ -114,7 +172,7 @@ export function Commlink({ campaignId }: { campaignId?: string }) {
                                     {messages.map((msg) => (
                                         <div key={msg.id} className={`p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors ${msg.is_read ? 'bg-background opacity-70' : 'bg-muted/20 border-purple-500/30'}`}>
                                             <div className="flex justify-between mb-1">
-                                                <span className="font-bold text-sm text-purple-300">{msg.sender_id ? 'Unknown User' : 'S.A.M. (System)'}</span>
+                                                <span className="font-bold text-sm text-purple-300">{senderLabel(msg)}</span>
                                                 <span className="text-[10px] text-muted-foreground">{formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}</span>
                                             </div>
                                             <div className="font-medium text-sm mb-1">{msg.subject || "(No Subject)"}</div>
@@ -131,6 +189,28 @@ export function Commlink({ campaignId }: { campaignId?: string }) {
                                 <h3 className="font-bold">New Message</h3>
                             </div>
                             <div className="space-y-2">
+                                <div>
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</label>
+                                    <select
+                                        value={recipientValue}
+                                        onChange={(e) => setRecipientValue(e.target.value)}
+                                        className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                    >
+                                        <option value="">-- Select recipient --</option>
+                                        {recipients.map((r) => {
+                                            const isSam = r.user_id == null
+                                            const value = isSam ? SAM_VALUE : (r.user_id || "")
+                                            const meta = !isSam && (r.class || r.level)
+                                                ? ` (${r.class || ""}${r.level ? ` Lvl ${r.level}` : ""})`
+                                                : ""
+                                            return (
+                                                <option key={value} value={value}>
+                                                    {r.character_name}{meta}
+                                                </option>
+                                            )
+                                        })}
+                                    </select>
+                                </div>
                                 <Input placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} />
                                 <Textarea
                                     className="resize-none flex-1 h-[200px]"
@@ -141,7 +221,7 @@ export function Commlink({ campaignId }: { campaignId?: string }) {
                                 <div className="text-xs text-muted-foreground">
                                     * Messages are fully encrypted (RLS). Only the recipient can decrypt.
                                 </div>
-                                <Button className="w-full" onClick={handleSend}>
+                                <Button className="w-full" onClick={handleSend} disabled={!recipientValue || !content}>
                                     <Send className="w-4 h-4 mr-2" /> Send via Subspace
                                 </Button>
                             </div>
