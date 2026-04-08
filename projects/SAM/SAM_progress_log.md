@@ -465,6 +465,34 @@ a998bc9 feat: GET /api/messages/recipients — list party members + S.A.M.
 a46abad feat: campaign memories — persistent narrative facts auto-extracted and injected into context
 ```
 
+### Sesión 8 Abr 2026 (final) — PDF Character Import Improvements + Spell Slots Tracking
+
+**Backend — `parse_character_pdf()` reforzado:**
+1. **`max_output_tokens=8192`** agregado al `generate_content` call via `types.GenerateContentConfig`. Antes el default truncaba el JSON en personajes con muchos hechizos/items.
+2. **Reglas del prompt reforzadas:**
+   - **Inventory (regla 6):** "Extract ALL items... armor, weapons, potions, tools, adventuring gear. Do NOT skip items even if the list is long."
+   - **Spells (regla 8):** "Extract ALL spells from ALL pages and ALL spell levels. Do NOT truncate."
+   - **Nueva regla 11 (Spell Slots):** Formato `{'1': {'total': 4, 'used': 0}, '2': {'total': 3, 'used': 0}, ...}`
+3. **JSON schema template:** Nuevo campo `status.spell_slots` agregado después de `spells`.
+4. **Multipage hint:** "This PDF may have 4-6 pages. Extract data from ALL pages. Do not stop early."
+
+**Frontend — Character sheet dialog:**
+1. **Spell Slots panel** en la tab Spells (encima de la tabla de hechizos):
+   - Lee `formData.status.spell_slots`, solo se renderiza si existe y tiene keys
+   - Sort numérico de niveles (1, 2, 3...)
+   - Cada nivel es un chip `Lvl N: used/total` con fondo `bg-muted`
+   - **Click en el chip** → incrementa `used` (gasta un slot)
+   - **Botón `−` a la izquierda** → decrementa `used` (recupera un slot)
+   - Clamp automático entre `0` y `total`
+   - Visual exhausted: `opacity-50 border border-red-500/40`
+   - Persistencia automática vía `formData.status` al guardar
+
+### Commits en main (8 Abr 2026, final)
+```
+b607a8f feat: spell slots panel in character sheet — click to use, − to recover
+f0f43f2 feat: PDF character import — bump max_output_tokens to 8192, extract all spells/inventory/spell_slots, multipage hint
+```
+
 ---
 
 ## 4. Estado Actual — Abril 2026
@@ -512,6 +540,8 @@ a46abad feat: campaign memories — persistent narrative facts auto-extracted an
 - **Campaign memories:** Tabla `campaign_memories` (fact/npc/location/plot/item/decision + importance 1-10). `MemoryService` extrae hechos auto via Gemini 2.5-flash después de cada respuesta (fire-and-forget background task, max 3 facts <100 chars). Memorias inyectadas en `campaign_context` para que SAM "recuerde" entre sesiones. Fallback de recuperación de JSON truncado.
 - **`/memory` command:** GM puede listar/agregar/borrar memorias desde el chat (`/memory list`, `/memory add <type> <text>`, `/memory delete <#N|UUID>`).
 - **Commlink recipients:** Endpoint `GET /api/messages/recipients` lista party members + entrada SAM. Frontend usa dropdown real + resuelve sender names en inbox (S.A.M., propio personaje, otros players).
+- **PDF character import mejorado:** `max_output_tokens=8192` evita truncado. Prompt instruye extraer ALL spells/items de TODAS las páginas. Nuevo campo `status.spell_slots` con totales por nivel.
+- **Spell slots tracking:** Panel interactivo en character sheet (tab Spells) para gastar/recuperar slots con clicks. Persistencia automática.
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
 
@@ -565,4 +595,4 @@ a46abad feat: campaign memories — persistent narrative facts auto-extracted an
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 8 Abr 2026 — Campaign memories (auto-extracted by SAM, /memory commands), commlink recipients (party + SAM dropdown, sender resolution), mobile chat input padding fix, memory extraction fire-and-forget.*
+*Última actualización: 8 Abr 2026 — PDF character import improvements (8192 tokens, multipage extraction, spell_slots field), interactive spell slots tracking panel in character sheet.*
