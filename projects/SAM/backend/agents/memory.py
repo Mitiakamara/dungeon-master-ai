@@ -68,7 +68,7 @@ class MemoryService:
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
             temperature=0.1,
-            max_tokens=500,
+            max_tokens=1024,
             max_retries=1,
             google_api_key=os.getenv("GOOGLE_API_KEY"),
         )

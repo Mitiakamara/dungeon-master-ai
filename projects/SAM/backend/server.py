@@ -358,17 +358,26 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
             except Exception as e:
                 print(f"FAILED TO SAVE AI MESSAGE: {e}")
 
-            # Extract new narrative memories from this exchange (in-lock to serialize)
+            # Schedule memory extraction as fire-and-forget background task.
+            # Runs AFTER this request returns and the lock is released, so
+            # it never blocks the player on the ~90s extraction call.
             if memory_service and cid and ai_response_text:
-                try:
-                    existing = [m["content"] for m in memories] if memories else []
-                    count = await memory_service.extract_and_store(
-                        cid, msg_clean, ai_response_text, existing
-                    )
-                    if count > 0:
-                        logger.debug(f"🧠 {count} new memories extracted for campaign {cid}")
-                except Exception as mem_e:
-                    logger.warning(f"⚠️ Memory extraction failed: {mem_e}")
+                _existing = [m["content"] for m in memories] if memories else []
+                _cid = cid
+                _msg = msg_clean
+                _resp = ai_response_text
+
+                async def _extract_memories_bg():
+                    try:
+                        count = await memory_service.extract_and_store(
+                            _cid, _msg, _resp, _existing
+                        )
+                        if count > 0:
+                            logger.debug(f"🧠 {count} new memories extracted for campaign {_cid}")
+                    except Exception as e:
+                        logger.warning(f"Memory extraction failed: {e}")
+
+                asyncio.create_task(_extract_memories_bg())
 
             return {"response": ai_response_text, "image_url": image_url}
 
