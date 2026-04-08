@@ -81,7 +81,8 @@ export function ChatInterface({
     combatState,
     externalEvent,
     onEventHandled,
-    onCharacterUpdate
+    onCharacterUpdate,
+    onSamMessageReceived
 }: {
     selectedCharacter: any,
     campaignId?: string,
@@ -90,7 +91,8 @@ export function ChatInterface({
     combatState?: any,
     externalEvent?: string | null,
     onEventHandled?: () => void,
-    onCharacterUpdate?: (updates: any) => void
+    onCharacterUpdate?: (updates: any) => void,
+    onSamMessageReceived?: () => void
 }) {
     const [messages, setMessages] = React.useState<Message[]>([])
     const [input, setInput] = React.useState("")
@@ -201,6 +203,13 @@ export function ChatInterface({
             // Handle INSERT (Normal Chat)
             if (newItem.eventType === 'INSERT' && newItem.new) {
                 const payload = newItem.new
+
+                // SAM responses (role 'assistant') may have applied state_updates server-side
+                // (spell_slots, inventory, hp, money). Tell the parent to re-fetch the character.
+                if (payload.role === 'assistant' && onSamMessageReceived) {
+                    console.log('🔄 SAM message received → triggering character re-fetch')
+                    onSamMessageReceived()
+                }
 
                 const incomingMsg: Message = {
                     id: payload.id,

@@ -161,26 +161,15 @@ export default function GameLayout() {
         }
     })
 
-    // Re-sync character data when a SAM message arrives (orchestrator may have applied
-    // state_updates: spell_slots, inventory, hp, money, etc). The Realtime subscription
-    // on the characters table also handles this, but this is a safety-net fallback in
-    // case the merge misses nested status fields or fires before the backend commits.
-    useRealtime({
-        table: 'messages',
-        event: 'INSERT',
-        filter: campaignId ? `campaign_id=eq.${campaignId}` : undefined,
-        enabled: !!campaignId,
-        onData: (payload: any) => {
-            const newMsg = payload.new
-            if (!newMsg) return
-            // SAM responses have role 'assistant' and null sender_id
-            if (newMsg.role === 'assistant' && selectedCharacter?.id) {
-                setTimeout(() => {
-                    fetchCharacterData(selectedCharacter.id)
-                }, 1500)
-            }
-        }
-    })
+    // Re-sync character data when a SAM message is processed in the chat-interface
+    // listener. We piggyback on the existing useRealtime for `messages` instead of
+    // creating a second subscription on the same table (which can collide channels).
+    const handleSamMessageReceived = React.useCallback(() => {
+        if (!selectedCharacter?.id) return
+        const charId = selectedCharacter.id
+        // Delay so the backend finishes applying state_updates before we re-fetch
+        setTimeout(() => fetchCharacterData(charId), 1500)
+    }, [selectedCharacter?.id, fetchCharacterData])
 
     // Persistence & Fresh Data: Load on mount
     React.useEffect(() => {
@@ -347,6 +336,7 @@ export default function GameLayout() {
                     externalEvent={rollEvent}
                     onEventHandled={() => setRollEvent(null)}
                     onCharacterUpdate={handleCharacterUpdate}
+                    onSamMessageReceived={handleSamMessageReceived}
                 />
             </main>
 
