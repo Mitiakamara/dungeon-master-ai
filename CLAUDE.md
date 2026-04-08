@@ -267,6 +267,9 @@ lucide-react, sonner, next-themes
 - **Multiplayer pendiente:** commlink recipients (selector de destinatarios)
 - **Multi-agent architecture (integrado 2 Abr 2026):** `backend/agents/` con separación de responsabilidades. `DiceRoller` (secrets.randbelow), `Rules` (tablas D&D 5e), `CombatState` (máquina de estado), `MechanicEngine` (Python puro, cero LLM), `IntentInterpreter` (LLM prompt corto → JSON), `Narrator` (LLM creativo solo narra, regla no-level-up), `SAMOrchestrator` (coordinador del pipeline), `KnowledgeService` (RAG). Conectado a `server.py` con fallback a `ai.py` legacy.
 - **Self-damage flow:** Intent type `self_damage` permite que jugadores se autolesionen, caigan en trampas, etc. MechanicEngine aplica el daño, state_updates lo persiste.
+- **Healing items:** Pociones de curación reconocidas (Healing/Greater/Superior/Supreme) con `is_healing: true` + `healing_dice`. Pending roll → MechanicEngine aplica curación al target (self o party member).
+- **CR balancing:** Tablas `CR_XP_VALUES` y `ENCOUNTER_THRESHOLDS` en `rules.py`. `get_recommended_cr_range()` calcula single/pair/group/boss CR según nivel del party. Inyectado en `campaign_context` del narrador.
+- **Character delegation:** Comandos `/delegate <name>` y `/undelegate <name>` permiten al GM ceder control de un personaje a SAM (útil para jugadores ausentes). Nueva columna `characters.controlled_by`. En combate, el orquestador trata a delegados como NPCs en `_resolve_npc_turns`.
 - **`pending_player_roll` persistence:** Sobrevive entre requests via `combat_state` en `campaigns.settings`. Permite flujos como "tira de daño" → siguiente mensaje del jugador con su tirada.
 - **Mobile UX:** `h-[100dvh]` (dynamic viewport), `pb-safe` (iOS notch), header compacto en mobile (h-9), dice tray con botones pequeños + auto-close al rolear, input area con `mb-2` extra.
 - **Completitud: ~95%** (app funcional) con arquitectura multi-agente integrada
@@ -864,4 +867,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 3 Abr 2026 — SAM: Self-damage intent flow, pending_player_roll persistence between requests, Narrator no-level-up rule, mobile UX (100dvh, pb-safe, compact header, dice tray auto-close). FF8: Collections Module complete.*
+*Última actualización: 8 Abr 2026 — SAM: Healing items handler with pending roll, CR balancing tables (recommended CR injected to narrator), character delegation (/delegate, /undelegate) with NPC-like turn resolution. FF8: Collections Module complete.*

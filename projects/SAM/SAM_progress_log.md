@@ -407,6 +407,24 @@ f7cfcc1 fix: persist pending_player_roll between requests + compact mobile heade
 3f32334 fix: consolidated fixes — self-damage tracking, mobile input/dice tray, no level-up by request, cleanup debug logs
 ```
 
+### Sesión 8 Abr 2026 — Healing Items, CR Balancing, Character Delegation
+
+**Features implementados:**
+1. **Healing items handler** — Type `item` en `IntentInterpreter` ahora reconoce pociones de curación (`is_healing: true`, `healing_dice: "2d4+2"`) con tabla de potions D&D 5e estándar (Healing/Greater/Superior/Supreme + Elixir of Health). El orquestador rutea a `pending_player_roll` esperando la tirada de daño/curación. `MechanicEngine.process_player_roll` resuelve el tipo `healing`: parsea el modificador del dice notation, aplica `calculate_hp_change(is_damage=False)` al target (self o party member), emite `state_update` con `damage` negativo. Frontend ya soporta esto sin cambios.
+2. **CR Balancing** — Nuevas tablas en `rules.py`: `CR_XP_VALUES` (CR 0–30), `ENCOUNTER_THRESHOLDS` (Easy/Medium/Hard/Deadly por nivel 1–20). Funciones: `calculate_encounter_difficulty(monster_crs, party_levels)` (con multiplicadores DMG por número de monstruos) y `get_recommended_cr_range(party_levels)` (single/pair/group/boss). El orquestador inyecta `encounter_info` en el `campaign_context` antes de narrar: "Party: N players, avg level X. Recommended single monster CR: Y. Boss CR: Z. DO NOT use monsters above CR Z unless the story absolutely demands it." SAM ahora respeta los límites de CR según el nivel del party.
+3. **Character delegation (`/delegate`, `/undelegate`)** — Nueva columna `characters.controlled_by uuid REFERENCES profiles(id)` (migration `schema_character_delegation.sql`). El GM puede delegar control de un personaje a SAM con `/delegate <name>` y devolverlo con `/undelegate <name>`. En combate, cuando es turno de un personaje delegado, el orquestador lo trata como NPC: construye un `npc_data` con stats del personaje real y lo resuelve con `engine.resolve_npc_turn`. Header marcado como "(SAM-controlled)". Útil para jugadores ausentes en combate.
+
+**Helpers nuevos:**
+- `orchestrator._find_party_member(name, party)` — búsqueda case-insensitive partial match
+- `admin._find_character_in_active_campaign(name, gm_user_id)` — resolución de personaje en la campaña activa del GM
+
+**Pendiente:** Ejecutar `schema_character_delegation.sql` en Supabase manualmente.
+
+### Commits en main (8 Abr 2026)
+```
+5a7792e feat: healing items handler + CR balancing + character delegation (/delegate, /undelegate)
+```
+
 ---
 
 ## 4. Estado Actual — Abril 2026
@@ -448,6 +466,9 @@ f7cfcc1 fix: persist pending_player_roll between requests + compact mobile heade
 - **stripSystemTags:** Limpia SYSTEM EVENT echoes, Calculation lines, tool calls, COMBAT tags — solo en mensajes de SAM (role-aware)
 - **Multi-agent architecture:** `backend/agents/` con DiceRoller, Rules, CombatState, MechanicEngine, IntentInterpreter, Narrator, SAMOrchestrator + KnowledgeService. Conectado a `server.py` con fallback a `ai.py` legacy. **`pending_player_roll` persiste entre requests** via `combat_state`.
 - **Self-damage flow:** Intent type `self_damage` → MechanicEngine resuelve daño → state_update aplica HP. Cubre auto-lesiones, caídas, trampas.
+- **Healing items:** Pociones de curación reconocidas por el interpreter (con dice + modifier). Pending roll → MechanicEngine aplica curación al target (self o party member). Tabla D&D 5e estándar.
+- **CR balancing:** SAM recibe el rango recomendado de CR según el nivel del party. Tablas `CR_XP_VALUES` y `ENCOUNTER_THRESHOLDS` en `rules.py`. SAM no usa monstruos sobre el CR boss recomendado.
+- **Character delegation:** `/delegate <name>` cede control de un personaje a SAM. Útil para jugadores ausentes en combate. Resolución como NPC en `_resolve_npc_turns`.
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
 
@@ -501,4 +522,4 @@ f7cfcc1 fix: persist pending_player_roll between requests + compact mobile heade
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 3 Abr 2026 — Self-damage intent flow, pending_player_roll persistence, Narrator no-level-up rule, mobile UX (100dvh, pb-safe, compact header, dice tray auto-close).*
+*Última actualización: 8 Abr 2026 — Healing items handler with pending damage roll, CR balancing tables + recommendations injected to narrator, character delegation (/delegate, /undelegate) with NPC-like turn resolution.*
