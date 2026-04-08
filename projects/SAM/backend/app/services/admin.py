@@ -49,6 +49,24 @@ class AdminService:
                 if not args:
                     return "Usage: /undelegate [character_name]"
                 return AdminService.undelegate_character(" ".join(args), user_id)
+            elif cmd == "/memory":
+                if not args:
+                    return "Usage: /memory [list|add <type> <text>|delete <id_or_number>]"
+                sub = args[0].lower()
+                if sub == "list":
+                    return AdminService.memory_list(user_id)
+                elif sub == "add":
+                    if len(args) < 3:
+                        return "Usage: /memory add <type> <text>\nValid types: fact, npc, location, plot, item, decision"
+                    mem_type = args[1].lower()
+                    mem_text = " ".join(args[2:])
+                    return AdminService.memory_add(user_id, mem_type, mem_text)
+                elif sub == "delete":
+                    if len(args) < 2:
+                        return "Usage: /memory delete <id_or_number>"
+                    return AdminService.memory_delete(user_id, args[1])
+                else:
+                    return f"Unknown /memory subcommand: {sub}. Use list, add, or delete."
             else:
                 return f"Unknown command: {cmd}. Type /help for list."
         except Exception as e:
@@ -68,6 +86,9 @@ class AdminService:
 *   `/list` - Show all checkpoints.
 *   `/delegate [character]` - Hand control of a player character to S.A.M.
 *   `/undelegate [character]` - Return character to player control.
+*   `/memory list` - Show campaign memories (top 20).
+*   `/memory add <type> <text>` - Add manual memory (types: fact, npc, location, plot, item, decision).
+*   `/memory delete <id_or_number>` - Delete a memory (number from /memory list, or full UUID).
 *   `/help` - Show this menu.
 """
 
@@ -251,4 +272,123 @@ class AdminService:
             import traceback
             print(f"UNDELEGATE ERROR: {traceback.format_exc()}")
             return f"❌ Undelegate Error: {e}"
+
+    # ─────────────────────────────────────────────
+    # Campaign Memories
+    # ─────────────────────────────────────────────
+
+    VALID_MEMORY_TYPES = ("fact", "npc", "location", "plot", "item", "decision")
+
+    @staticmethod
+    def _get_active_campaign_id(user_id: str):
+        """Resolve the active campaign id for a GM user. Returns uuid or None."""
+        camp_res = supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
+        if camp_res.data:
+            return camp_res.data[0]["id"]
+        return None
+
+    @staticmethod
+    def _fetch_memories(cid: str, limit: int = 20):
+        """Fetch top memories ordered by importance then recency."""
+        return (
+            supabase.table("campaign_memories")
+            .select("id, content, type, importance, created_at, source")
+            .eq("campaign_id", cid)
+            .order("importance", desc=True)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+    @staticmethod
+    def memory_list(user_id: str) -> str:
+        try:
+            cid = AdminService._get_active_campaign_id(user_id)
+            if not cid:
+                return "No active campaign found for GM."
+            res = AdminService._fetch_memories(cid, limit=20)
+            if not res.data:
+                return "📭 No memories yet for this campaign."
+
+            lines = ["**🧠 Campaign Memories (top 20):**"]
+            for idx, m in enumerate(res.data, start=1):
+                mtype = (m.get("type") or "fact").upper()
+                imp = m.get("importance", 5)
+                content = m.get("content", "")
+                lines.append(f"#{idx} [{mtype}] (imp:{imp}) {content}")
+            return "\n".join(lines)
+        except Exception as e:
+            import traceback
+            print(f"MEMORY LIST ERROR: {traceback.format_exc()}")
+            return f"❌ Memory List Error: {e}"
+
+    @staticmethod
+    def memory_add(user_id: str, mem_type: str, text: str) -> str:
+        try:
+            if mem_type not in AdminService.VALID_MEMORY_TYPES:
+                valid = ", ".join(AdminService.VALID_MEMORY_TYPES)
+                return f"❌ Invalid type '{mem_type}'. Valid types: {valid}"
+
+            text = text.strip()
+            if not text:
+                return "❌ Memory text cannot be empty."
+
+            cid = AdminService._get_active_campaign_id(user_id)
+            if not cid:
+                return "No active campaign found for GM."
+
+            supabase.table("campaign_memories").insert({
+                "campaign_id": cid,
+                "content": text,
+                "type": mem_type,
+                "importance": 7,
+                "source": "manual",
+                "created_by": user_id,
+            }).execute()
+
+            print(f"🧠 Manual memory added by GM: [{mem_type.upper()}] {text[:60]}")
+            return f"✅ Memory added: **[{mem_type.upper()}]** {text}"
+        except Exception as e:
+            import traceback
+            print(f"MEMORY ADD ERROR: {traceback.format_exc()}")
+            return f"❌ Memory Add Error: {e}"
+
+    @staticmethod
+    def memory_delete(user_id: str, id_or_number: str) -> str:
+        try:
+            cid = AdminService._get_active_campaign_id(user_id)
+            if not cid:
+                return "No active campaign found for GM."
+
+            target_id = None
+
+            # If it looks like a small number, treat as #N from /memory list
+            if id_or_number.lstrip("#").isdigit():
+                n = int(id_or_number.lstrip("#"))
+                if n < 1:
+                    return "❌ Number must be 1 or higher."
+                res = AdminService._fetch_memories(cid, limit=20)
+                if not res.data or n > len(res.data):
+                    return f"❌ No memory at position #{n} (only {len(res.data) if res.data else 0} memories)."
+                target_id = res.data[n - 1]["id"]
+            else:
+                # Treat as UUID
+                target_id = id_or_number.strip()
+
+            del_res = (
+                supabase.table("campaign_memories")
+                .delete()
+                .eq("id", target_id)
+                .eq("campaign_id", cid)
+                .execute()
+            )
+            if not del_res.data:
+                return f"❌ No memory found with id `{target_id}` in this campaign."
+
+            print(f"🗑️ Memory deleted: {target_id}")
+            return f"✅ Memory deleted (`{target_id[:8]}...`)."
+        except Exception as e:
+            import traceback
+            print(f"MEMORY DELETE ERROR: {traceback.format_exc()}")
+            return f"❌ Memory Delete Error: {e}"
 
