@@ -16,8 +16,12 @@ from app.routers import characters, campaigns, messages, invitations
 # Import Multi-Agent System
 from agents.orchestrator import SAMOrchestrator
 from agents.knowledge import KnowledgeService
+from agents.memory import MemoryService
 from langchain_google_genai import ChatGoogleGenerativeAI
 from google import genai
+import logging
+
+logger = logging.getLogger(__name__)
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -66,6 +70,14 @@ try:
 except Exception as e:
     print(f"⚠️ SAMOrchestrator init failed, will use legacy SAMBrain only: {e}")
     sam_orchestrator = None
+
+# Memory service for persistent campaign memories
+try:
+    memory_service = MemoryService(sam_brain.supabase)
+    print("✅ MemoryService initialized")
+except Exception as e:
+    print(f"⚠️ MemoryService init failed: {e}")
+    memory_service = None
 
 # Lock per campaign to prevent simultaneous SAM responses
 _campaign_locks: dict[str, asyncio.Lock] = {}
@@ -234,6 +246,16 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                     # Get combat state
                     combat_data = campaign_settings.get("combat", None) if campaign_settings else None
 
+                    # Fetch persistent campaign memories for context
+                    memories = []
+                    memories_text = ""
+                    if memory_service and cid:
+                        try:
+                            memories = await memory_service.get_memories(cid)
+                            memories_text = memory_service.format_memories_for_context(memories)
+                        except Exception as mem_e:
+                            logger.warning(f"⚠️ Memory fetch failed: {mem_e}")
+
                     # Call orchestrator
                     result = sam_orchestrator.process_message(
                         message=request.message,
@@ -241,7 +263,7 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                         character_context=char_ctx,
                         party_characters=party_characters,
                         combat_data=combat_data,
-                        campaign_context="",
+                        campaign_context=memories_text,
                         dm_style=dm_style,
                         history=db_history if db_history else request.history,
                     )
@@ -335,6 +357,18 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 sam_brain.supabase.table("messages").insert(ai_payload).execute()
             except Exception as e:
                 print(f"FAILED TO SAVE AI MESSAGE: {e}")
+
+            # Extract new narrative memories from this exchange (in-lock to serialize)
+            if memory_service and cid and ai_response_text:
+                try:
+                    existing = [m["content"] for m in memories] if memories else []
+                    count = await memory_service.extract_and_store(
+                        cid, msg_clean, ai_response_text, existing
+                    )
+                    if count > 0:
+                        logger.debug(f"🧠 {count} new memories extracted for campaign {cid}")
+                except Exception as mem_e:
+                    logger.warning(f"⚠️ Memory extraction failed: {mem_e}")
 
             return {"response": ai_response_text, "image_url": image_url}
 
