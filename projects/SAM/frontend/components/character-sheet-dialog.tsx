@@ -409,7 +409,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
 
                         {Array.isArray(formData.status.spells) ? (
                             <div className="border rounded-xl overflow-hidden flex flex-col h-[400px]">
-                                <div className="grid grid-cols-12 bg-muted p-3 text-xs font-bold uppercase text-muted-foreground border-b shrink-0 sticky top-0">
+                                <div className="grid grid-cols-12 bg-muted p-3 md:px-4 md:py-3 text-xs font-bold uppercase text-muted-foreground border-b shrink-0 sticky top-0">
                                     <div className="col-span-1">Lvl</div>
                                     <div className="col-span-3">Name</div>
                                     <div className="col-span-2">Time</div>
@@ -428,7 +428,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                                         }
 
                                         return (
-                                            <div key={i} className="grid grid-cols-12 p-3 text-sm items-center hover:bg-muted/10">
+                                            <div key={i} className="grid grid-cols-12 p-3 md:px-4 md:py-3 text-sm items-center hover:bg-muted/10">
                                                 <div className="col-span-1 font-mono font-bold text-purple-500 text-xs">
                                                     {levelDisplay}
                                                 </div>
@@ -540,12 +540,13 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                     </TabsContent>
 
                     {/* --- TAB: BIO (Lore, Gear) --- */}
-                    <TabsContent value="bio" className="space-y-4 py-4">
+                    <TabsContent value="bio" className="space-y-4 md:space-y-6 py-4">
                         <DialogDescription className="text-xs text-muted-foreground italic">
                             *Money affects your personal balance. Party loot is distributed automatically in the future.*
                         </DialogDescription>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        {/* Mobile: side-by-side grid (unchanged). Desktop: vertical stack */}
+                        <div className="grid grid-cols-2 md:grid-cols-1 gap-4 md:gap-6">
                             {/* Bio */}
                             <div className="space-y-2">
                                 <Label htmlFor="bio">Bio & Backstory</Label>
@@ -553,26 +554,26 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                                     id="bio"
                                     value={formData.bio}
                                     onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                                    className="h-40 whitespace-pre-wrap" // styling for newlines
+                                    className="h-40 md:h-32 whitespace-pre-wrap"
                                 />
                             </div>
 
-                            {/* Wallet Row Moved here to balance layout if needed or kept below */}
+                            {/* Inventory */}
                             <div className="space-y-2">
                                 <Label>Inventory (Gear & Equipment)</Label>
                                 {Array.isArray(formData.status.inventory) ? (
                                     <div className="border rounded-xl overflow-hidden h-64 overflow-y-auto">
-                                        <div className="grid grid-cols-12 bg-muted p-2 text-xs font-bold uppercase text-muted-foreground sticky top-0">
-                                            <div className="col-span-7">Item</div>
-                                            <div className="col-span-2 text-center">Qty</div>
-                                            <div className="col-span-3 text-right">Weight</div>
+                                        <div className="grid grid-cols-12 bg-muted p-2 md:px-3 md:py-2 text-xs font-bold uppercase text-muted-foreground sticky top-0">
+                                            <div className="col-span-7 md:col-span-8">Item</div>
+                                            <div className="col-span-2 md:col-span-2 text-center">Qty</div>
+                                            <div className="col-span-3 md:col-span-2 text-right">Weight</div>
                                         </div>
                                         <div className="divide-y">
                                             {formData.status.inventory.map((item: any, i: number) => (
-                                                <div key={i} className="grid grid-cols-12 p-2 text-sm items-center hover:bg-muted/10">
-                                                    <div className="col-span-7 font-medium">{item.item}</div>
-                                                    <div className="col-span-2 text-center text-xs">{item.qty}</div>
-                                                    <div className="col-span-3 text-right text-xs text-muted-foreground">{item.weight}</div>
+                                                <div key={i} className="grid grid-cols-12 p-2 md:px-3 md:py-2 text-sm items-center hover:bg-muted/10">
+                                                    <div className="col-span-7 md:col-span-8 font-medium">{item.item}</div>
+                                                    <div className="col-span-2 md:col-span-2 text-center text-xs">{item.qty}</div>
+                                                    <div className="col-span-3 md:col-span-2 text-right text-xs text-muted-foreground">{item.weight}</div>
                                                 </div>
                                             ))}
                                         </div>

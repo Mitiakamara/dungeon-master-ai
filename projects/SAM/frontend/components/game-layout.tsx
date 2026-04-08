@@ -161,6 +161,27 @@ export default function GameLayout() {
         }
     })
 
+    // Re-sync character data when a SAM message arrives (orchestrator may have applied
+    // state_updates: spell_slots, inventory, hp, money, etc). The Realtime subscription
+    // on the characters table also handles this, but this is a safety-net fallback in
+    // case the merge misses nested status fields or fires before the backend commits.
+    useRealtime({
+        table: 'messages',
+        event: 'INSERT',
+        filter: campaignId ? `campaign_id=eq.${campaignId}` : undefined,
+        enabled: !!campaignId,
+        onData: (payload: any) => {
+            const newMsg = payload.new
+            if (!newMsg) return
+            // SAM responses have role 'assistant' and null sender_id
+            if (newMsg.role === 'assistant' && selectedCharacter?.id) {
+                setTimeout(() => {
+                    fetchCharacterData(selectedCharacter.id)
+                }, 1500)
+            }
+        }
+    })
+
     // Persistence & Fresh Data: Load on mount
     React.useEffect(() => {
         const loadCharacter = async () => {
