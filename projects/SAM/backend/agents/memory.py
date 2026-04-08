@@ -13,6 +13,7 @@ has scrolled past those events.
 import json
 import logging
 import os
+import re
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -20,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 EXTRACTION_PROMPT = """You are a memory extractor for a D&D 5e campaign. Your ONLY job is to read the most recent exchange between a player and the Dungeon Master and extract NEW narrative facts worth remembering long-term.
+
+IMPORTANT: Keep your response SHORT. Maximum 3 facts per exchange. Each content field must be under 100 characters. Respond in a single line if possible, like: [{{"content":"...","type":"...","importance":N}}]
 
 EXISTING MEMORIES (do NOT repeat these):
 {existing}
@@ -109,11 +112,25 @@ class MemoryService:
                 if text.lower().startswith("json"):
                     text = text[4:].strip()
 
+            facts = None
             try:
                 facts = json.loads(text)
             except json.JSONDecodeError as e:
                 logger.warning(f"MemoryService: failed to parse JSON ({e}). Raw: {text[:200]}")
-                return 0
+                # Recover complete objects from truncated JSON
+                recovered = []
+                for obj_str in re.findall(r'\{[^{}]+\}', text):
+                    try:
+                        obj = json.loads(obj_str)
+                        if isinstance(obj, dict) and "content" in obj:
+                            recovered.append(obj)
+                    except Exception:
+                        continue
+                if recovered:
+                    logger.info(f"🧠 Recovered {len(recovered)} memories from truncated JSON")
+                    facts = recovered
+                else:
+                    return 0
 
             if not isinstance(facts, list) or not facts:
                 return 0
