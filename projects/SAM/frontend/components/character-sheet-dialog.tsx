@@ -342,6 +342,57 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                         <DialogDescription className="text-xs text-muted-foreground italic mb-2">
                             Full list of prepared spells and available slots.
                         </DialogDescription>
+
+                        {/* --- Spell Slots panel --- */}
+                        {formData.status.spell_slots && Object.keys(formData.status.spell_slots).length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                                <span className="text-xs font-bold uppercase text-muted-foreground mr-1">Spell Slots:</span>
+                                {Object.keys(formData.status.spell_slots)
+                                    .sort((a, b) => parseInt(a) - parseInt(b))
+                                    .map((level) => {
+                                        const slot = formData.status.spell_slots[level] || { total: 0, used: 0 }
+                                        const total = Number(slot.total) || 0
+                                        const used = Number(slot.used) || 0
+                                        const exhausted = total > 0 && used >= total
+                                        const updateSlot = (newUsed: number) => {
+                                            const clamped = Math.max(0, Math.min(total, newUsed))
+                                            setFormData({
+                                                ...formData,
+                                                status: {
+                                                    ...formData.status,
+                                                    spell_slots: {
+                                                        ...formData.status.spell_slots,
+                                                        [level]: { ...slot, used: clamped },
+                                                    },
+                                                },
+                                            })
+                                        }
+                                        return (
+                                            <div
+                                                key={level}
+                                                className={`flex items-center gap-1 bg-muted rounded px-3 py-1 text-xs font-mono ${exhausted ? "opacity-50 border border-red-500/40" : ""}`}
+                                                title="Click to use a slot, − to recover"
+                                            >
+                                                <button
+                                                    type="button"
+                                                    className="hover:text-red-400 px-1"
+                                                    onClick={(e) => { e.stopPropagation(); updateSlot(used - 1) }}
+                                                    aria-label={`Recover Lvl ${level} slot`}
+                                                >−</button>
+                                                <button
+                                                    type="button"
+                                                    className="font-bold hover:text-purple-400"
+                                                    onClick={() => updateSlot(used + 1)}
+                                                    aria-label={`Use Lvl ${level} slot`}
+                                                >
+                                                    Lvl {level}: {used}/{total}
+                                                </button>
+                                            </div>
+                                        )
+                                    })}
+                            </div>
+                        )}
+
                         {Array.isArray(formData.status.spells) ? (
                             <div className="border rounded-xl overflow-hidden flex flex-col h-[400px]">
                                 <div className="grid grid-cols-12 bg-muted p-3 text-xs font-bold uppercase text-muted-foreground border-b shrink-0 sticky top-0">
