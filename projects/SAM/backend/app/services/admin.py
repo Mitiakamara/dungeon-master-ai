@@ -49,6 +49,14 @@ class AdminService:
                 if not args:
                     return "Usage: /undelegate [character_name]"
                 return AdminService.undelegate_character(" ".join(args), user_id)
+            elif cmd == "/gold":
+                if len(args) < 3:
+                    return "Usage: /gold <character_name> <amount> <coin_type>\nExamples: /gold Baol -5 gp, /gold Baol Gortsh +10 sp"
+                # Last arg = coin type, second-to-last = amount, rest = name
+                coin_type = args[-1].lower()
+                amount_str = args[-2]
+                char_name = " ".join(args[:-2])
+                return AdminService.adjust_gold(user_id, char_name, amount_str, coin_type)
             elif cmd == "/memory":
                 if not args:
                     return "Usage: /memory [list|add <type> <text>|delete <id_or_number>]"
@@ -86,6 +94,7 @@ class AdminService:
 *   `/list` - Show all checkpoints.
 *   `/delegate [character]` - Hand control of a player character to S.A.M.
 *   `/undelegate [character]` - Return character to player control.
+*   `/gold <character> <±amount> <coin>` - Adjust character money. Coin: cp, sp, ep, gp, pp. Example: `/gold Baol -5 gp`.
 *   `/memory list` - Show campaign memories (top 20).
 *   `/memory add <type> <text>` - Add manual memory (types: fact, npc, location, plot, item, decision).
 *   `/memory delete <id_or_number>` - Delete a memory (number from /memory list, or full UUID).
@@ -272,6 +281,56 @@ class AdminService:
             import traceback
             print(f"UNDELEGATE ERROR: {traceback.format_exc()}")
             return f"❌ Undelegate Error: {e}"
+
+    # ─────────────────────────────────────────────
+    # Gold / Money Adjustment
+    # ─────────────────────────────────────────────
+
+    VALID_COIN_TYPES = ("cp", "sp", "ep", "gp", "pp")
+
+    @staticmethod
+    def adjust_gold(user_id: str, char_name: str, amount_str: str, coin_type: str) -> str:
+        try:
+            char_name = (char_name or "").strip()
+            if not char_name:
+                return "Usage: /gold <character_name> <amount> <coin_type>"
+
+            if coin_type not in AdminService.VALID_COIN_TYPES:
+                valid = ", ".join(AdminService.VALID_COIN_TYPES)
+                return f"❌ Invalid coin type '{coin_type}'. Valid: {valid}"
+
+            try:
+                amount = int(amount_str)
+            except (TypeError, ValueError):
+                return f"❌ Amount '{amount_str}' is not a valid integer (use +N or -N)."
+
+            target_char, cid = AdminService._find_character_in_active_campaign(char_name, user_id)
+            if not cid:
+                return "No active campaign found for GM."
+            if not target_char:
+                return f"Character '{char_name}' not found in campaign."
+
+            # Fetch the full character to read status (the helper only returns id/name/user_id)
+            full_res = supabase.table("characters").select("status").eq("id", target_char["id"]).execute()
+            if not full_res.data:
+                return f"❌ Could not load character data for {target_char['name']}."
+
+            status = dict(full_res.data[0].get("status") or {})
+            money = dict(status.get("money") or {})
+            current = int(money.get(coin_type, 0) or 0)
+            new_amount = max(0, current + amount)
+            money[coin_type] = new_amount
+            status["money"] = money
+
+            supabase.table("characters").update({"status": status}).eq("id", target_char["id"]).execute()
+
+            sign = "+" if amount >= 0 else "−"
+            print(f"💰 Gold adjusted: {target_char['name']} {coin_type} {sign}{abs(amount)} → {new_amount}")
+            return f"💰 **{target_char['name']}**: {coin_type} → **{new_amount}** ({sign}{abs(amount)})"
+        except Exception as e:
+            import traceback
+            print(f"GOLD ADJUST ERROR: {traceback.format_exc()}")
+            return f"❌ Gold Adjust Error: {e}"
 
     # ─────────────────────────────────────────────
     # Campaign Memories
