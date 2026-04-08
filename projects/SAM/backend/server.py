@@ -292,6 +292,78 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                                             print(f"🎉 LEVEL UP! {update['character_name']} → Level {update['new_level']}")
                                         sam_brain.supabase.table("characters").update(update_data).eq("id", char["id"]).execute()
                                         break
+
+                            elif update.get("type") == "spell_slot_consume":
+                                target_name = update.get("character_name")
+                                level = update.get("level")
+                                if level is None:
+                                    print(f"⚠️ spell_slot_consume missing level for {target_name}")
+                                    continue
+                                level_key = str(level)
+                                applied = False
+                                for char in party_characters:
+                                    if char.get("name") != target_name:
+                                        continue
+                                    status = dict(char.get("status") or {})
+                                    slots = dict(status.get("spell_slots") or {})
+                                    if not slots:
+                                        print(f"⚠️ Spell slot consume skipped: {target_name} has no spell_slots")
+                                        break
+                                    slot = dict(slots.get(level_key) or {})
+                                    if not slot or "total" not in slot:
+                                        print(f"⚠️ Spell slot consume skipped: {target_name} has no slot at level {level_key}")
+                                        break
+                                    total = int(slot.get("total", 0) or 0)
+                                    used = int(slot.get("used", 0) or 0)
+                                    new_used = min(total, used + 1)
+                                    slot["used"] = new_used
+                                    slots[level_key] = slot
+                                    status["spell_slots"] = slots
+                                    sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
+                                    print(f"🔮 Spell slot consumed: {target_name} Level {level_key} → {new_used}/{total}")
+                                    applied = True
+                                    break
+                                if not applied:
+                                    print(f"⚠️ Spell slot consume: character {target_name} not found in party")
+
+                            elif update.get("type") == "inventory_remove":
+                                target_name = update.get("character_name")
+                                item_name = (update.get("item_name") or "").strip()
+                                qty_to_remove = int(update.get("qty", 1) or 1)
+                                if not item_name:
+                                    print(f"⚠️ inventory_remove missing item_name for {target_name}")
+                                    continue
+                                applied = False
+                                for char in party_characters:
+                                    if char.get("name") != target_name:
+                                        continue
+                                    status = dict(char.get("status") or {})
+                                    inventory = list(status.get("inventory") or [])
+                                    target_lower = item_name.lower()
+                                    idx = next(
+                                        (i for i, it in enumerate(inventory)
+                                         if isinstance(it, dict) and (it.get("item") or "").lower() == target_lower),
+                                        None,
+                                    )
+                                    if idx is None:
+                                        print(f"⚠️ inventory_remove: '{item_name}' not in {target_name}'s inventory")
+                                        break
+                                    item_obj = dict(inventory[idx])
+                                    current_qty = int(item_obj.get("qty", 1) or 1)
+                                    new_qty = current_qty - qty_to_remove
+                                    if new_qty <= 0:
+                                        inventory.pop(idx)
+                                        print(f"📦 Item consumed: {target_name} used {item_name} (removed from inventory)")
+                                    else:
+                                        item_obj["qty"] = new_qty
+                                        inventory[idx] = item_obj
+                                        print(f"📦 Item consumed: {target_name} used {item_name} (qty remaining: {new_qty})")
+                                    status["inventory"] = inventory
+                                    sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
+                                    applied = True
+                                    break
+                                if not applied:
+                                    print(f"⚠️ inventory_remove: character {target_name} not found in party")
                         except Exception as upd_e:
                             print(f"⚠️ State update failed: {upd_e}")
 

@@ -101,6 +101,30 @@ class SAMOrchestrator:
             if engine.pending_player_roll:
                 prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
 
+            # Consume a spell slot (cantrips = level 0 = free)
+            try:
+                spell_level = int(intent.get("spell_level", 0) or 0)
+            except (TypeError, ValueError):
+                spell_level = 0
+
+            if spell_level > 0:
+                slots = (character_context.get("status") or {}).get("spell_slots") or {}
+                level_key = str(spell_level)
+                slot = slots.get(level_key) or {}
+                total = int(slot.get("total", 0) or 0)
+                used = int(slot.get("used", 0) or 0)
+
+                if total <= 0 or used >= total:
+                    mechanical_facts += f"\nWARNING: No spell slots available for level {spell_level}. The spell fizzles."
+                else:
+                    new_used = used + 1
+                    mechanical_facts += f"\nSpell slot consumed: Level {spell_level} ({new_used}/{total})"
+                    engine.state_updates.append({
+                        "type": "spell_slot_consume",
+                        "character_name": sender_name,
+                        "level": spell_level,
+                    })
+
         elif intent["type"] == "attack":
             self._handle_attack(engine, intent, character_context, combat)
             mechanical_facts = engine.get_results_summary()
@@ -148,6 +172,16 @@ class SAMOrchestrator:
                 }
             else:
                 mechanical_facts = ""
+
+            # Consume the item from inventory (qty -1)
+            if item_name:
+                mechanical_facts += f"\n{item_name} consumed from inventory."
+                engine.state_updates.append({
+                    "type": "inventory_remove",
+                    "character_name": sender_name,
+                    "item_name": item_name,
+                    "qty": 1,
+                })
 
         elif intent["type"] in ("roleplay", "movement", "free_action", "ability"):
             # No mechanics — pure narration

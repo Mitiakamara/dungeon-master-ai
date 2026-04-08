@@ -26,7 +26,15 @@ RESPOND WITH ONLY A JSON OBJECT. No explanation, no markdown, no backticks.
 ACTION TYPES:
 
 1. Spell cast:
-{{"type": "spell", "spell_name": "Sacred Flame", "target": "Guard 1"}}
+{{"type": "spell", "spell_name": "Sacred Flame", "target": "Guard 1", "spell_level": 0}}
+{{"type": "spell", "spell_name": "Shield of Faith", "target": "self", "spell_level": 1}}
+{{"type": "spell", "spell_name": "Cure Wounds", "target": "Baol Gortsh", "spell_level": 2}}
+
+For spell intents, "spell_level" indicates the slot level consumed:
+- 0 for cantrips (no slot consumed)
+- 1, 2, 3, etc. for leveled spells
+- If the player upcasts (e.g., "I cast Cure Wounds at level 3"), use the upcast level
+- If unspecified, use the spell's base level from the character's spell list
 
 2. Weapon attack:
 {{"type": "attack", "weapon": "Warhammer", "target": "Guard 1"}}
