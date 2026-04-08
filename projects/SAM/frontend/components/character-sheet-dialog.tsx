@@ -67,6 +67,19 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
 
     useEffect(() => {
         if (character && open) {
+            // Deduplicate spells by name + level (PDF parser sometimes emits duplicates from multi-page lists)
+            const rawSpells = character.status?.spells
+            let dedupedSpells: any = rawSpells || ""
+            if (Array.isArray(rawSpells)) {
+                const seen = new Set<string>()
+                dedupedSpells = rawSpells.filter((s: any) => {
+                    const key = `${s?.name || ""}-${s?.level || ""}`.toLowerCase()
+                    if (seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                })
+            }
+
             setFormData({
                 name: character.name || "",
                 race: character.race || "",
@@ -91,7 +104,8 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                     reactions: character.status?.reactions || "",
                     attacks: character.status?.attacks || "",
                     inventory: character.status?.inventory || "",
-                    spells: character.status?.spells || "",
+                    spells: dedupedSpells,
+                    spell_slots: character.status?.spell_slots || {},
                     money: character.status?.money || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
                     features: character.status?.features || "",
                     saving_throws: character.status?.saving_throws || {}

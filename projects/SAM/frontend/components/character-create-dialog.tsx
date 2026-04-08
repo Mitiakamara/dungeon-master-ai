@@ -135,6 +135,19 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, 
             if (!res.ok) throw new Error("Import failed")
 
             const data = await res.json()
+
+            // Deduplicate spells by name + level (PDF parser sometimes emits duplicates)
+            const importedStatus = data.status || {}
+            if (Array.isArray(importedStatus.spells)) {
+                const seen = new Set<string>()
+                importedStatus.spells = importedStatus.spells.filter((s: any) => {
+                    const key = `${s?.name || ""}-${s?.level || ""}`.toLowerCase()
+                    if (seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                })
+            }
+
             // Pre-fill form with imported data
             setFormData(prev => ({
                 ...prev,
@@ -144,7 +157,7 @@ export function CharacterCreateDialog({ open, onOpenChange, onCharacterCreated, 
                 bio: data.bio || "",
                 level: data.level || 1,
                 stats: data.stats || prev.stats,
-                status: data.status || {},
+                status: importedStatus,
                 image_url: data.image_url || "" // Capture generated avatar
             }))
 
