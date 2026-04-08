@@ -425,6 +425,46 @@ f7cfcc1 fix: persist pending_player_roll between requests + compact mobile heade
 5a7792e feat: healing items handler + CR balancing + character delegation (/delegate, /undelegate)
 ```
 
+### Sesión 8 Abr 2026 (cont.) — Campaign Memories, Commlink Recipients, Mobile Polish
+
+**Features implementados:**
+
+1. **Campaign Memories — memoria narrativa persistente** — Nueva tabla `campaign_memories` con embedding vector(768), tipos (`fact`/`npc`/`location`/`plot`/`item`/`decision`), importance 1-10, source (manual/auto/session_summary). RLS para players (read) y GM (manage). `MemoryService` extrae hechos narrativos después de cada respuesta de SAM via Gemini 2.5-flash con prompt corto: máximo 3 facts, <100 chars cada uno. Las memorias se inyectan automáticamente en el `campaign_context` del narrador en cada nueva interacción. SAM ahora "recuerda" lo que pasó incluso cuando el historial de chat scrolla más allá. Migración SQL en `migrations/schema_campaign_memories.sql` (pendiente ejecución manual en Supabase).
+
+2. **`/memory` command para GM** — Tres subcomandos:
+   - `/memory list` — top 20 memorias ordenadas por importance, formato `#N [TYPE] (imp:N) content`
+   - `/memory add <type> <text>` — agrega memoria manual con `importance=7`, `source='manual'`
+   - `/memory delete <#N|UUID>` — borra por número (resuelve el UUID re-fetcheando) o por UUID directo
+   - Validación de tipos contra `VALID_MEMORY_TYPES`, doble check `campaign_id` anti-cross-contamination
+
+3. **Commlink recipients dropdown** — Nuevo endpoint `GET /api/messages/recipients?campaign_id=X` que retorna party members + entrada especial `S.A.M. (DM)` con `user_id=null`. Frontend ahora tiene un `<select>` real en lugar del input de texto libre. Sender names en inbox se resuelven correctamente: "S.A.M." para `sender_id=null`, propio nombre del personaje para mensajes propios, nombre real del personaje para otros players.
+
+**Bug fixes:**
+
+1. **MemoryService modelo + retries** — `gemini-2.0-flash` (deprecated) → `gemini-2.5-flash` (mismo que narrator/interpreter). `max_retries=1` para evitar bloqueos exponenciales en errores transitorios.
+
+2. **Memory extraction fire-and-forget** — La extracción estaba in-lock bloqueando al jugador ~90s. Movida a `asyncio.create_task()` background después del `return` — el cliente recibe la respuesta inmediatamente, la extracción corre en paralelo. Variables capturadas en closure local (`_cid`, `_msg`, `_resp`, `_existing`) para evitar race conditions.
+
+3. **Memory JSON recovery** — Si Gemini trunca el JSON output (max_tokens hit), regex `\{[^{}]+\}` recupera objetos completos individuales. `max_tokens` también subió de 500 → 1024.
+
+4. **Commlink `receiver_id` Optional** — `PrivateMessageCreate.receiver_id` era `str` (required), ahora `Optional[str] = None` para permitir mensajes a SAM (`receiver_id=null`).
+
+5. **Mobile chat input padding** — Input estaba pegado a los bordes laterales y a la barra del browser. Cambiado a `py-4 px-4 sm:px-6` con `mb-4 sm:mb-2`. Matchea el padding del messages area (`p-4`).
+
+### Commits en main (8 Abr 2026, cont.)
+```
+f7e7001 fix: PrivateMessageCreate.receiver_id is Optional — allows sending to S.A.M.
+f05ca98 feat: commlink — recipient dropdown + resolved sender names in inbox
+a998bc9 feat: GET /api/messages/recipients — list party members + S.A.M.
+6fea080 fix: cap memory extraction to 3 facts/100 chars + recover from truncated JSON
+5ddd0cb fix: increase vertical padding/margin on chat input
+1c695da fix: memory extraction fire-and-forget (asyncio.create_task) + bump max_tokens to 1024
+122796a fix: add horizontal padding to chat input area for consistency with messages
+52aacd2 fix: MemoryService — switch to gemini-2.5-flash + max_retries=1
+8a62632 feat: /memory command for GM — list, add, and delete campaign memories from chat
+a46abad feat: campaign memories — persistent narrative facts auto-extracted and injected into context
+```
+
 ---
 
 ## 4. Estado Actual — Abril 2026
@@ -442,7 +482,7 @@ f7cfcc1 fix: persist pending_player_roll between requests + compact mobile heade
 - RAG sobre módulos PDF de campaña
 - Upload PDF de módulos de campaña (integrado en admin campaign manager)
 - Checkpoints (save/load/reset/list)
-- Mensajería privada (commlink) — usa campaignId real (UI prototipo, falta selector de destinatarios)
+- Mensajería privada (commlink) — usa campaignId real, dropdown de recipients, sender resolution. Pendiente: Realtime de nuevos mensajes y auto-mark-as-read.
 - Realtime sync via Supabase WebSocket (filtrado por campaña)
 - **Multiplayer completo:** mensajes filtrados por campaign_id, header dinámico, atribución por `[CharacterName]` prefix
 - **Shadow variable fix:** `sender_name` del loop de historial ya no sobrescribe el parámetro de `generate_response()`
@@ -469,13 +509,16 @@ f7cfcc1 fix: persist pending_player_roll between requests + compact mobile heade
 - **Healing items:** Pociones de curación reconocidas por el interpreter (con dice + modifier). Pending roll → MechanicEngine aplica curación al target (self o party member). Tabla D&D 5e estándar.
 - **CR balancing:** SAM recibe el rango recomendado de CR según el nivel del party. Tablas `CR_XP_VALUES` y `ENCOUNTER_THRESHOLDS` en `rules.py`. SAM no usa monstruos sobre el CR boss recomendado.
 - **Character delegation:** `/delegate <name>` cede control de un personaje a SAM. Útil para jugadores ausentes en combate. Resolución como NPC en `_resolve_npc_turns`.
+- **Campaign memories:** Tabla `campaign_memories` (fact/npc/location/plot/item/decision + importance 1-10). `MemoryService` extrae hechos auto via Gemini 2.5-flash después de cada respuesta (fire-and-forget background task, max 3 facts <100 chars). Memorias inyectadas en `campaign_context` para que SAM "recuerde" entre sesiones. Fallback de recuperación de JSON truncado.
+- **`/memory` command:** GM puede listar/agregar/borrar memorias desde el chat (`/memory list`, `/memory add <type> <text>`, `/memory delete <#N|UUID>`).
+- **Commlink recipients:** Endpoint `GET /api/messages/recipients` lista party members + entrada SAM. Frontend usa dropdown real + resuelve sender names en inbox (S.A.M., propio personaje, otros players).
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
 
 ### Completitud: ~95% (app funcional) + arquitectura multi-agente integrada
 
 ### Pendiente para "done"
-- Commlink: selector de destinatarios (usar party roster como lista)
+- Commlink: Realtime para nuevos mensajes + auto-mark-as-read al abrir
 - Generated scene placeholder (tag `<IMAGE>` sin servicio de imágenes conectado)
 - Playtest completo con grupo de amigos
 - Vercel Root Directory config
@@ -522,4 +565,4 @@ f7cfcc1 fix: persist pending_player_roll between requests + compact mobile heade
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 8 Abr 2026 — Healing items handler with pending damage roll, CR balancing tables + recommendations injected to narrator, character delegation (/delegate, /undelegate) with NPC-like turn resolution.*
+*Última actualización: 8 Abr 2026 — Campaign memories (auto-extracted by SAM, /memory commands), commlink recipients (party + SAM dropdown, sender resolution), mobile chat input padding fix, memory extraction fire-and-forget.*
