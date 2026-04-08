@@ -535,6 +535,7 @@ f0f43f2 feat: PDF character import — bump max_output_tokens to 8192, extract a
 
 ### Commits en main (8 Abr 2026, extra)
 ```
+f48bb55 fix: re-fetch character via existing chat-interface message listener (avoid duplicate Realtime channel)
 5a692ac feat: re-fetch character on SAM message + desktop layout polish
 71af51b feat: /gold admin command — adjust character money manually
 317b374 feat: spell slot consumption + inventory item consumption
@@ -544,6 +545,9 @@ f1379a1 fix: PDF parse — force JSON mode (response_mime_type) + remove apostro
 bb9a200 debug: log JSON length + chars 600-900 around PDF parse error for diagnosis
 6e747ac fix: PDF character import — clean trailing commas + 2nd-pass aggressive JSON parse with logging
 ```
+
+**Bug fix posterior — auto-refresh character no funcionaba (commit `f48bb55`):**
+La primera implementación creó un `useRealtime` separado en `game-layout.tsx` para escuchar `messages.INSERT`. Resultó conflictivo con el `useRealtime` ya existente en `chat-interface.tsx` para la misma tabla — Supabase no garantiza routing limpio cuando un mismo cliente se subscribe dos veces al mismo table con filtros distintos, y el `createClient()` en cada render del hook causa re-subscriptions agresivas. Fix: eliminar el listener duplicado y reusar el de `chat-interface.tsx` via callback prop `onSamMessageReceived?: () => void`. Cuando el listener procesa un mensaje con `role === 'assistant'`, llama el callback que dispara `setTimeout(fetchCharacterData, 1500)` en `game-layout.tsx`. Una sola subscription, callback con deps frescas via `useCallback`.
 
 ---
 
@@ -596,7 +600,7 @@ bb9a200 debug: log JSON length + chars 600-900 around PDF parse error for diagno
 - **Spell slots tracking:** Panel interactivo en character sheet (tab Spells) para gastar/recuperar slots con clicks. **`spell_slots` se carga correctamente** del backend (bug previo: el `useEffect` lo descartaba). Spell duplicates dedup'd por `name-level`.
 - **Resource consumption automático:** Cuando un jugador castea un spell, el orchestrator emite `spell_slot_consume` y el backend decrementa el slot del nivel correspondiente (cantrips no consumen). Cuando usa un item, emite `inventory_remove` y el backend decrementa qty (remueve si llega a 0). Defensive: si el slot/item no existe, log warning sin crashear.
 - **`/gold` admin command:** GM puede ajustar dinero manualmente con `/gold <character> <±amount> <coin>`. Soporta nombres con espacios, valida coin type, clamp anti-negativo.
-- **Auto-refresh character post-SAM:** Nuevo `useRealtime` en `messages` table — cuando llega un mensaje de SAM, re-fetchea el character 1.5s después (belt-and-suspenders sobre el Realtime de `characters` que a veces pierde fields nested).
+- **Auto-refresh character post-SAM:** Cuando el listener de Realtime en `chat-interface.tsx` procesa un mensaje con `role === 'assistant'`, dispara el callback `onSamMessageReceived` provisto por `game-layout.tsx`, que hace `setTimeout(fetchCharacterData, 1500)`. Reusa el listener existente en lugar de crear un canal duplicado.
 - **Desktop polish del character sheet:** Bio & Gear tab apila vertical en desktop (full width inventory + bio), inventory con más padding y columnas re-balanceadas, Spells table con más padding. Mobile sin cambios.
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
@@ -651,4 +655,4 @@ bb9a200 debug: log JSON length + chars 600-900 around PDF parse error for diagno
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 8 Abr 2026 — PDF parse hardening (65k tokens, thinking_budget=0, JSON mode, cleanup), automatic spell slot + inventory consumption, /gold command, auto-refresh character post-SAM, desktop layout polish.*
+*Última actualización: 8 Abr 2026 — PDF parse hardening (65k tokens, thinking_budget=0, JSON mode, cleanup), automatic spell slot + inventory consumption, /gold command, auto-refresh character post-SAM (via callback prop, no duplicate Realtime channel), desktop layout polish.*
