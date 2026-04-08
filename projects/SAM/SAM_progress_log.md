@@ -493,6 +493,58 @@ b607a8f feat: spell slots panel in character sheet — click to use, − to reco
 f0f43f2 feat: PDF character import — bump max_output_tokens to 8192, extract all spells/inventory/spell_slots, multipage hint
 ```
 
+### Sesión 8 Abr 2026 (extra) — PDF Parse Hardening, Resource Consumption, /gold, Desktop Polish
+
+**PDF Character Import — fixes en cadena:**
+1. **Cleanup defensivo del JSON** — Strip de markdown fences + regex `,\s*([}\]])` para eliminar trailing commas. Si el primer parse falla, segundo intento con cleanup más agresivo (remover ASCII control chars, NO tocar comillas).
+2. **`response_mime_type="application/json"`** en `GenerateContentConfig` — fuerza a Gemini a devolver JSON estructuralmente válido.
+3. **`max_output_tokens=65536`** (era 8192) — el cap anterior se quemaba en thinking tokens internos de gemini-2.5-flash, dejando solo ~1238 chars de output visible (`finish_reason=MAX_TOKENS`).
+4. **`thinking_config=types.ThinkingConfig(thinking_budget=0)`** — desactiva el thinking mode para esta llamada. PDF parse es extracción estructurada, no necesita reasoning. Todo el budget va al output visible.
+5. **Logging de diagnóstico** — `finish_reason`, longitud del JSON, chars 600-900 alrededor del error de parse.
+6. **Plan B en el prompt** — actions/bonus_actions/reactions ahora se documentan como `[]` por defecto. Regla 9 actualizada: "Only include SPECIAL or UNIQUE actions. Do NOT list standard actions like Attack, Dash, Dodge, Help, Hide, Ready, Search, Use Object."
+
+**Frontend — Spell slots y dedup:**
+1. **Bug crítico — `spell_slots` se descartaba** — El `useEffect` de `character-sheet-dialog.tsx` reconstruía `formData.status` campo por campo y no copiaba `spell_slots` (ni `saving_throws` antes del fix anterior). Resuelto: línea explícita `spell_slots: character.status?.spell_slots || {}`.
+2. **Spell deduplication** — PDF parser a veces emite el mismo hechizo dos veces (lista multi-página). Dedup por `name-level` lowercased en dos lugares: el import handler (`character-create-dialog.tsx`) y el load handler (`character-sheet-dialog.tsx`).
+
+**Resource consumption — spell slots e inventory:**
+1. **Interpreter** — `spell` intent ahora incluye `spell_level` (0=cantrip, 1+=leveled, soporta upcast). 3 ejemplos en el prompt + 4 reglas de inferencia.
+2. **Orchestrator** — Después de `engine.process_spell()`, valida `character_context.status.spell_slots[level]`. Si no hay slots: agrega `WARNING: ... The spell fizzles.` a los facts. Si hay slots: emite `state_update` tipo `spell_slot_consume`. Para items: emite `state_update` tipo `inventory_remove` con `qty: 1` cuando se identifica el item.
+3. **server.py** — Dos handlers nuevos:
+   - `spell_slot_consume`: lee `status.spell_slots[level]`, incrementa `used` con cap a `total`, UPDATE. Defensive: si no existe spell_slots o el level, log warning y skip.
+   - `inventory_remove`: busca item case-insensitive en `status.inventory`, decrementa qty, remueve si llega a 0, UPDATE. Defensive: log warning si el item no está.
+
+**`/gold` admin command:**
+- `/gold <character> <±amount> <coin>` permite al GM ajustar dinero manualmente
+- Parser: last arg=coin, second-to-last=amount, resto=name (soporta nombres con espacios)
+- Validación de coin type (`cp/sp/ep/gp/pp`) y amount (entero con signo)
+- Clamp a 0 (no permite negativos)
+- Reusa `_find_character_in_active_campaign` (mismo helper que `/delegate` y `/memory`)
+
+**Auto-refresh character post-SAM:**
+- Nuevo `useRealtime` en `game-layout.tsx` sobre `messages` filtered by `campaign_id`
+- Cuando llega un mensaje con `role === 'assistant'`, programa `setTimeout(fetchCharacterData, 1500)` — el delay da tiempo al backend a aplicar todos los `state_updates` antes del re-fetch
+- Belt-and-suspenders: ya hay un `useRealtime` en `characters` table, pero el merge inmutable a veces pierde fields nested. El re-fetch explícito garantiza la versión completa.
+
+**Character sheet dialog — desktop polish (mobile intacto):**
+1. **Bio & Gear tab vertical en desktop** — `grid grid-cols-2` → `grid grid-cols-2 md:grid-cols-1`. Bio textarea + Inventory ya no compiten por ancho en desktop, cada uno toma full width.
+2. **Bio textarea más bajo en desktop** — `h-40 md:h-32` (compensación visual al ser full-width).
+3. **Inventory columns más espaciadas en desktop** — Item `col-span-7 md:col-span-8`, Weight `col-span-3 md:col-span-2`. Más padding horizontal `p-2 md:px-3 md:py-2`.
+4. **Spells table padding desktop** — `p-3 md:px-4 md:py-3` en header y rows.
+5. **Spacing entre secciones** — TabsContent `space-y-4 md:space-y-6` y grid `gap-4 md:gap-6`.
+
+### Commits en main (8 Abr 2026, extra)
+```
+5a692ac feat: re-fetch character on SAM message + desktop layout polish
+71af51b feat: /gold admin command — adjust character money manually
+317b374 feat: spell slot consumption + inventory item consumption
+7682909 fix: carry spell_slots into formData + dedupe spells by name+level
+36dcbc9 fix: PDF parse — bump max_output_tokens to 65536, disable thinking budget, simplify actions extraction
+f1379a1 fix: PDF parse — force JSON mode (response_mime_type) + remove apostrophe-breaking quote replacement + log finish_reason
+bb9a200 debug: log JSON length + chars 600-900 around PDF parse error for diagnosis
+6e747ac fix: PDF character import — clean trailing commas + 2nd-pass aggressive JSON parse with logging
+```
+
 ---
 
 ## 4. Estado Actual — Abril 2026
@@ -540,8 +592,12 @@ f0f43f2 feat: PDF character import — bump max_output_tokens to 8192, extract a
 - **Campaign memories:** Tabla `campaign_memories` (fact/npc/location/plot/item/decision + importance 1-10). `MemoryService` extrae hechos auto via Gemini 2.5-flash después de cada respuesta (fire-and-forget background task, max 3 facts <100 chars). Memorias inyectadas en `campaign_context` para que SAM "recuerde" entre sesiones. Fallback de recuperación de JSON truncado.
 - **`/memory` command:** GM puede listar/agregar/borrar memorias desde el chat (`/memory list`, `/memory add <type> <text>`, `/memory delete <#N|UUID>`).
 - **Commlink recipients:** Endpoint `GET /api/messages/recipients` lista party members + entrada SAM. Frontend usa dropdown real + resuelve sender names en inbox (S.A.M., propio personaje, otros players).
-- **PDF character import mejorado:** `max_output_tokens=8192` evita truncado. Prompt instruye extraer ALL spells/items de TODAS las páginas. Nuevo campo `status.spell_slots` con totales por nivel.
-- **Spell slots tracking:** Panel interactivo en character sheet (tab Spells) para gastar/recuperar slots con clicks. Persistencia automática.
+- **PDF character import mejorado:** `max_output_tokens=65536` + `thinking_budget=0` (gemini-2.5-flash gastaba todo el budget en thinking interno). `response_mime_type="application/json"`. Cleanup defensivo de trailing commas + 2do intento agresivo. Prompt instruye extraer ALL spells/items de TODAS las páginas. Nuevo campo `status.spell_slots`. Actions/bonus_actions/reactions skip standard 5e actions.
+- **Spell slots tracking:** Panel interactivo en character sheet (tab Spells) para gastar/recuperar slots con clicks. **`spell_slots` se carga correctamente** del backend (bug previo: el `useEffect` lo descartaba). Spell duplicates dedup'd por `name-level`.
+- **Resource consumption automático:** Cuando un jugador castea un spell, el orchestrator emite `spell_slot_consume` y el backend decrementa el slot del nivel correspondiente (cantrips no consumen). Cuando usa un item, emite `inventory_remove` y el backend decrementa qty (remueve si llega a 0). Defensive: si el slot/item no existe, log warning sin crashear.
+- **`/gold` admin command:** GM puede ajustar dinero manualmente con `/gold <character> <±amount> <coin>`. Soporta nombres con espacios, valida coin type, clamp anti-negativo.
+- **Auto-refresh character post-SAM:** Nuevo `useRealtime` en `messages` table — cuando llega un mensaje de SAM, re-fetchea el character 1.5s después (belt-and-suspenders sobre el Realtime de `characters` que a veces pierde fields nested).
+- **Desktop polish del character sheet:** Bio & Gear tab apila vertical en desktop (full width inventory + bio), inventory con más padding y columnas re-balanceadas, Spells table con más padding. Mobile sin cambios.
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
 
@@ -595,4 +651,4 @@ f0f43f2 feat: PDF character import — bump max_output_tokens to 8192, extract a
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 8 Abr 2026 — PDF character import improvements (8192 tokens, multipage extraction, spell_slots field), interactive spell slots tracking panel in character sheet.*
+*Última actualización: 8 Abr 2026 — PDF parse hardening (65k tokens, thinking_budget=0, JSON mode, cleanup), automatic spell slot + inventory consumption, /gold command, auto-refresh character post-SAM, desktop layout polish.*
