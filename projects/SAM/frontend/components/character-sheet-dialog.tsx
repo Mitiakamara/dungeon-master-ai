@@ -192,7 +192,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
 
                         <Separator />
 
-                        <div className="grid grid-cols-2 gap-8">
+                        <div className="grid grid-cols-2 gap-4 sm:gap-8">
                             {/* Saving Throws */}
                             <div className="space-y-2">
                                 <Label className="text-base font-semibold">Saving Throws</Label>
@@ -259,7 +259,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                     {/* --- TAB: COMBAT (Attributes, Attacks) --- */}
                     <TabsContent value="combat" className="space-y-6 py-4">
                         {/* Vitals Row */}
-                        <div className="flex gap-4 items-end">
+                        <div className="flex flex-wrap gap-2 sm:gap-4 items-end">
                             <div className="flex-1 space-y-1">
                                 <Label className="text-xs font-bold text-muted-foreground uppercase">Armor Class</Label>
                                 <div className="flex h-16 w-full rounded-md border border-input bg-muted px-3 py-2 text-2xl text-center font-black items-center justify-center">
@@ -408,7 +408,8 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                         )}
 
                         {Array.isArray(formData.status.spells) ? (
-                            <div className="border rounded-xl overflow-hidden flex flex-col h-[400px]">
+                            <div className="border rounded-xl overflow-hidden overflow-x-auto flex flex-col h-[400px]">
+                                <div className="min-w-[500px]">
                                 <div className="grid grid-cols-12 bg-muted p-3 md:px-4 md:py-3 text-xs font-bold uppercase text-muted-foreground border-b shrink-0 sticky top-0">
                                     <div className="col-span-1">Lvl</div>
                                     <div className="col-span-3">Name</div>
@@ -442,6 +443,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                                             </div>
                                         )
                                     })}
+                                </div>
                                 </div>
                             </div>
                         ) : (
@@ -545,8 +547,8 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                             *Money affects your personal balance. Party loot is distributed automatically in the future.*
                         </DialogDescription>
 
-                        {/* Mobile: side-by-side grid (unchanged). Desktop: vertical stack */}
-                        <div className="grid grid-cols-2 md:grid-cols-1 gap-4 md:gap-6">
+                        {/* Vertical stack on all screen sizes */}
+                        <div className="grid grid-cols-1 gap-4 md:gap-6">
                             {/* Bio */}
                             <div className="space-y-2">
                                 <Label htmlFor="bio">Bio & Backstory</Label>
