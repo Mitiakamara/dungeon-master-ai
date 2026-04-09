@@ -295,7 +295,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                         <div className="grid grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-4 border rounded-xl bg-muted/20 overflow-hidden">
                             <div className="space-y-1">
                                 <Label className="text-[10px] sm:text-xs uppercase font-bold">Max HP</Label>
-                                <div className="flex h-10 w-full rounded-md border border-input bg-muted px-1 sm:px-3 py-2 text-xs sm:text-sm text-center font-bold items-center justify-center">
+                                <div className="flex h-8 sm:h-10 w-full rounded-md border border-input bg-transparent px-2 sm:px-3 text-sm sm:text-lg text-center font-bold items-center justify-center">
                                     {formData.status.hp_max}
                                 </div>
                             </div>
@@ -304,7 +304,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                                 <Input
                                     type="number"
                                     value={formData.status.hp_current}
-                                    className="text-red-500 font-bold text-sm sm:text-lg px-1 sm:px-3"
+                                    className="h-8 sm:h-10 text-red-500 font-bold text-sm sm:text-lg px-2 sm:px-3"
                                     onChange={(e) => setFormData({ ...formData, status: { ...formData.status, hp_current: parseInt(e.target.value) || 0 } })}
                                 />
                             </div>
@@ -314,7 +314,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                                     type="number"
                                     value={formData.status.temp_hp}
                                     onChange={(e) => setFormData({ ...formData, status: { ...formData.status, temp_hp: parseInt(e.target.value) || 0 } })}
-                                    className="text-blue-500 text-sm sm:text-base px-1 sm:px-3"
+                                    className="h-8 sm:h-10 text-blue-500 font-bold text-sm sm:text-lg px-2 sm:px-3"
                                 />
                             </div>
                         </div>
