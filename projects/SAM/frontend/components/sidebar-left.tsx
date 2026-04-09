@@ -22,8 +22,8 @@ interface SidebarLeftProps {
 export function SidebarLeft({ refreshKey, onSelectCharacter, selectedId, campaignId, isGM, currentUserId, isOnline }: SidebarLeftProps) {
     return (
         <div className="flex flex-col h-full bg-muted/20 border-r">
-            {/* Header Area */}
-            <div className="flex h-14 items-center border-b px-4 gap-1 flex-shrink-0">
+            {/* Header Area — pr-10 leaves room for the Sheet close button on mobile */}
+            <div className="flex h-14 items-center border-b px-4 pr-10 md:pr-4 gap-1 flex-shrink-0">
                 <span className="font-bold text-sm mr-auto">S.A.M. Dashboard</span>
 
                 <Link href="/admin" title="Admin / God Mode">
