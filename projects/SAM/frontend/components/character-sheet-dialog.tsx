@@ -39,6 +39,7 @@ interface CharacterSheetDialogProps {
 export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, onDelete }: CharacterSheetDialogProps) {
     const [loading, setLoading] = useState(false)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+    const [spellSort, setSpellSort] = useState<'level' | 'name'>('level')
     const [formData, setFormData] = useState<any>({
         name: "",
         race: "",
@@ -259,28 +260,28 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                     {/* --- TAB: COMBAT (Attributes, Attacks) --- */}
                     <TabsContent value="combat" className="space-y-6 py-4">
                         {/* Vitals Row */}
-                        <div className="flex flex-wrap gap-2 sm:gap-4 items-end">
-                            <div className="flex-1 space-y-1">
+                        <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-4 items-end">
+                            <div className="sm:flex-1 space-y-1">
                                 <Label className="text-xs font-bold text-muted-foreground uppercase">Armor Class</Label>
                                 <div className="flex h-16 w-full rounded-md border border-input bg-muted px-3 py-2 text-2xl text-center font-black items-center justify-center">
                                     {formData.status.ac}
                                 </div>
                             </div>
-                            <div className="flex-1 space-y-1">
+                            <div className="sm:flex-1 space-y-1">
                                 <Label className="text-xs font-bold text-muted-foreground uppercase">Initiative</Label>
                                 <div className="flex h-16 w-full rounded-md border border-input bg-muted px-3 py-2 text-2xl text-center font-black items-center justify-center">
                                     {formData.status.initiative >= 0 ? `+${formData.status.initiative}` : formData.status.initiative}
                                 </div>
                             </div>
-                            <div className="flex-1 space-y-1">
+                            <div className="sm:flex-1 space-y-1">
                                 <Label className="text-xs font-bold text-muted-foreground uppercase">Speed</Label>
                                 <Input
                                     value={formData.status.speed}
-                                    onChange={(e) => setFormData({ ...formData, status: { ...formData.status, speed: e.target.value } })} // allow string for "30ft, fly 10ft"
+                                    onChange={(e) => setFormData({ ...formData, status: { ...formData.status, speed: e.target.value } })}
                                     className="text-center text-xl font-bold h-16"
                                 />
                             </div>
-                            <div className="flex-1 space-y-1">
+                            <div className="sm:flex-1 space-y-1">
                                 <Label className="text-xs font-bold text-muted-foreground uppercase">Hit Dice</Label>
                                 <Input
                                     value={formData.status.hit_dice}
@@ -291,7 +292,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                         </div>
 
                         {/* HP Row */}
-                        <div className="grid grid-cols-3 gap-4 p-4 border rounded-xl bg-muted/20">
+                        <div className="grid grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-4 border rounded-xl bg-muted/20">
                             <div className="space-y-1">
                                 <Label className="text-xs uppercase font-bold">Max HP</Label>
                                 <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-center font-bold items-center justify-center">
@@ -407,46 +408,54 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                             </div>
                         )}
 
-                        {Array.isArray(formData.status.spells) ? (
-                            <div className="border rounded-xl overflow-hidden overflow-x-auto flex flex-col h-[400px]">
-                                <div className="min-w-[500px]">
-                                <div className="grid grid-cols-12 bg-muted p-3 md:px-4 md:py-3 text-xs font-bold uppercase text-muted-foreground border-b shrink-0 sticky top-0">
-                                    <div className="col-span-1">Lvl</div>
-                                    <div className="col-span-3">Name</div>
+                        {Array.isArray(formData.status.spells) ? (() => {
+                            const sortedSpells = [...formData.status.spells].sort((a: any, b: any) => {
+                                if (spellSort === 'level') {
+                                    const la = typeof a.level === 'string' && a.level.toLowerCase().includes('cantrip') ? 0 : parseInt(a.level) || 0
+                                    const lb = typeof b.level === 'string' && b.level.toLowerCase().includes('cantrip') ? 0 : parseInt(b.level) || 0
+                                    if (la !== lb) return la - lb
+                                    return (a.name || '').localeCompare(b.name || '')
+                                }
+                                return (a.name || '').localeCompare(b.name || '')
+                            })
+                            return (
+                            <div className="border rounded-xl overflow-hidden flex flex-col h-[400px]">
+                                <div className="grid grid-cols-6 sm:grid-cols-12 bg-muted p-3 md:px-4 md:py-3 text-xs font-bold uppercase text-muted-foreground border-b shrink-0 sticky top-0">
+                                    <div className={`col-span-1 cursor-pointer ${spellSort === 'level' ? 'text-purple-400' : ''}`} onClick={() => setSpellSort('level')}>Lvl{spellSort === 'level' ? ' ▲' : ''}</div>
+                                    <div className={`col-span-3 cursor-pointer ${spellSort === 'name' ? 'text-purple-400' : ''}`} onClick={() => setSpellSort('name')}>Name{spellSort === 'name' ? ' ▲' : ''}</div>
                                     <div className="col-span-2">Time</div>
-                                    <div className="col-span-2">Range</div>
-                                    <div className="col-span-2">Duration</div>
-                                    <div className="col-span-2">Effect/School</div>
+                                    <div className="col-span-2 hidden sm:block">Range</div>
+                                    <div className="col-span-2 hidden sm:block">Duration</div>
+                                    <div className="col-span-2 hidden sm:block">Effect/School</div>
                                 </div>
                                 <div className="divide-y overflow-y-auto flex-1">
-                                    {formData.status.spells.map((spell: any, i: number) => {
-                                        // Formatting Helper
+                                    {sortedSpells.map((spell: any, i: number) => {
                                         let levelDisplay = "Lvl " + spell.level
                                         if (String(spell.level).toLowerCase().includes("cantrip") || spell.level === 0 || spell.level === '0') {
-                                            levelDisplay = "Cantrip"
+                                            levelDisplay = "C"
                                         } else if (String(spell.level).toLowerCase().startsWith("lvl")) {
-                                            levelDisplay = spell.level // Already has prefix
+                                            levelDisplay = spell.level
                                         }
 
                                         return (
-                                            <div key={i} className="grid grid-cols-12 p-3 md:px-4 md:py-3 text-sm items-center hover:bg-muted/10">
+                                            <div key={i} className="grid grid-cols-6 sm:grid-cols-12 p-3 md:px-4 md:py-3 text-sm items-center hover:bg-muted/10">
                                                 <div className="col-span-1 font-mono font-bold text-purple-500 text-xs">
                                                     {levelDisplay}
                                                 </div>
                                                 <div className="col-span-3 font-bold truncate pr-2" title={spell.name}>{spell.name}</div>
                                                 <div className="col-span-2 text-xs text-muted-foreground">{spell.time || "-"}</div>
-                                                <div className="col-span-2 text-xs text-muted-foreground">{spell.range || "-"}</div>
-                                                <div className="col-span-2 text-xs text-muted-foreground">{spell.duration || "-"}</div>
-                                                <div className="col-span-2 text-xs text-muted-foreground truncate" title={spell.notes}>
+                                                <div className="col-span-2 hidden sm:block text-xs text-muted-foreground">{spell.range || "-"}</div>
+                                                <div className="col-span-2 hidden sm:block text-xs text-muted-foreground">{spell.duration || "-"}</div>
+                                                <div className="col-span-2 hidden sm:block text-xs text-muted-foreground truncate" title={spell.notes}>
                                                     {spell.notes || spell.school || ""}
                                                 </div>
                                             </div>
                                         )
                                     })}
                                 </div>
-                                </div>
                             </div>
-                        ) : (
+                            )
+                        })() : (
                             <Textarea
                                 value={formData.status.spells}
                                 onChange={(e) => setFormData({ ...formData, status: { ...formData.status, spells: e.target.value } })}
