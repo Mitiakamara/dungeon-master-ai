@@ -218,38 +218,41 @@ export function CharacterList({
                                                 </div>
                                             </div>
 
-                                            {/* Attacks Row */}
-                                            {attacks.length > 0 && (
+                                            {/* Spell Slots (dot notation) */}
+                                            {char.status?.spell_slots && Object.keys(char.status.spell_slots).length > 0 && (
                                                 <div className="pt-2 border-t border-border/50">
-                                                    <div className="font-bold text-muted-foreground text-[10px] uppercase tracking-wider mb-2">Ready Attacks</div>
-                                                    <div className="space-y-1">
-                                                        {attacks.slice(0, 3).map((atk: any, i: number) => {
-                                                            const name = typeof atk === 'string' ? atk : atk.name;
-                                                            return (
-                                                                <div key={i} className="flex items-center justify-between px-2 py-1.5 bg-muted/50 rounded hover:bg-muted transition-colors border border-transparent hover:border-border">
-                                                                    <span className="font-medium truncate max-w-[120px]">{name}</span>
-                                                                    <Dices className="h-3 w-3 text-muted-foreground opacity-50" />
-                                                                </div>
-                                                            )
-                                                        })}
+                                                    <div className="font-bold text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">Spell Slots</div>
+                                                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                                        {Object.keys(char.status.spell_slots)
+                                                            .sort((a, b) => parseInt(a) - parseInt(b))
+                                                            .map((lvl) => {
+                                                                const s = char.status.spell_slots[lvl] || {}
+                                                                const total = Number(s.total) || 0
+                                                                const used = Number(s.used) || 0
+                                                                if (total <= 0) return null
+                                                                const available = Math.max(0, total - used)
+                                                                return (
+                                                                    <div key={lvl} className="flex items-center gap-0.5 text-[10px]">
+                                                                        <span className="text-muted-foreground font-mono">{lvl}:</span>
+                                                                        {Array.from({ length: total }).map((_, i) => (
+                                                                            <span key={i} className={i < available ? "text-purple-400" : "text-gray-600"}>●</span>
+                                                                        ))}
+                                                                    </div>
+                                                                )
+                                                            })}
                                                     </div>
                                                 </div>
                                             )}
 
-                                            {/* Spells Row */}
-                                            {spells && spells.length > 0 && (
+                                            {/* Gold (compact) */}
+                                            {char.status?.money && Object.values(char.status.money).some((v: any) => Number(v) > 0) && (
                                                 <div className="pt-2 border-t border-border/50">
-                                                    <div className="font-bold text-muted-foreground text-[10px] uppercase tracking-wider mb-2">Spells Prepared</div>
-                                                    <div className="space-y-1">
-                                                        {spells.slice(0, 4).map((spell: any, i: number) => {
-                                                            const isCantrip = String(spell.level).toLowerCase().includes("cantrip") || spell.level === 0 || spell.level === '0'
-                                                            return (
-                                                                <div key={i} className="flex items-center justify-between px-2 py-1.5 bg-muted/50 rounded hover:bg-muted transition-colors border border-transparent hover:border-border">
-                                                                    <span className="font-medium truncate max-w-[100px]">{spell.name}</span>
-                                                                    <span className="text-[10px] text-muted-foreground uppercase">{isCantrip ? 'Cantrip' : String(spell.level).startsWith('Lvl') ? spell.level : `Lvl ${spell.level}`}</span>
-                                                                </div>
-                                                            )
-                                                        })}
+                                                    <div className="font-bold text-muted-foreground text-[10px] uppercase tracking-wider mb-1">Gold</div>
+                                                    <div className="text-xs text-amber-400 font-mono">
+                                                        {['pp', 'gp', 'ep', 'sp', 'cp']
+                                                            .filter(c => Number(char.status.money[c]) > 0)
+                                                            .map(c => `${char.status.money[c]} ${c.toUpperCase()}`)
+                                                            .join(' · ')}
                                                     </div>
                                                 </div>
                                             )}
