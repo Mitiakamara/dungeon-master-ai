@@ -546,6 +546,34 @@ bb9a200 debug: log JSON length + chars 600-900 around PDF parse error for diagno
 6e747ac fix: PDF character import — clean trailing commas + 2nd-pass aggressive JSON parse with logging
 ```
 
+### Sesión 9 Abr 2026 — Mini Sheet Redesign, Character Sheet Mobile Polish, Spell Sorting
+
+**Mini sheet redesign (sidebar character card):**
+1. **Ready Attacks y Spells Prepared eliminados** del mini sheet — reemplazados por:
+   - **Spell Slots dots:** `1: ●●●○` con `●` en `text-purple-400` (disponible) y `○` en `text-gray-600` (usado). `flex flex-wrap`, sort numérico por level, skip levels con `total <= 0`.
+   - **Gold compact:** Solo monedas con valor > 0, ordenadas descendente: `"15 GP · 5 SP · 21 CP"` en `text-amber-400 font-mono`.
+   - HP/AC row intacto.
+
+**Character sheet dialog — mobile polish (6 commits):**
+1. **Stats tab:** `gap-8` → `gap-4 sm:gap-8` entre Saving Throws y Core Stats.
+2. **Combat tab — vitals:** `flex` → `grid grid-cols-2 gap-2 sm:flex sm:gap-4` (2×2 en mobile, horizontal en desktop). Height `h-16` → `h-12 sm:h-16`. Text `text-2xl` → `text-lg sm:text-2xl`. Inputs reducidos proporcionalmente.
+3. **Combat tab — HP row:** Los 3 campos (Max HP div, Current HP input, Temp HP input) normalizados a `h-8 sm:h-10`, `text-sm sm:text-lg`, `px-2 sm:px-3`, `font-bold`. Max HP cambiado de `bg-muted` a `bg-transparent` para matchear inputs. Container con `overflow-hidden`.
+4. **Combat tab — attacks:** Removido `overflow-x-auto` + `min-w-[400px]` wrapper. Tabla ahora inline con `text-xs sm:text-sm`, `p-2 sm:p-3`, `truncate` en names, `break-all` en damage/type. Container con `overflow-x-hidden`.
+5. **Spells tab — responsive columns:** `min-w-[500px]` removido. Grid `grid-cols-6 sm:grid-cols-12`. Mobile muestra solo **Lvl | Name | Time** (3 cols esenciales). Range, Duration, Effect/School con `hidden sm:block`. Cantrip display: `"Cantrip"` → `"C"`.
+6. **Spells tab — sorting:** Nuevo state `spellSort: 'level' | 'name'`. Headers Lvl y Name clickeables (`cursor-pointer`), header activo en `text-purple-400` con `▲`. Sort: cantrips primero (level 0), luego por nivel numérico, luego por nombre. IIFE pattern para computar `sortedSpells` inline.
+7. **Bio & Gear tab:** `grid grid-cols-2 md:grid-cols-1` → `grid grid-cols-1` (vertical stack siempre).
+8. **Sidebar header:** `px-4` → `px-4 pr-10 md:pr-4` para evitar que el botón X del Sheet se solape con el icono de dark mode toggle.
+
+### Commits en main (9 Abr 2026)
+```
+a1d231b fix: sidebar header pr-10 on mobile to prevent Sheet X button overlapping dark mode toggle
+4c7bd6f fix: align HP row boxes — same height, text size, padding, and bg across Max/Current/Temp
+25d88b2 fix: combat tab mobile — smaller vitals boxes, compact HP row, inline attacks table with break-all, overflow-x-hidden
+6e5c53e fix: combat vitals 2x2 grid on mobile, spells responsive columns, sortable spells by level/name
+64d0989 fix: character sheet mobile — reduce saves gap, wrap vitals, scroll spells table, stack bio/gear vertical
+a93c302 feat: replace Ready Attacks/Spells Prepared with Spell Slots dots + Gold display in mini sheet
+```
+
 **Bug fix posterior — auto-refresh character no funcionaba (commit `f48bb55`):**
 La primera implementación creó un `useRealtime` separado en `game-layout.tsx` para escuchar `messages.INSERT`. Resultó conflictivo con el `useRealtime` ya existente en `chat-interface.tsx` para la misma tabla — Supabase no garantiza routing limpio cuando un mismo cliente se subscribe dos veces al mismo table con filtros distintos, y el `createClient()` en cada render del hook causa re-subscriptions agresivas. Fix: eliminar el listener duplicado y reusar el de `chat-interface.tsx` via callback prop `onSamMessageReceived?: () => void`. Cuando el listener procesa un mensaje con `role === 'assistant'`, llama el callback que dispara `setTimeout(fetchCharacterData, 1500)` en `game-layout.tsx`. Una sola subscription, callback con deps frescas via `useCallback`.
 
@@ -601,7 +629,8 @@ La primera implementación creó un `useRealtime` separado en `game-layout.tsx` 
 - **Resource consumption automático:** Cuando un jugador castea un spell, el orchestrator emite `spell_slot_consume` y el backend decrementa el slot del nivel correspondiente (cantrips no consumen). Cuando usa un item, emite `inventory_remove` y el backend decrementa qty (remueve si llega a 0). Defensive: si el slot/item no existe, log warning sin crashear.
 - **`/gold` admin command:** GM puede ajustar dinero manualmente con `/gold <character> <±amount> <coin>`. Soporta nombres con espacios, valida coin type, clamp anti-negativo.
 - **Auto-refresh character post-SAM:** Cuando el listener de Realtime en `chat-interface.tsx` procesa un mensaje con `role === 'assistant'`, dispara el callback `onSamMessageReceived` provisto por `game-layout.tsx`, que hace `setTimeout(fetchCharacterData, 1500)`. Reusa el listener existente en lugar de crear un canal duplicado.
-- **Desktop polish del character sheet:** Bio & Gear tab apila vertical en desktop (full width inventory + bio), inventory con más padding y columnas re-balanceadas, Spells table con más padding. Mobile sin cambios.
+- **Character sheet responsive:** Bio & Gear siempre vertical. Combat vitals 2×2 grid mobile, HP row normalizado. Spells responsive cols (3 mobile / 6 desktop) con sorting clickeable (level/name). Attacks inline con break-all. Sidebar header `pr-10` para Sheet X.
+- **Mini sheet redesign:** Spell Slots dots (`●●○` purple/gray) + Gold compact (`15 GP · 5 SP`) reemplazan las listas inertes de Ready Attacks y Spells Prepared.
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
 
@@ -655,4 +684,4 @@ La primera implementación creó un `useRealtime` separado en `game-layout.tsx` 
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 8 Abr 2026 — PDF parse hardening (65k tokens, thinking_budget=0, JSON mode, cleanup), automatic spell slot + inventory consumption, /gold command, auto-refresh character post-SAM (via callback prop, no duplicate Realtime channel), desktop layout polish.*
+*Última actualización: 9 Abr 2026 — Mini sheet redesign (spell slots dots + gold), character sheet mobile polish (combat vitals 2×2, HP row aligned, spells responsive columns + sorting, bio/gear always stacked, sidebar X overlap fix).*
