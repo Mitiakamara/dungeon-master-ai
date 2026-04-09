@@ -258,18 +258,18 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                     </TabsContent>
 
                     {/* --- TAB: COMBAT (Attributes, Attacks) --- */}
-                    <TabsContent value="combat" className="space-y-6 py-4">
+                    <TabsContent value="combat" className="space-y-6 py-4 overflow-x-hidden">
                         {/* Vitals Row */}
                         <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-4 items-end">
                             <div className="sm:flex-1 space-y-1">
                                 <Label className="text-xs font-bold text-muted-foreground uppercase">Armor Class</Label>
-                                <div className="flex h-16 w-full rounded-md border border-input bg-muted px-3 py-2 text-2xl text-center font-black items-center justify-center">
+                                <div className="flex h-12 sm:h-16 w-full rounded-md border border-input bg-muted px-2 sm:px-3 py-2 text-lg sm:text-2xl text-center font-black items-center justify-center">
                                     {formData.status.ac}
                                 </div>
                             </div>
                             <div className="sm:flex-1 space-y-1">
                                 <Label className="text-xs font-bold text-muted-foreground uppercase">Initiative</Label>
-                                <div className="flex h-16 w-full rounded-md border border-input bg-muted px-3 py-2 text-2xl text-center font-black items-center justify-center">
+                                <div className="flex h-12 sm:h-16 w-full rounded-md border border-input bg-muted px-2 sm:px-3 py-2 text-lg sm:text-2xl text-center font-black items-center justify-center">
                                     {formData.status.initiative >= 0 ? `+${formData.status.initiative}` : formData.status.initiative}
                                 </div>
                             </div>
@@ -278,7 +278,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                                 <Input
                                     value={formData.status.speed}
                                     onChange={(e) => setFormData({ ...formData, status: { ...formData.status, speed: e.target.value } })}
-                                    className="text-center text-xl font-bold h-16"
+                                    className="text-center text-base sm:text-xl font-bold h-12 sm:h-16"
                                 />
                             </div>
                             <div className="sm:flex-1 space-y-1">
@@ -286,35 +286,35 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                                 <Input
                                     value={formData.status.hit_dice}
                                     onChange={(e) => setFormData({ ...formData, status: { ...formData.status, hit_dice: e.target.value } })}
-                                    className="text-center text-xl font-bold h-16"
+                                    className="text-center text-base sm:text-xl font-bold h-12 sm:h-16"
                                 />
                             </div>
                         </div>
 
                         {/* HP Row */}
-                        <div className="grid grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-4 border rounded-xl bg-muted/20">
+                        <div className="grid grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-4 border rounded-xl bg-muted/20 overflow-hidden">
                             <div className="space-y-1">
-                                <Label className="text-xs uppercase font-bold">Max HP</Label>
-                                <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-center font-bold items-center justify-center">
+                                <Label className="text-[10px] sm:text-xs uppercase font-bold">Max HP</Label>
+                                <div className="flex h-10 w-full rounded-md border border-input bg-muted px-1 sm:px-3 py-2 text-xs sm:text-sm text-center font-bold items-center justify-center">
                                     {formData.status.hp_max}
                                 </div>
                             </div>
                             <div className="space-y-1">
-                                <Label className="text-xs uppercase font-bold">Current HP</Label>
+                                <Label className="text-[10px] sm:text-xs uppercase font-bold">Current HP</Label>
                                 <Input
                                     type="number"
                                     value={formData.status.hp_current}
-                                    className="text-red-500 font-bold text-lg"
+                                    className="text-red-500 font-bold text-sm sm:text-lg px-1 sm:px-3"
                                     onChange={(e) => setFormData({ ...formData, status: { ...formData.status, hp_current: parseInt(e.target.value) || 0 } })}
                                 />
                             </div>
                             <div className="space-y-1">
-                                <Label className="text-xs uppercase font-bold">Temp HP</Label>
+                                <Label className="text-[10px] sm:text-xs uppercase font-bold">Temp HP</Label>
                                 <Input
                                     type="number"
                                     value={formData.status.temp_hp}
                                     onChange={(e) => setFormData({ ...formData, status: { ...formData.status, temp_hp: parseInt(e.target.value) || 0 } })}
-                                    className="text-blue-500"
+                                    className="text-blue-500 text-sm sm:text-base px-1 sm:px-3"
                                 />
                             </div>
                         </div>
@@ -323,22 +323,20 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                         <div className="space-y-2">
                             <Label className="text-base font-semibold">Weapon Attacks</Label>
                             {Array.isArray(formData.status.attacks) ? (
-                                <div className="border rounded-xl overflow-x-auto">
-                                    <div className="min-w-[400px]">
-                                        <div className="grid grid-cols-12 bg-muted p-2 text-xs font-bold uppercase text-muted-foreground">
-                                            <div className="col-span-4">Name</div>
-                                            <div className="col-span-2 text-center">Bonus</div>
-                                            <div className="col-span-6">Damage / Type</div>
-                                        </div>
-                                        <div className="divide-y">
-                                            {formData.status.attacks.map((atk: any, i: number) => (
-                                                <div key={i} className="grid grid-cols-12 p-3 text-sm items-center hover:bg-muted/10">
-                                                    <div className="col-span-4 font-bold">{atk.name}</div>
-                                                    <div className="col-span-2 text-center font-mono font-bold text-green-500">{atk.bonus}</div>
-                                                    <div className="col-span-6 font-mono text-xs">{atk.damage} {atk.type}</div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                <div className="border rounded-xl overflow-hidden">
+                                    <div className="grid grid-cols-12 bg-muted p-2 text-xs font-bold uppercase text-muted-foreground">
+                                        <div className="col-span-4">Name</div>
+                                        <div className="col-span-2 text-center">Bonus</div>
+                                        <div className="col-span-6">Damage / Type</div>
+                                    </div>
+                                    <div className="divide-y">
+                                        {formData.status.attacks.map((atk: any, i: number) => (
+                                            <div key={i} className="grid grid-cols-12 p-2 sm:p-3 text-xs sm:text-sm items-center hover:bg-muted/10">
+                                                <div className="col-span-4 font-bold truncate">{atk.name}</div>
+                                                <div className="col-span-2 text-center font-mono font-bold text-green-500">{atk.bonus}</div>
+                                                <div className="col-span-6 font-mono text-[10px] sm:text-xs break-all">{atk.damage} {atk.type}</div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             ) : (
