@@ -711,7 +711,8 @@ class AIHelper:
                 f"Fantasy character portrait, D&D style, head and shoulders, dramatic lighting, "
                 f"dark background. {race} {char_class} named {name}. "
                 f"{bio_snippet}. "
-                f"Detailed fantasy illustration, painterly style, no text, no watermark."
+                f"Detailed fantasy illustration, painterly style. "
+                f"Do not include any text, watermarks, signatures, frames, or borders."
             )
 
             response = self.genai_client.models.generate_images(
@@ -721,8 +722,6 @@ class AIHelper:
                     number_of_images=1,
                     aspect_ratio="1:1",
                     output_mime_type="image/png",
-                    negative_prompt="blurry, low quality, text, watermark, signature, frame, border, cartoon, chibi, anime",
-                    person_generation="ALLOW_ALL",
                 ),
             )
 
