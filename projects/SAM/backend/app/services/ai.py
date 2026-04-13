@@ -703,9 +703,23 @@ class AIHelper:
             print(f"PDF Parse Error: {e}")
             raise ValueError(f"Failed to parse PDF: {str(e)}")
 
+    IMAGEN_MODELS = [
+        "imagen-3.0-generate-002",
+        "imagen-3.0-generate-001",
+        "imagen-3.0-fast-generate-001",
+    ]
+
     def generate_avatar(self, name: str, race: str, char_class: str, bio: str = "") -> bytes | None:
-        """Generate a character portrait using Imagen 3."""
+        """Generate a character portrait using Imagen 3 (tries multiple model versions)."""
         try:
+            # List available image models for diagnosis
+            try:
+                models = self.genai_client.models.list()
+                image_models = [m.name for m in models if 'imagen' in m.name.lower() or 'image' in m.name.lower()]
+                print(f"📷 Available image models: {image_models}")
+            except Exception as e:
+                print(f"📷 Could not list models: {e}")
+
             bio_snippet = bio[:150] if bio else ""
             prompt = (
                 f"Fantasy character portrait, D&D style, head and shoulders, dramatic lighting, "
@@ -715,18 +729,27 @@ class AIHelper:
                 f"Do not include any text, watermarks, signatures, frames, or borders."
             )
 
-            response = self.genai_client.models.generate_images(
-                model="imagen-3.0-generate-002",
-                prompt=prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    aspect_ratio="1:1",
-                    output_mime_type="image/png",
-                ),
+            config = types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="1:1",
+                output_mime_type="image/png",
             )
 
-            if response.generated_images:
-                return response.generated_images[0].image.image_bytes
+            for model_name in self.IMAGEN_MODELS:
+                try:
+                    response = self.genai_client.models.generate_images(
+                        model=model_name,
+                        prompt=prompt,
+                        config=config,
+                    )
+                    if response.generated_images:
+                        print(f"📷 Avatar generated with {model_name}")
+                        return response.generated_images[0].image.image_bytes
+                except Exception as e:
+                    print(f"📷 {model_name} failed: {e}")
+                    continue
+
+            print("📷 All Imagen models failed — falling back to DiceBear")
             return None
         except Exception as e:
             print(f"Avatar generation failed: {e}")
