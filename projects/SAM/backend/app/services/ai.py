@@ -674,24 +674,79 @@ class AIHelper:
                 elif "wallet" in st and "money" in st:
                     st.pop("wallet")  # Remove duplicate
 
-            # Auto-generate Avatar (DiceBear Adventurer)
-            # Uses Name+Race+Class as seed for consistent generation without API costs
+            # Generate AI avatar, fallback to DiceBear
             if "name" in data:
-                seed = f"{data.get('name', '')}-{data.get('race', '')}-{data.get('class', '')}".replace(" ", "")
-                # Using 'adventurer' style which fits D&D perfectly
-                data['image_url'] = f"https://api.dicebear.com/9.x/adventurer/svg?seed={seed}"
-                log(f"Avatar generated: {data['image_url']}")
-            
+                log("Attempting AI avatar generation...")
+                avatar_bytes = self.generate_avatar(
+                    name=data.get("name", ""),
+                    race=data.get("race", ""),
+                    char_class=data.get("class", ""),
+                    bio=data.get("bio", ""),
+                )
+
+                if avatar_bytes:
+                    import base64
+                    b64 = base64.b64encode(avatar_bytes).decode("utf-8")
+                    data["image_url"] = f"data:image/png;base64,{b64}"
+                    data["_avatar_bytes"] = True  # Flag: AI-generated, can be uploaded later
+                    log(f"AI avatar generated ({len(avatar_bytes)} bytes)")
+                else:
+                    # Fallback to DiceBear
+                    seed = f"{data.get('name', '')}-{data.get('race', '')}-{data.get('class', '')}".replace(" ", "")
+                    data["image_url"] = f"https://api.dicebear.com/9.x/adventurer/svg?seed={seed}"
+                    log(f"DiceBear fallback avatar: {data['image_url']}")
+
             return data
-            
+
         except Exception as e:
             log(f"FATAL EXCEPTION: {str(e)}")
             print(f"PDF Parse Error: {e}")
             raise ValueError(f"Failed to parse PDF: {str(e)}")
 
-    def generate_image(self, prompt: str) -> str:
-        # TODO: Implement Gemini/Imagen 3 generation here.
-        return None
+    def generate_avatar(self, name: str, race: str, char_class: str, bio: str = "") -> bytes | None:
+        """Generate a character portrait using Imagen 3."""
+        try:
+            bio_snippet = bio[:150] if bio else ""
+            prompt = (
+                f"Fantasy character portrait, D&D style, head and shoulders, dramatic lighting, "
+                f"dark background. {race} {char_class} named {name}. "
+                f"{bio_snippet}. "
+                f"Detailed fantasy illustration, painterly style, no text, no watermark."
+            )
+
+            response = self.genai_client.models.generate_images(
+                model="imagen-3.0-generate-002",
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="1:1",
+                    output_mime_type="image/png",
+                    negative_prompt="blurry, low quality, text, watermark, signature, frame, border, cartoon, chibi, anime",
+                    person_generation="ALLOW_ALL",
+                ),
+            )
+
+            if response.generated_images:
+                return response.generated_images[0].image.image_bytes
+            return None
+        except Exception as e:
+            print(f"Avatar generation failed: {e}")
+            return None
+
+    def upload_avatar(self, character_id: str, image_bytes: bytes) -> str | None:
+        """Upload avatar to Supabase Storage and return the public URL."""
+        try:
+            path = f"characters/{character_id}.png"
+            self.supabase.storage.from_("avatars").upload(
+                path=path,
+                file=image_bytes,
+                file_options={"content-type": "image/png", "upsert": "true"},
+            )
+            public_url = self.supabase.storage.from_("avatars").get_public_url(path)
+            return public_url
+        except Exception as e:
+            print(f"Avatar upload failed: {e}")
+            return None
 
 # Singleton instance
 sam_brain = AIHelper()
