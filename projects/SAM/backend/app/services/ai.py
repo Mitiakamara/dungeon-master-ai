@@ -704,22 +704,13 @@ class AIHelper:
             raise ValueError(f"Failed to parse PDF: {str(e)}")
 
     IMAGEN_MODELS = [
-        "imagen-3.0-generate-002",
-        "imagen-3.0-generate-001",
-        "imagen-3.0-fast-generate-001",
+        "imagen-4.0-fast-generate-001",
+        "imagen-4.0-generate-001",
     ]
 
     def generate_avatar(self, name: str, race: str, char_class: str, bio: str = "") -> bytes | None:
-        """Generate a character portrait using Imagen 3 (tries multiple model versions)."""
+        """Generate a character portrait using Imagen 4 (fast first, then standard)."""
         try:
-            # List available image models for diagnosis
-            try:
-                models = self.genai_client.models.list()
-                image_models = [m.name for m in models if 'imagen' in m.name.lower() or 'image' in m.name.lower()]
-                print(f"📷 Available image models: {image_models}")
-            except Exception as e:
-                print(f"📷 Could not list models: {e}")
-
             bio_snippet = bio[:150] if bio else ""
             prompt = (
                 f"Fantasy character portrait, D&D style, head and shoulders, dramatic lighting, "
