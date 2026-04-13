@@ -574,6 +574,38 @@ a1d231b fix: sidebar header pr-10 on mobile to prevent Sheet X button overlappin
 a93c302 feat: replace Ready Attacks/Spells Prepared with Spell Slots dots + Gold display in mini sheet
 ```
 
+### Sesión 12 Abr 2026 — Avatares AI, Narrator Tuning, Realtime Fix, localStorage Cleanup
+
+**AI-Generated Avatars (Imagen 4):**
+1. **`generate_avatar()`** — Genera retratos de personaje con Imagen 4. Prompt D&D-focused: "Fantasy character portrait, head and shoulders, dramatic lighting, dark background. {race} {char_class} named {name}. {bio_snippet}." Fallback chain: `imagen-4.0-fast-generate-001` (barato) → `imagen-4.0-generate-001` (quality). Si ambos fallan, cae a DiceBear SVG como antes.
+2. **`upload_avatar()`** — Sube bytes PNG a Supabase Storage bucket `avatars/characters/{id}.png`. Retorna URL pública.
+3. **`parse_character_pdf()`** — Intenta avatar AI primero. Si funciona, guarda como `data:image/png;base64,...` para preview (el character ID no existe aún). Si falla, genera DiceBear con seed `{name}-{race}-{class}`.
+4. **Migration `schema_avatar_storage.sql`** — Bucket `avatars` público con RLS: authenticated upload, public read.
+
+**Narrator Prompt Tuning:**
+1. **Brevedad reforzada** — "2-4 paragraphs max" → "Maximum 2 short paragraphs, NEVER exceed 120 words. Players are on mobile — every extra word is a crime."
+2. **Regla 15 (Character Knowledge)** — SAM ahora está instruido a responder preguntas sobre stats del personaje con datos exactos del CHARACTER IN SCENE context. Calcula totales de skill checks (d20 + modifier + proficiency). Nunca dice "check your sheet".
+
+**Realtime Subscription Stability:**
+- **Root cause encontrado:** `createClient()` en `use-realtime.ts` se ejecutaba en cada render, creando una nueva referencia que disparaba el `useEffect` → unsubscribe + resubscribe en cada render de React. Durante el gap, eventos de Realtime se perdían.
+- **Fix:** `useRef(createClient())` crea el client una sola vez. Removido `supabase` del dep array. Channel names mejorados para incluir el filtro.
+
+**localStorage Stale Character Cleanup:**
+- **`fetchCharacterData()`** — Si GET character devuelve 404, limpia localStorage + setSelectedCharacter(null) + auto-selecciona el primer personaje de `/api/characters/user/me`.
+- **`loadCharacter()` (on-mount)** — Mismo patrón 404 en la carga inicial desde localStorage.
+- **`handleDelete()`** en `character-list.tsx` — Al borrar un personaje, limpia localStorage si el ID matchea.
+
+### Commits en main (12 Abr 2026)
+```
+14c0b1f fix: switch to Imagen 4.0 models (fast first, then standard)
+21a39f8 fix: try 3 Imagen model versions as fallback chain + diagnosis
+f12ea77 fix: remove negative_prompt from Imagen config
+e03df55 feat: AI-generated character avatars via Imagen 4 + Supabase Storage
+ecbaa28 fix: narrator prompt — enforce 120 word limit + character stats awareness
+e189447 fix: stabilize Realtime subscriptions — useRef for Supabase client
+6408ef4 fix: clear stale character from localStorage on 404 or delete
+```
+
 **Bug fix posterior — auto-refresh character no funcionaba (commit `f48bb55`):**
 La primera implementación creó un `useRealtime` separado en `game-layout.tsx` para escuchar `messages.INSERT`. Resultó conflictivo con el `useRealtime` ya existente en `chat-interface.tsx` para la misma tabla — Supabase no garantiza routing limpio cuando un mismo cliente se subscribe dos veces al mismo table con filtros distintos, y el `createClient()` en cada render del hook causa re-subscriptions agresivas. Fix: eliminar el listener duplicado y reusar el de `chat-interface.tsx` via callback prop `onSamMessageReceived?: () => void`. Cuando el listener procesa un mensaje con `role === 'assistant'`, llama el callback que dispara `setTimeout(fetchCharacterData, 1500)` en `game-layout.tsx`. Una sola subscription, callback con deps frescas via `useCallback`.
 
@@ -631,6 +663,10 @@ La primera implementación creó un `useRealtime` separado en `game-layout.tsx` 
 - **Auto-refresh character post-SAM:** Cuando el listener de Realtime en `chat-interface.tsx` procesa un mensaje con `role === 'assistant'`, dispara el callback `onSamMessageReceived` provisto por `game-layout.tsx`, que hace `setTimeout(fetchCharacterData, 1500)`. Reusa el listener existente en lugar de crear un canal duplicado.
 - **Character sheet responsive:** Bio & Gear siempre vertical. Combat vitals 2×2 grid mobile, HP row normalizado. Spells responsive cols (3 mobile / 6 desktop) con sorting clickeable (level/name). Attacks inline con break-all. Sidebar header `pr-10` para Sheet X.
 - **Mini sheet redesign:** Spell Slots dots (`●●○` purple/gray) + Gold compact (`15 GP · 5 SP`) reemplazan las listas inertes de Ready Attacks y Spells Prepared.
+- **Avatares AI (Imagen 4):** `generate_avatar()` con fallback chain (fast → standard → DiceBear). Supabase Storage bucket `avatars`. Base64 preview en PDF import.
+- **Narrator tuning:** Max 120 words, 2 paragraphs. Regla 15: responde preguntas de stats con datos exactos del personaje.
+- **Realtime estable:** `useRef(createClient())` evita re-subscriptions en cada render. Channel names incluyen filtro.
+- **localStorage cleanup:** 404 en character → limpia + auto-select fallback. Delete character → limpia localStorage.
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
 
@@ -684,4 +720,4 @@ La primera implementación creó un `useRealtime` separado en `game-layout.tsx` 
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 9 Abr 2026 — Mini sheet redesign (spell slots dots + gold), character sheet mobile polish (combat vitals 2×2, HP row aligned, spells responsive columns + sorting, bio/gear always stacked, sidebar X overlap fix).*
+*Última actualización: 12 Abr 2026 — AI avatars (Imagen 4 with DiceBear fallback), narrator brevity + character knowledge, Realtime subscription stability fix, localStorage stale character cleanup.*

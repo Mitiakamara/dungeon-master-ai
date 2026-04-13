@@ -280,6 +280,10 @@ lucide-react, sonner, next-themes
 - **Auto-refresh character post-SAM:** El listener Realtime de `messages` en `chat-interface.tsx` (que ya escuchaba INSERTs para el chat) detecta `role === 'assistant'` y dispara el callback `onSamMessageReceived` que viene de `game-layout.tsx`. El callback hace `setTimeout(fetchCharacterData, 1500)` con `selectedCharacter.id` capturado en closure fresco via `useCallback`. Anteriormente había un segundo `useRealtime` duplicado que no funcionaba — Supabase no garantiza routing limpio cuando un mismo cliente se subscribe dos veces a la misma table con filtros distintos.
 - **Character sheet responsive completo:** Combat vitals `grid-cols-2` mobile (2×2) / `sm:flex` desktop. HP row normalizado (mismo h/text/px para Max/Current/Temp). Spells responsive cols `grid-cols-6 sm:grid-cols-12` (mobile: Lvl/Name/Time, desktop: todas). Spell sorting clickeable (level/name con `▲`). Attacks inline con `break-all` y `overflow-x-hidden`. Bio & Gear siempre stacked (`grid-cols-1`). Sidebar header `pr-10 md:pr-4` para evitar X overlap.
 - **Mini sheet redesign:** Spell Slots dots (`1: ●●●○` purple/gray) + Gold compact (`15 GP · 5 SP` amber) reemplazan Ready Attacks y Spells Prepared en el sidebar character card.
+- **Avatares AI (Imagen 4):** `generate_avatar()` con fallback chain `imagen-4.0-fast-generate-001` → `imagen-4.0-generate-001` → DiceBear SVG. Base64 data URI para preview en PDF import. `upload_avatar()` sube a Supabase Storage bucket `avatars`. Migration `schema_avatar_storage.sql`.
+- **Narrator tuning:** Max 120 words / 2 paragraphs por respuesta. Regla 15: CHARACTER KNOWLEDGE — SAM responde preguntas de stats con datos exactos, calcula skill check totals.
+- **Realtime subscription stability:** `useRef(createClient())` en `use-realtime.ts` evita que `createClient()` se ejecute en cada render → no más re-subscriptions constantes que perdían eventos. Channel names incluyen filtro para routing limpio.
+- **localStorage stale character cleanup:** Si GET character devuelve 404 (personaje borrado), limpia localStorage + auto-selecciona primer personaje vía `/api/characters/user/me`. Delete handler también limpia.
 - **`pending_player_roll` persistence:** Sobrevive entre requests via `combat_state` en `campaigns.settings`. Permite flujos como "tira de daño" → siguiente mensaje del jugador con su tirada.
 - **Mobile UX:** `h-[100dvh]` (dynamic viewport), `pb-safe` (iOS notch), header compacto en mobile (h-9), dice tray con botones pequeños + auto-close al rolear, input area con `mb-2` extra.
 - **Completitud: ~95%** (app funcional) con arquitectura multi-agente integrada
@@ -877,4 +881,4 @@ Airtable no tiene backups automáticos. Estrategia: 3 escenarios Make.com export
 
 ---
 
-*Última actualización: 9 Abr 2026 — SAM: Mini sheet redesign (spell slots dots + gold display), character sheet mobile polish (combat 2×2 vitals, HP alignment, spells responsive columns + sorting, bio/gear stacked, sidebar X overlap fix). FF8: Collections Module complete.*
+*Última actualización: 12 Abr 2026 — SAM: AI avatars (Imagen 4 with DiceBear fallback), narrator brevity + character knowledge rule, Realtime subscription stability fix, localStorage stale character cleanup. Mini sheet redesign, character sheet mobile polish. FF8: Collections Module complete.*
