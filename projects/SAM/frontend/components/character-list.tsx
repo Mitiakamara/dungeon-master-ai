@@ -114,6 +114,17 @@ export function CharacterList({
                 method: 'DELETE'
             })
             if (res.ok) {
+                // Clear stale localStorage if the deleted character was selected
+                try {
+                    const saved = localStorage.getItem("selectedCharacter")
+                    if (saved) {
+                        const parsed = JSON.parse(saved)
+                        if (parsed?.id === id) {
+                            localStorage.removeItem("selectedCharacter")
+                            onSelectCharacter(null)
+                        }
+                    }
+                } catch { /* ignore parse errors */ }
                 if (userId) fetchCharacters(userId)
             }
         } catch (error) {

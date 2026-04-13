@@ -89,6 +89,22 @@ export default function GameLayout() {
                 console.log("🔄 Synced Fresh Character Data:", freshChar)
                 setSelectedCharacter(freshChar)
                 localStorage.setItem("selectedCharacter", JSON.stringify(freshChar))
+            } else if (res.status === 404) {
+                // Character was deleted — clear stale state and try to find current one
+                console.warn("⚠️ Character 404 — clearing stale localStorage and re-fetching")
+                localStorage.removeItem("selectedCharacter")
+                setSelectedCharacter(null)
+                try {
+                    const meRes = await authenticatedFetch("/api/characters/user/me")
+                    if (meRes.ok) {
+                        const chars = await meRes.json()
+                        if (chars.length > 0) {
+                            setSelectedCharacter(chars[0])
+                            localStorage.setItem("selectedCharacter", JSON.stringify(chars[0]))
+                            console.log("🔄 Auto-selected fallback character:", chars[0].name)
+                        }
+                    }
+                } catch { /* ignore */ }
             }
         } catch (err) {
             console.warn("Character resync failed:", err)
@@ -208,6 +224,23 @@ export default function GameLayout() {
                         console.log("🔄 Synced Fresh Character Data:", freshChar)
                         setSelectedCharacter(freshChar)
                         localStorage.setItem("selectedCharacter", JSON.stringify(freshChar))
+                    } else if (res.status === 404) {
+                        // Saved character was deleted — clear stale data
+                        console.warn("⚠️ Saved character 404 — clearing localStorage")
+                        localStorage.removeItem("selectedCharacter")
+                        setSelectedCharacter(null)
+                        // Try to auto-select the user's current character
+                        const meRes = await fetch("/api/characters/user/me", {
+                            headers: { Authorization: `Bearer ${session.access_token}` }
+                        })
+                        if (meRes.ok) {
+                            const chars = await meRes.json()
+                            if (chars.length > 0) {
+                                setSelectedCharacter(chars[0])
+                                localStorage.setItem("selectedCharacter", JSON.stringify(chars[0]))
+                                console.log("🔄 Auto-selected fallback character:", chars[0].name)
+                            }
+                        }
                     }
                 }
             } catch (err) {
