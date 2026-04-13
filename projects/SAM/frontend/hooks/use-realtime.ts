@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 
 type RealtimeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*'
 
@@ -21,12 +20,11 @@ export function useRealtime({
     onData,
     enabled = true
 }: UseRealtimeOptions) {
-    const supabase = createClient()
-    const router = useRouter()
+    // Stable client ref — prevents re-subscribe on every render
+    const supabaseRef = useRef(createClient())
 
-    // [FIX] Use Ref to avoid stale closures without re-subscribing
+    // Latest callback ref — avoids stale closures without re-subscribing
     const onDataRef = useRef(onData)
-
     useEffect(() => {
         onDataRef.current = onData
     }, [onData])
@@ -34,10 +32,14 @@ export function useRealtime({
     useEffect(() => {
         if (!enabled) return
 
-        console.log(`🔌 Subscribing to ${table} (${event})`)
+        const supabase = supabaseRef.current
+        // Include filter in channel name so different filters get different channels
+        const channelName = `rt:${table}:${event}:${filter || 'all'}`
+
+        console.log(`🔌 Subscribing to ${channelName}`)
 
         const channel = supabase
-            .channel(`public:${table}:${event}`)
+            .channel(channelName)
             .on(
                 'postgres_changes',
                 {
@@ -48,19 +50,18 @@ export function useRealtime({
                 },
                 (payload: any) => {
                     console.log(`⚡ Realtime Event [${table}]:`, payload)
-                    // Call the latest callback
                     if (onDataRef.current) {
                         onDataRef.current(payload)
                     }
                 }
             )
             .subscribe((status: any) => {
-                console.log(`🔌 Subscription status [${table}]: ${status}`)
+                console.log(`🔌 Subscription status [${channelName}]: ${status}`)
             })
 
         return () => {
-            console.log(`🔌 Unsubscribing from ${table}`)
+            console.log(`🔌 Unsubscribing from ${channelName}`)
             supabase.removeChannel(channel)
         }
-    }, [table, event, filter, schema, enabled, supabase])
+    }, [table, event, filter, schema, enabled])
 }
