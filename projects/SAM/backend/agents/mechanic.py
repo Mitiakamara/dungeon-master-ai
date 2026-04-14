@@ -13,6 +13,16 @@ from .combat_state import CombatState
 from typing import Optional
 import json
 
+# D&D 5e skill → ability mapping
+SKILL_ABILITY_MAP = {
+    "acrobatics": "dex", "animal_handling": "wis", "arcana": "int",
+    "athletics": "str", "deception": "cha", "history": "int",
+    "insight": "wis", "intimidation": "cha", "investigation": "int",
+    "medicine": "wis", "nature": "int", "perception": "wis",
+    "performance": "cha", "persuasion": "cha", "religion": "int",
+    "sleight_of_hand": "dex", "stealth": "dex", "survival": "wis",
+}
+
 
 class MechanicEngine:
     """Executes D&D 5e mechanics deterministically."""
@@ -404,13 +414,48 @@ class MechanicEngine:
         self.results.append(result)
         return result
 
+    def _calculate_skill_modifier(self, character: dict, skill_name: str):
+        """Calculate total skill modifier: ability mod + proficiency (if proficient) + expertise."""
+        stats = character.get("stats") or {}
+        status = character.get("status") or {}
+        prof_bonus = int(status.get("proficiency_bonus", 2) or 2)
+        skill_profs = status.get("skill_proficiencies") or {}
+
+        # Normalize skill name for lookup
+        skill_key = skill_name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+
+        # Handle formats like "Wisdom (Perception)" → "perception"
+        for known_skill in SKILL_ABILITY_MAP:
+            if known_skill in skill_key:
+                skill_key = known_skill
+                break
+
+        # Get ability modifier
+        ability = SKILL_ABILITY_MAP.get(skill_key, "wis")
+        ability_score = int(stats.get(ability, 10) or 10)
+        ability_mod = (ability_score - 10) // 2
+
+        # Check proficiency
+        prof_level = str(skill_profs.get(skill_key, "none")).lower()
+        if prof_level == "expertise":
+            total = ability_mod + (prof_bonus * 2)
+        elif prof_level == "proficient":
+            total = ability_mod + prof_bonus
+        else:
+            total = ability_mod
+
+        return total, ability_mod, prof_bonus, prof_level, ability
+
     def _resolve_skill_check(self, character: dict, roll_data: dict, pending: dict) -> dict:
         """Player rolled a skill check."""
         dc = pending.get("dc", 10)
         raw_roll = roll_data["rolls"][0] if roll_data.get("rolls") else roll_data["result"]
 
-        # TODO: extract modifier from character context based on skill
-        modifier = 0
+        modifier, ability_mod, prof_bonus, prof_level, ability = self._calculate_skill_modifier(
+            character, pending.get("skill", "")
+        )
+
+        total = raw_roll + modifier
 
         result = {
             "action": "skill_check_result",
@@ -418,9 +463,12 @@ class MechanicEngine:
             "skill": pending["skill"],
             "roll": raw_roll,
             "modifier": modifier,
-            "total": raw_roll + modifier,
+            "total": total,
             "dc": dc,
-            "success": (raw_roll + modifier) >= dc if dc else None
+            "success": total >= dc if dc else None,
+            "ability": ability.upper(),
+            "ability_mod": ability_mod,
+            "prof_level": prof_level,
         }
 
         self.results.append(result)
@@ -677,9 +725,15 @@ class MechanicEngine:
                     f" vs DC {r['dc']} → {'SUCCESS' if r['success'] else 'FAIL'}"
                     if r.get("dc") else ""
                 )
+                prof_text = ""
+                pl = r.get("prof_level", "none")
+                if pl == "expertise":
+                    prof_text = " (Expertise)"
+                elif pl == "proficient":
+                    prof_text = " (Proficient)"
                 lines.append(
-                    f"{r['character']} {r['skill']} check: "
-                    f"rolled {r['roll']}+{r['modifier']}={r['total']}{dc_text}"
+                    f"{r['character']} {r['skill']} ({r.get('ability', '?')}) check{prof_text}: "
+                    f"rolled {r['roll']} + {r['modifier']} = {r['total']}{dc_text}"
                 )
 
             elif action == "healing_applied":

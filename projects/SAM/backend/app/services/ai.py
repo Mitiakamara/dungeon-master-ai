@@ -537,6 +537,7 @@ class AIHelper:
             9. **Actions/Bonus/Reactions**: Extract "Actions", "Bonus Actions", and "Reactions" as LISTS of objects: {"name": "Action Name", "description": "Effect"}. Only include SPECIAL or UNIQUE actions. Do NOT list standard actions like Attack, Dash, Dodge, Help, Hide, Ready, Search, Use Object — those are universally available to every character.
             10. **Bio**: "Background/Traits". Summarize into multiple paragraphs separated by "\n\n" for readability.
             11. **Spell Slots**: Extract spell slot totals per level. Format as spell_slots object: {'1': {'total': 4, 'used': 0}, '2': {'total': 3, 'used': 0}, ...}. Set 'used' to 0 by default.
+            12. **Skill Proficiencies**: Extract which skills the character is proficient in, and which have Expertise (double proficiency). Format as skill_proficiencies object with skill names as keys and values of 'proficient', 'expertise', or 'none'. Use the standard 5e skill names: acrobatics, animal_handling, arcana, athletics, deception, history, insight, intimidation, investigation, medicine, nature, perception, performance, persuasion, religion, sleight_of_hand, stealth, survival.
 
             CRITICAL OUTPUT RULES:
             - Output MUST be valid, parseable JSON.
@@ -576,7 +577,8 @@ class AIHelper:
                         "notes": "1d10 Fire"
                     }],
                     "spell_slots": {"1": {"total": 4, "used": 0}, "2": {"total": 3, "used": 0}},
-                    "saving_throws": {"str": false, "dex": false, "con": false, "int": false, "wis": false, "cha": false}
+                    "saving_throws": {"str": false, "dex": false, "con": false, "int": false, "wis": false, "cha": false},
+                    "skill_proficiencies": {"perception": "proficient", "stealth": "expertise", "athletics": "none"}
                 },
                 "bio": "Background...\n\nTrait..."
             }

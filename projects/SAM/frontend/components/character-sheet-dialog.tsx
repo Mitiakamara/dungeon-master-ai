@@ -107,6 +107,7 @@ export function CharacterSheetDialog({ character, open, onOpenChange, onUpdate, 
                     inventory: character.status?.inventory || "",
                     spells: dedupedSpells,
                     spell_slots: character.status?.spell_slots || {},
+                    skill_proficiencies: character.status?.skill_proficiencies || {},
                     money: character.status?.money || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
                     features: character.status?.features || "",
                     saving_throws: character.status?.saving_throws || {}
