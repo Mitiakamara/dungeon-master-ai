@@ -220,7 +220,15 @@ class AdminService:
                 supabase.table("campaigns").update({"settings": {}}).eq("id", cid).execute()
                 print("🧹 Combat state cleared")
 
-            # 4. Broadcast CLEAR_CHAT to all clients via Realtime INSERT
+            # 4. Clear campaign memories
+            if camp_res.data:
+                try:
+                    supabase.table("campaign_memories").delete().eq("campaign_id", cid).execute()
+                    print("🧹 Campaign memories cleared")
+                except Exception as e:
+                    print(f"Warning: Could not clear campaign memories: {e}")
+
+            # 5. Broadcast CLEAR_CHAT to all clients via Realtime INSERT
             if camp_res.data:
                 supabase.table("messages").insert({
                     "role": "system",
@@ -229,7 +237,7 @@ class AdminService:
                     "user_id": user_id,
                 }).execute()
 
-            return f"⚠️ Campaign Reset! {count} characters healed. {messages_deleted} messages deleted. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
+            return f"⚠️ Campaign Reset! {count} characters healed. {messages_deleted} messages deleted. Memories cleared. <ACTION>CLEAR_CHAT</ACTION><ACTION>REFRESH_CHARACTERS</ACTION>"
 
         except Exception as e:
             import traceback
