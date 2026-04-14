@@ -298,7 +298,7 @@ export default function GameLayout() {
     }
 
     return (
-        <div className="flex flex-col md:flex-row h-[100dvh] w-full overflow-hidden bg-background">
+        <div className="flex flex-col md:flex-row h-[100dvh] w-full overflow-hidden bg-background pb-safe">
 
             {/* --- MOBILE HEADER (Visible only on small screens) --- */}
             <header className="flex md:hidden h-14 items-center justify-between border-b px-4 bg-muted/40 shrink-0">

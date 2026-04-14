@@ -865,7 +865,7 @@ export function ChatInterface({
             )}
 
             {/* Input Area */}
-            <div className="py-4 px-4 sm:px-6 border-t bg-background shrink-0 mb-4 sm:mb-2 pb-safe">
+            <div className="py-3 sm:py-4 px-4 sm:px-6 border-t bg-background shrink-0 pb-safe">
                 <form onSubmit={(e) => handleSendMessage(e)} className="flex gap-4">
                     <Input
                         value={input}
