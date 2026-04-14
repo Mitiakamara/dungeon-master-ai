@@ -106,12 +106,6 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
     try:
         user_id = user.get('sub', 'unknown_user')
         msg_clean = request.message.strip()
-
-        # Prevent players from spoofing system events via manual chat input
-        if msg_clean.startswith("[SYSTEM EVENT]"):
-            msg_clean = msg_clean.replace("[SYSTEM EVENT]", "").strip()
-            print(f"⚠️ Stripped spoofed [SYSTEM EVENT] prefix from user {user_id}")
-
         print(f"DEBUG CHAT REQUEST: '{msg_clean}' from {user_id}")
 
         # [PHASE 18] MULTIPLAYER ROUTING
