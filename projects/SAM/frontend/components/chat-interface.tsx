@@ -484,6 +484,7 @@ export function ChatInterface({
         }
 
         if (data) {
+            console.log(`📜 fetchHistory: loaded ${data.length} messages for campaign ${campaignId}`)
             const history: Message[] = data.map((msg: any) => ({
                 id: msg.id,
                 role: msg.role as "user" | "assistant" | "system",
@@ -529,15 +530,21 @@ export function ChatInterface({
                 const now = Date.now()
                 if (now - lastSyncRef.current < 5000) return
                 lastSyncRef.current = now
-                console.log('🔄 Tab visible again, re-syncing messages...')
-                fetchHistory()
+                console.log('🔄 Tab visible again, re-syncing messages (after token refresh delay)...')
                 toast.info('Syncing messages...', { duration: 2000 })
+                // Wait for potential token refresh before re-syncing
+                setTimeout(() => {
+                    fetchHistory()
+                }, 1500)
             }
         }
         const handleOnline = () => {
             if (campaignId) {
-                console.log('🔄 Back online, re-syncing messages...')
-                fetchHistory()
+                console.log('🔄 Back online, re-syncing messages (after token refresh delay)...')
+                // Wait for potential token refresh before re-syncing
+                setTimeout(() => {
+                    fetchHistory()
+                }, 1500)
             }
         }
         document.addEventListener('visibilitychange', handleVisibilityChange)
