@@ -471,11 +471,12 @@ export function ChatInterface({
     const fetchHistory = React.useCallback(async () => {
         if (!campaignId) return
         const supabase = createClient()
+        // Load the LAST 100 messages (newest first), then reverse for chronological display
         const { data, error } = await supabase
             .from('messages')
             .select('*')
             .eq('campaign_id', campaignId)
-            .order('created_at', { ascending: true })
+            .order('created_at', { ascending: false })
             .limit(100)
 
         if (error) {
@@ -485,7 +486,8 @@ export function ChatInterface({
 
         if (data) {
             console.log(`📜 fetchHistory: loaded ${data.length} messages for campaign ${campaignId}`)
-            const history: Message[] = data.map((msg: any) => ({
+            const ordered = [...data].reverse()
+            const history: Message[] = ordered.map((msg: any) => ({
                 id: msg.id,
                 role: msg.role as "user" | "assistant" | "system",
                 content: stripSystemTags(msg.content, msg.role),
