@@ -153,6 +153,22 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                 # Pass user_id so admin commands affect THIS user
                 admin_response = AdminService.handle_command(request.message, user_id)
                 print(f"DEBUG: Admin Response: {admin_response[:50]}...")
+
+                # Persist admin response to messages so it syncs via Realtime.
+                # /reset broadcasts its own CLEAR_CHAT message, so skip it here.
+                if cid and not msg_clean.startswith("/reset"):
+                    try:
+                        sam_brain.supabase.table("messages").insert({
+                            "campaign_id": cid,
+                            "sender_id": None,
+                            "user_id": user_id,
+                            "content": admin_response,
+                            "role": "assistant",
+                            "visibility": "public",
+                        }).execute()
+                    except Exception as db_e:
+                        print(f"WARNING: Admin response insert failed: {db_e}")
+
                 return {
                     "response": admin_response,
                     "image_url": None
