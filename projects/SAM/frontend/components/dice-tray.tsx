@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dices, Minus, Plus, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { authenticatedFetch } from "@/lib/api"
 
 export function DiceTray({ onRoll, characterName }: { onRoll?: (msg: string) => void, characterName?: string }) {
@@ -35,6 +36,9 @@ export function DiceTray({ onRoll, characterName }: { onRoll?: (msg: string) => 
             }
         } catch {
             // Fallback to client-side if backend unreachable
+            toast.warning("⚠️ Dice rolled locally", {
+                description: "El servidor no respondió. Usando tirada local (Math.random).",
+            })
             let total = 0;
             const rolls = [];
             for (let i = 0; i < multiplier; i++) {

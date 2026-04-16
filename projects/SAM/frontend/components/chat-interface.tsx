@@ -659,6 +659,10 @@ export function ChatInterface({
                 })
             })
 
+            if (!res.ok) {
+                throw new Error(`Backend returned ${res.status}`)
+            }
+
             const data = await res.json()
 
             if (data.response) {
