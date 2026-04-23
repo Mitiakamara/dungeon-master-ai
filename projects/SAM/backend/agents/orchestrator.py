@@ -186,6 +186,7 @@ class SAMOrchestrator:
         elif intent["type"] == "start_combat":
             # Player initiated combat — look up monster, roll initiative, start combat
             mechanical_facts = self._handle_start_combat(
+                engine=engine,
                 intent=intent,
                 combat=combat,
                 sender_character=character_context,
@@ -318,7 +319,7 @@ class SAMOrchestrator:
 
         return engine.process_spell(character_context, spell, target)
 
-    def _handle_start_combat(self, intent: dict, combat: CombatState,
+    def _handle_start_combat(self, engine: MechanicEngine, intent: dict, combat: CombatState,
                               sender_character: dict, party_characters: list[dict]) -> str:
         """
         Initialize combat: look up the monster (compendium or fallback),
@@ -372,6 +373,29 @@ class SAMOrchestrator:
             f"Initiative order:\n" + "\n".join(order_lines) + "\n"
             f"→ It's {current_name}'s turn."
         )
+
+        # Auto-resolve NPC/delegated turns if they go first.
+        # advance_first=False because start_combat() just set index=0 and we haven't
+        # consumed anyone's turn yet.
+        first_is_npc = current and current.get("is_npc", False)
+        first_is_delegated = False
+        if current and not first_is_npc:
+            char_name = current.get("name", "")
+            for p in party_characters or []:
+                if p.get("name") == char_name and p.get("controlled_by"):
+                    first_is_delegated = True
+                    break
+
+        if first_is_npc or first_is_delegated:
+            auto_facts = self._resolve_npc_turns(
+                engine=engine,
+                combat=combat,
+                party_characters=party_characters or [],
+                advance_first=False,
+            )
+            if auto_facts:
+                facts += "\n" + auto_facts
+
         return facts
 
     def _lookup_monster(self, target_name: str) -> dict:
@@ -485,12 +509,18 @@ class SAMOrchestrator:
         return engine.process_attack(character_context, weapon, target)
 
     def _resolve_npc_turns(self, engine: MechanicEngine, combat: CombatState,
-                           party_characters: list[dict]) -> str:
-        """Resolve all consecutive NPC turns after a player's turn."""
+                           party_characters: list[dict], advance_first: bool = True) -> str:
+        """
+        Resolve all consecutive NPC turns after a player's turn.
+        advance_first: if True (default), advance past current (player's) turn first.
+        Set to False when called right after combat.start_combat() — the first turn
+        in the initiative order hasn't been consumed yet.
+        """
         npc_facts_lines = []
 
-        # Advance past the current player's turn
-        combat.advance_turn()
+        # Advance past the current player's turn (unless caller already positioned the pointer)
+        if advance_first:
+            combat.advance_turn()
 
         # Keep resolving while it's an NPC's turn
         max_iterations = 20  # Safety valve

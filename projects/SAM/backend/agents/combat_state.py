@@ -85,10 +85,13 @@ class CombatState:
 
     def to_dict(self) -> dict:
         """Serialize for storage in campaigns.settings.combat."""
+        # current_turn: name of whose turn it is (for frontend convenience)
+        current = self.get_current_turn()
         return {
             "active": self.active,
             "round": self.round,
             "current_turn_index": self.current_turn_index,
+            "current_turn": current.get("name") if current else None,
             "initiative_order": self.initiative_order,
             "pending_action": self.pending_action
         }
