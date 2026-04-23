@@ -60,6 +60,8 @@ RULES:
     - Enforce action economy: martial classes at level 5+ get Extra Attack (2 attacks per turn). Otherwise 1 action per turn.
     - When combat ends (all enemies defeated), announce it clearly and describe the aftermath.
     - If the facts contain "Remind the player to declare their action and roll their dice", do exactly that — do NOT narrate an attack that hasn't been rolled.
+    - HP GROUND TRUTH: When the facts contain a "COMBAT STATUS:" block listing HP values (e.g., "Flesh Golem HP: 28/50"), those are the EXACT current HP of every combatant. Quote them verbatim — NEVER invent, round, or extrapolate HP numbers. If the facts say "Flesh Golem HP: 28/50", say "28/50" — not "about 30" or "41/50".
+    - When the facts contain "Initiative rolls:" and multiple <DM_ROLL> tags for initiative, narrate the opening dramatically, state each roll ("Björn a 17, el Golem un 11..."), then announce the order. Preserve the <DM_ROLL> tags verbatim in your response so the player sees the dice badges.
     - Keep combat narration EXTRA concise — max 1 short paragraph per turn resolution.
 
 {dm_style}

@@ -248,9 +248,28 @@ class SAMOrchestrator:
             if prompt_player_roll:
                 mechanical_facts += f"\n→ PROMPT PLAYER: {prompt_player_roll}"
 
-            # Add turn advancement info
+            # Add turn advancement info + combat status (HP ground truth for narrator)
             if combat.active:
                 current = combat.get_current_turn()
+                # Only append COMBAT STATUS if it's not already present (e.g., from _resolve_npc_turns)
+                if "COMBAT STATUS:" not in mechanical_facts:
+                    status_lines = [f"\nCOMBAT STATUS: Round {combat.round}."]
+                    for c in combat.initiative_order:
+                        cname = c.get("name", "?")
+                        chp = c.get("hp", 0)
+                        chp_max = c.get("hp_max", chp)
+                        status_lines.append(f"  {cname} HP: {chp}/{chp_max}")
+                    # Overlay fresh DB HP for players
+                    for p in party_characters or []:
+                        pname = p.get("name", "?")
+                        pstatus = p.get("status") or {}
+                        phc = pstatus.get("hp_current", pstatus.get("hp_max"))
+                        phm = pstatus.get("hp_max", phc)
+                        for i, line in enumerate(status_lines):
+                            if line.strip().startswith(f"{pname} HP:"):
+                                status_lines[i] = f"  {pname} HP: {phc}/{phm}"
+                                break
+                    mechanical_facts += "\n" + "\n".join(status_lines)
                 if current:
                     mechanical_facts += f"\n→ Current turn: {current['name']}"
 
@@ -333,6 +352,8 @@ class SAMOrchestrator:
 
         # ─── Build initiative combatants ───
         combatants = []
+        init_dm_rolls = []       # <DM_ROLL> tags for the narrative
+        init_breakdown = []      # human-readable breakdown for narrator
 
         # Players: use dex mod for initiative, roll 1d20 + dex_mod
         for pc in party_characters or []:
@@ -341,19 +362,44 @@ class SAMOrchestrator:
             dex = int(stats.get("dex", 10) or 10)
             dex_mod = (dex - 10) // 2
             init_roll = DiceRoller.roll(20)
+            total = init_roll + dex_mod
+            name = pc.get("name", "Unknown")
             combatants.append({
-                "name": pc.get("name", "Unknown"),
+                "name": name,
                 "is_npc": False,
-                "initiative": init_roll + dex_mod,
+                "initiative": total,
                 "initiative_roll": init_roll,
                 "initiative_modifier": dex_mod,
                 "hp": status.get("hp_current", status.get("hp_max", 10)),
                 "hp_max": status.get("hp_max", 10),
                 "ac": status.get("ac", 10),
             })
+            mod_str = f"+{dex_mod}" if dex_mod >= 0 else str(dex_mod)
+            init_dm_rolls.append(
+                f"<DM_ROLL>{json.dumps({'result': total, 'roll': f'1d20{mod_str}', 'reason': f'{name} Initiative'})}</DM_ROLL>"
+            )
+            init_breakdown.append(f"{name} rolled {init_roll}{mod_str} = {total}")
 
-        # NPC: single monster for now
+        # NPC: single monster — pre-roll initiative so we can emit a DM_ROLL tag
+        npc_init_mod = int(monster.get("initiative_modifier", 0) or 0)
+        npc_init_roll = DiceRoller.roll(20)
+        npc_total = npc_init_roll + npc_init_mod
+        monster["initiative"] = npc_total
+        monster["initiative_roll"] = npc_init_roll
+        monster["initiative_modifier"] = npc_init_mod
         combatants.append(monster)
+        mod_str = f"+{npc_init_mod}" if npc_init_mod >= 0 else str(npc_init_mod)
+        monster_name = monster.get("name", "Enemy")
+        init_dm_rolls.append(
+            "<DM_ROLL>"
+            + json.dumps({
+                "result": npc_total,
+                "roll": f"1d20{mod_str}",
+                "reason": f"{monster_name} Initiative",
+            })
+            + "</DM_ROLL>"
+        )
+        init_breakdown.append(f"{monster_name} rolled {npc_init_roll}{mod_str} = {npc_total}")
 
         # Start combat — sorts by initiative, sets active=True, round=1
         combat.start_combat(combatants)
@@ -370,6 +416,9 @@ class SAMOrchestrator:
         facts = (
             f"COMBAT STARTED! {sender_character.get('name', 'A player')} initiated combat "
             f"against {monster['name']} (AC {monster['ac']}, HP {monster['hp']}).\n"
+            f"SAM rolled initiative for all combatants. Announce dramatically and list each roll, then the turn order.\n"
+            f"Initiative rolls:\n  " + "\n  ".join(init_breakdown) + "\n"
+            + "\n".join(init_dm_rolls) + "\n"
             f"Initiative order:\n" + "\n".join(order_lines) + "\n"
             f"→ It's {current_name}'s turn."
         )
@@ -665,6 +714,30 @@ class SAMOrchestrator:
 
             combat.advance_turn()
             iterations += 1
+
+        # Inject COMBAT STATUS — exact HP for every combatant.
+        # The narrator reads this as ground truth and must NOT invent numbers.
+        status_lines = [f"\nCOMBAT STATUS: Round {combat.round}."]
+        for c in combat.initiative_order:
+            cname = c.get("name", "?")
+            chp = c.get("hp", 0)
+            chp_max = c.get("hp_max", chp)
+            status_lines.append(f"  {cname} HP: {chp}/{chp_max}")
+        # Include player HP from party_characters (source of truth: nested status dict)
+        for p in party_characters or []:
+            pname = p.get("name", "?")
+            # Skip if already in initiative_order (avoid duplicate listing)
+            if any(c.get("name") == pname and not c.get("is_npc") for c in combat.initiative_order):
+                # Overwrite with DB-fresh HP (combat.initiative_order may be stale after attacks)
+                pstatus = p.get("status") or {}
+                phc = pstatus.get("hp_current", pstatus.get("hp_max"))
+                phm = pstatus.get("hp_max", phc)
+                # Replace the stale line
+                for i, line in enumerate(status_lines):
+                    if line.strip().startswith(f"{pname} HP:"):
+                        status_lines[i] = f"  {pname} HP: {phc}/{phm}"
+                        break
+        npc_facts_lines.append("\n".join(status_lines))
 
         # Report whose turn it is now
         next_turn = combat.get_current_turn()
