@@ -520,7 +520,13 @@ class MechanicEngine:
             }
 
             if hit_result["hit"]:
-                damage_dice = attack.get("damage", "1d6")
+                damage_dice_raw = attack.get("damage", "1d6")
+                # Strip damage type suffix — "2d10 fire" → dice="2d10", type="fire"
+                # "1d6+2 slashing" → dice="1d6+2", type="slashing"
+                dice_tokens = str(damage_dice_raw).strip().split()
+                damage_dice = dice_tokens[0] if dice_tokens else "1d6"
+                damage_type = " ".join(dice_tokens[1:]) if len(dice_tokens) > 1 else ""
+
                 damage_mod = 0
                 if "+" in damage_dice:
                     parts = damage_dice.split("+")
@@ -531,8 +537,12 @@ class MechanicEngine:
                         pass
 
                 dice_parts = damage_dice.lower().split("d")
-                count = int(dice_parts[0]) if dice_parts[0] else 1
-                sides = int(dice_parts[1]) if len(dice_parts) > 1 else 6
+                try:
+                    count = int(dice_parts[0]) if dice_parts[0] else 1
+                    sides = int(dice_parts[1]) if len(dice_parts) > 1 else 6
+                except ValueError:
+                    # Malformed dice string — safe fallback
+                    count, sides = 1, 6
 
                 if hit_result["critical"]:
                     count *= 2
@@ -541,6 +551,8 @@ class MechanicEngine:
                 atk_result["damage"] = damage_result["total"]
                 atk_result["damage_rolls"] = damage_result["rolls"]
                 atk_result["damage_modifier"] = damage_mod
+                atk_result["damage_type"] = damage_type
+                atk_result["damage_spec"] = f"{count}d{sides}" + (f"+{damage_mod}" if damage_mod > 0 else (str(damage_mod) if damage_mod < 0 else ""))
 
                 target_name = target["name"]
                 total_damage_to_target[target_name] = (
@@ -646,18 +658,28 @@ class MechanicEngine:
         return "1d8"  # Safe default
 
     def _double_dice(self, damage_notation: str) -> str:
-        """Double dice for critical hits. '1d8+2' -> '2d8+2'."""
-        parts = damage_notation.split("+")
+        """Double dice for critical hits. '1d8+2' -> '2d8+2'. '2d10 fire' -> '4d10 fire'."""
+        # Strip damage type suffix first (e.g., "2d10 fire", "1d6+2 slashing")
+        tokens = str(damage_notation).strip().split()
+        dice_expr = tokens[0] if tokens else "1d6"
+        damage_type = " ".join(tokens[1:]) if len(tokens) > 1 else ""
+
+        parts = dice_expr.split("+")
         dice = parts[0].strip()
         modifier = parts[1].strip() if len(parts) > 1 else None
 
         dice_parts = dice.lower().split("d")
-        count = int(dice_parts[0]) if dice_parts[0] else 1
-        sides = dice_parts[1] if len(dice_parts) > 1 else "6"
+        try:
+            count = int(dice_parts[0]) if dice_parts[0] else 1
+            sides = dice_parts[1] if len(dice_parts) > 1 else "6"
+        except ValueError:
+            count, sides = 1, "6"
 
         doubled = f"{count * 2}d{sides}"
         if modifier:
             doubled += f"+{modifier}"
+        if damage_type:
+            doubled += f" {damage_type}"
         return doubled
 
     def get_results_summary(self) -> str:
@@ -709,8 +731,10 @@ class MechanicEngine:
                     f"vs AC {r['target_ac']} → {hit_text}"
                 )
                 if r.get("damage"):
+                    dmg_type = r.get("damage_type", "")
+                    type_suffix = f" {dmg_type}" if dmg_type else ""
                     lines.append(
-                        f"  Damage: {r['damage_rolls']} + {r.get('damage_modifier', 0)} = {r['damage']} total"
+                        f"  Damage: {r['damage_rolls']} + {r.get('damage_modifier', 0)} = {r['damage']}{type_suffix} total"
                     )
 
             elif action == "damage_applied":

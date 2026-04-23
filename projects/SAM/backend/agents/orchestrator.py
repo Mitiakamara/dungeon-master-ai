@@ -570,14 +570,34 @@ class SAMOrchestrator:
                 for r in results:
                     if r.get("action") == "npc_attack":
                         hit = "CRITICAL!" if r.get("critical") else "HIT!" if r["hit"] else "MISS"
+                        # Emit DM_ROLL tag for attack roll (frontend renders as dice badge)
+                        modifier = r.get('modifier', 0)
+                        mod_str = f"+{modifier}" if modifier >= 0 else str(modifier)
+                        attack_roll_tag = json.dumps({
+                            "result": r['total'],
+                            "roll": f"1d20{mod_str}",
+                            "reason": f"{r['attacker']} attacks {r['target']} ({r['weapon']}) → {hit}",
+                        })
+                        npc_facts_lines.append(f"<DM_ROLL>{attack_roll_tag}</DM_ROLL>")
                         npc_facts_lines.append(
                             f"{r['attacker']} attacks {r['target']} with {r['weapon']}: "
                             f"rolled {r['attack_roll']}+{r['modifier']}={r['total']} "
                             f"vs AC {r['target_ac']} → {hit}"
                         )
                         if r.get("damage"):
+                            dmg_type = r.get("damage_type", "")
+                            type_suffix = f" {dmg_type}" if dmg_type else ""
+                            # Emit DM_ROLL tag for damage roll
+                            damage_rolls = r.get('damage_rolls', [])
+                            damage_spec = r.get('damage_spec', 'damage')
+                            damage_tag = json.dumps({
+                                "result": r['damage'],
+                                "roll": damage_spec,
+                                "reason": f"{r['attacker']} damage{type_suffix}",
+                            })
+                            npc_facts_lines.append(f"<DM_ROLL>{damage_tag}</DM_ROLL>")
                             npc_facts_lines.append(
-                                f"  Damage: {r['damage']} ({r.get('damage_rolls', [])})"
+                                f"  Damage: {r['damage']}{type_suffix} (rolls: {damage_rolls})"
                             )
                     elif r.get("action") == "damage_applied":
                         npc_facts_lines.append(
