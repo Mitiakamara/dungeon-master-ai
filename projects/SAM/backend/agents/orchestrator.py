@@ -183,9 +183,30 @@ class SAMOrchestrator:
                     "qty": 1,
                 })
 
+        elif intent["type"] == "start_combat":
+            # Player initiated combat — look up monster, roll initiative, start combat
+            mechanical_facts = self._handle_start_combat(
+                intent=intent,
+                combat=combat,
+                sender_character=character_context,
+                party_characters=party_characters,
+            )
+
         elif intent["type"] in ("roleplay", "movement", "free_action", "ability"):
             # No mechanics — pure narration
-            mechanical_facts = ""
+            # BUT: if combat is active, remind the player whose turn it is
+            if combat.active:
+                current = combat.get_current_turn()
+                if current:
+                    turn_name = current.get("name", "?")
+                    mechanical_facts = (
+                        f"Combat is active. It's {turn_name}'s turn. "
+                        f"Remind the player to declare their action and roll their dice."
+                    )
+                else:
+                    mechanical_facts = ""
+            else:
+                mechanical_facts = ""
 
         # Warning if a dice roll happened but no state updates were generated
         if intent["type"] == "dice_roll" and not engine.state_updates:
@@ -296,6 +317,154 @@ class SAMOrchestrator:
             return {"action": "error", "message": f"Target '{target_name}' not found"}
 
         return engine.process_spell(character_context, spell, target)
+
+    def _handle_start_combat(self, intent: dict, combat: CombatState,
+                              sender_character: dict, party_characters: list[dict]) -> str:
+        """
+        Initialize combat: look up the monster (compendium or fallback),
+        roll initiative for everyone, set combat state.
+        Returns mechanical_facts string for the narrator.
+        """
+        target_name = (intent.get("target") or "enemy").strip()
+
+        # ─── Lookup monster via compendium (structured data) ───
+        monster = self._lookup_monster(target_name)
+
+        # ─── Build initiative combatants ───
+        combatants = []
+
+        # Players: use dex mod for initiative, roll 1d20 + dex_mod
+        for pc in party_characters or []:
+            status = pc.get("status") or {}
+            stats = status.get("stats") or {}
+            dex = int(stats.get("dex", 10) or 10)
+            dex_mod = (dex - 10) // 2
+            init_roll = DiceRoller.roll(20)
+            combatants.append({
+                "name": pc.get("name", "Unknown"),
+                "is_npc": False,
+                "initiative": init_roll + dex_mod,
+                "initiative_roll": init_roll,
+                "initiative_modifier": dex_mod,
+                "hp": status.get("hp_current", status.get("hp_max", 10)),
+                "hp_max": status.get("hp_max", 10),
+                "ac": status.get("ac", 10),
+            })
+
+        # NPC: single monster for now
+        combatants.append(monster)
+
+        # Start combat — sorts by initiative, sets active=True, round=1
+        combat.start_combat(combatants)
+
+        # Build facts for narrator
+        order_lines = []
+        for i, c in enumerate(combat.initiative_order, 1):
+            label = "(NPC)" if c.get("is_npc") else "(Player)"
+            order_lines.append(f"  {i}. {c['name']} {label} — initiative {c['initiative']}")
+
+        current = combat.get_current_turn()
+        current_name = current.get("name", "?") if current else "?"
+
+        facts = (
+            f"COMBAT STARTED! {sender_character.get('name', 'A player')} initiated combat "
+            f"against {monster['name']} (AC {monster['ac']}, HP {monster['hp']}).\n"
+            f"Initiative order:\n" + "\n".join(order_lines) + "\n"
+            f"→ It's {current_name}'s turn."
+        )
+        return facts
+
+    def _lookup_monster(self, target_name: str) -> dict:
+        """
+        Look up a monster by name from the compendium. Returns structured
+        combat data. Falls back to generic stats if not found.
+        """
+        fallback = {
+            "name": target_name or "Enemy",
+            "is_npc": True,
+            "hp": 50,
+            "hp_max": 50,
+            "ac": 15,
+            "attacks": [{"name": "Attack", "bonus": "+5", "damage": "1d8+3"}],
+            "cr": 3,
+            "initiative_modifier": 0,
+        }
+
+        if not self.knowledge or not target_name:
+            return fallback
+
+        try:
+            # Use supabase directly for structured row access (knowledge.search_monster returns text)
+            supabase = self.knowledge.supabase
+            vector = self.knowledge._embed(target_name)
+            res = supabase.rpc("match_compendium", {
+                "query_embedding": vector,
+                "match_threshold": 0.5,
+                "match_count": 1,
+                "table_name": "monsters",
+            }).execute()
+
+            rows = res.data if res and res.data else []
+            if not rows:
+                return fallback
+
+            # The match_compendium RPC returns {content, similarity, ...}.
+            # We need the actual monster row. Re-fetch by name for structured data.
+            top = rows[0]
+            content = top.get("content", "")
+            # Try to extract the monster name from content and query the monsters table directly
+            name_guess = content.split(":")[0].split("\n")[0].strip() if content else target_name
+
+            name_res = supabase.table("monsters").select(
+                "name, ac, hp, cr, stats, actions"
+            ).ilike("name", name_guess).limit(1).execute()
+
+            monster_rows = name_res.data if name_res and name_res.data else []
+            if not monster_rows:
+                # Fallback match by target_name directly
+                alt_res = supabase.table("monsters").select(
+                    "name, ac, hp, cr, stats, actions"
+                ).ilike("name", f"%{target_name}%").limit(1).execute()
+                monster_rows = alt_res.data if alt_res and alt_res.data else []
+
+            if not monster_rows:
+                return fallback
+
+            m = monster_rows[0]
+
+            # Parse attacks from actions jsonb
+            attacks = []
+            actions = m.get("actions") or []
+            if isinstance(actions, list):
+                for a in actions:
+                    if isinstance(a, dict):
+                        attacks.append({
+                            "name": a.get("name", "Attack"),
+                            "bonus": a.get("bonus", "+3"),
+                            "damage": a.get("damage", "1d6+1"),
+                        })
+
+            if not attacks:
+                attacks = [{"name": "Attack", "bonus": "+3", "damage": "1d6+1"}]
+
+            # Dex modifier for initiative
+            stats = m.get("stats") or {}
+            dex = int(stats.get("dex", 10) or 10)
+            init_mod = (dex - 10) // 2
+
+            return {
+                "name": m.get("name", target_name),
+                "is_npc": True,
+                "hp": int(m.get("hp", 50) or 50),
+                "hp_max": int(m.get("hp", 50) or 50),
+                "ac": int(m.get("ac", 15) or 15),
+                "attacks": attacks,
+                "cr": m.get("cr", 3),
+                "initiative_modifier": init_mod,
+            }
+        except Exception as e:
+            print(f"⚠️ Monster lookup failed for '{target_name}': {e}")
+            return fallback
 
     def _handle_attack(self, engine: MechanicEngine, intent: dict,
                        character_context: dict, combat: CombatState) -> dict:

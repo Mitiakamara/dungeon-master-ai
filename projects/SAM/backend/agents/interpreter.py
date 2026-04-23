@@ -69,10 +69,27 @@ Common healing potions:
 9. Self-damage or environmental damage (player hurts themselves, falls, triggers a trap, etc.):
 {{"type": "self_damage", "description": "cutting myself with a knife", "damage_dice": "1d4"}}
 
+10. Start combat (ONLY when in_combat=False and player initiates aggression against an enemy):
+{{"type": "start_combat", "target": "Iron Golem", "description": "I attack the iron golem with my sword"}}
+
+Examples of start_combat triggers (when in_combat=False):
+- "Ataco al golem" / "I attack the golem"
+- "Le lanzo una flecha al orco" / "I shoot an arrow at the orc"
+- "Cargo contra la criatura" / "I charge at the creature"
+- "Inicio combate con el dragón" / "I initiate combat with the dragon"
+- "Lucho contra el monstruo" / "I fight the monster"
+- "Saco mi espada y ataco" / "I draw my sword and attack"
+
+Extract the enemy target name from the message. If no specific enemy is named but aggression is clear, use "target": "enemy".
+
+CRITICAL: If in_combat=True, NEVER use "start_combat". Use "attack", "spell", or "dice_roll" instead.
+
 RULES:
 - If the player names a spell, match it to their spell list. If not found, use closest match.
 - If the player says "attack" without specifying a weapon, use their first available weapon.
 - If target is ambiguous and there's only one enemy, use that enemy.
+- If the player initiates an attack and in_combat=False, use "start_combat" (not "attack").
+- If in_combat=True and the player attacks, use "attack" (combat already active).
 - If you can't determine the action type, use "roleplay".
 - NEVER add fields that aren't in the templates above.
 - ALWAYS respond with valid JSON only.
