@@ -398,6 +398,63 @@ class SAMOrchestrator:
 
         return facts
 
+    def _flatten_player_for_combat(self, char: dict) -> dict:
+        """
+        Flatten a DB character row into the shape MechanicEngine expects as a target.
+        Player rows store hp_current/hp_max/ac inside status; mechanic reads them top-level.
+        """
+        status = char.get("status") or {}
+        hp_current = status.get("hp_current", status.get("hp", 0))
+        return {
+            **char,  # keep id, user_id, etc. for downstream use
+            "name": char.get("name", "Unknown"),
+            "hp": hp_current,
+            "hp_current": hp_current,
+            "hp_max": status.get("hp_max", hp_current),
+            "ac": status.get("ac", 10),
+            "is_npc": False,
+        }
+
+    def _build_combatant_from_character(self, char: dict) -> dict:
+        """
+        Build the attacker shape (used by MechanicEngine.resolve_npc_turn) from a real
+        player character. Used when a delegated PC acts on its own turn.
+        Attacks come from status.attacks; fallback to a proficiency-based unarmed strike.
+        """
+        status = char.get("status") or {}
+        stats = status.get("stats") or {}
+        level = int(char.get("level", 1) or 1)
+        prof = 2 + (level - 1) // 4  # D&D 5e proficiency: +2 at 1-4, +3 at 5-8, ...
+
+        # Best ability mod for attack fallback (use max of STR/DEX)
+        def mod(val: int) -> int:
+            return (int(val or 10) - 10) // 2
+        str_mod = mod(stats.get("str", 10))
+        dex_mod = mod(stats.get("dex", 10))
+        best_mod = max(str_mod, dex_mod)
+
+        attacks = status.get("attacks") or []
+        if not attacks:
+            # Fallback: use the character's best modifier + proficiency bonus
+            bonus = best_mod + prof
+            bonus_str = f"+{bonus}" if bonus >= 0 else str(bonus)
+            dmg_mod_str = f"+{best_mod}" if best_mod > 0 else (str(best_mod) if best_mod < 0 else "")
+            attacks = [{
+                "name": "Unarmed Strike",
+                "bonus": bonus_str,
+                "damage": f"1d4{dmg_mod_str}",
+            }]
+
+        hp_current = status.get("hp_current", status.get("hp", 10))
+        return {
+            "name": char.get("name", "Unknown"),
+            "is_npc": True,  # structural: acts like an NPC for the engine
+            "hp": hp_current,
+            "hp_max": status.get("hp_max", hp_current),
+            "ac": status.get("ac", 10),
+            "attacks": attacks,
+        }
+
     def _lookup_monster(self, target_name: str) -> dict:
         """
         Look up a monster by name from the compendium. Returns structured
@@ -543,28 +600,28 @@ class SAMOrchestrator:
                     # Real player turn — stop resolving
                     break
 
+            # Build combat-ready lists for both sides
+            player_names_in_combat = {c["name"] for c in combat.initiative_order if not c.get("is_npc")}
+            players_in_combat = [
+                self._flatten_player_for_combat(p)
+                for p in party_characters
+                if p.get("name") in player_names_in_combat
+            ]
+            npcs_in_combat = [c for c in combat.initiative_order if c.get("is_npc") and c.get("hp", 0) > 0]
+
             # Resolve NPC turn (or delegated player turn)
             if delegated_char:
-                status = delegated_char.get("status", {}) or {}
-                attacks = status.get("attacks") or [{"name": "Unarmed Strike", "bonus": "+2", "damage": "1d4"}]
-                npc_data = {
-                    "name": delegated_char.get("name", "Unknown"),
-                    "is_npc": True,
-                    "hp": status.get("hp_current", 10),
-                    "hp_max": status.get("hp_max", 10),
-                    "ac": status.get("ac", 10),
-                    "attacks": attacks,
-                }
+                attacker_data = self._build_combatant_from_character(delegated_char)
+                # Delegated PC attacks NPCs (enemies), NOT players (allies)
+                targets = npcs_in_combat
                 npc_facts_lines.append(f"\n--- {delegated_char.get('name', 'Unknown')}'s turn (SAM-controlled) ---")
             else:
-                npc_data = current
-            players_in_combat = [
-                p for p in party_characters
-                if p.get("name") in [c["name"] for c in combat.initiative_order if not c.get("is_npc")]
-            ]
+                attacker_data = current
+                # Real NPC attacks players
+                targets = players_in_combat
 
-            if players_in_combat:
-                results = engine.resolve_npc_turn(npc_data, players_in_combat)
+            if targets:
+                results = engine.resolve_npc_turn(attacker_data, targets)
                 if not delegated_char:
                     npc_facts_lines.append(f"\n--- {current['name']}'s turn ---")
                 for r in results:
@@ -612,7 +669,18 @@ class SAMOrchestrator:
         # Report whose turn it is now
         next_turn = combat.get_current_turn()
         if next_turn and not next_turn.get("is_npc"):
-            npc_facts_lines.append(f"\n→ It's now {next_turn['name']}'s turn.")
+            name = next_turn['name']
+            npc_facts_lines.append(f"\n→ It's now {name}'s turn.")
+            # Inject weapon cheat-sheet so narrator asks for correct damage dice
+            pc = next((p for p in (party_characters or []) if p.get("name") == name), None)
+            if pc:
+                weapons = (pc.get("status") or {}).get("attacks") or []
+                if weapons:
+                    weapon_lines = [
+                        f"    - {w.get('name', '?')}: to-hit {w.get('bonus', '?')}, damage {w.get('damage', '?')}"
+                        for w in weapons[:6]
+                    ]
+                    npc_facts_lines.append(f"  {name}'s available attacks:\n" + "\n".join(weapon_lines))
 
         return "\n".join(npc_facts_lines)
 

@@ -499,7 +499,9 @@ class MechanicEngine:
         for attack in attacks:
             bonus = 0
             try:
-                bonus = int(str(attack.get("bonus", "+0")).replace("+", ""))
+                raw_bonus = str(attack.get("bonus", "+0")).strip()
+                # Handles "+5", "-1", "5", " +3 " correctly
+                bonus = int(raw_bonus.replace("+", "").strip())
             except Exception:
                 pass
 
@@ -565,9 +567,24 @@ class MechanicEngine:
         for target_name, total_dmg in total_damage_to_target.items():
             target_char = next((p for p in players if p["name"] == target_name), None)
             if target_char:
-                hp_current = target_char.get("hp_current", target_char.get("hp", 0))
-                hp_max = target_char.get("hp_max", hp_current)
-                hp_result = calculate_hp_change(hp_current, total_dmg, hp_max)
+                # Read HP from top-level fields; fall back to nested "status" dict
+                # (raw DB character rows store these inside status).
+                status = target_char.get("status") or {}
+                hp_current = (
+                    target_char.get("hp_current")
+                    if target_char.get("hp_current") is not None
+                    else status.get("hp_current",
+                         target_char.get("hp", status.get("hp_max", 0)))
+                )
+                hp_max = (
+                    target_char.get("hp_max")
+                    if target_char.get("hp_max") is not None
+                    else status.get("hp_max", hp_current or 0)
+                )
+                # Treat missing hp_max as at least current hp (guard against 0/0 state)
+                if not hp_max or hp_max < (hp_current or 0):
+                    hp_max = hp_current or 0
+                hp_result = calculate_hp_change(hp_current or 0, total_dmg, hp_max)
 
                 self.state_updates.append({
                     "type": "player_hp",

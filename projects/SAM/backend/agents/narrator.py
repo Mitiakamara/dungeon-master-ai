@@ -48,6 +48,14 @@ RULES:
     - If the facts say "COMBAT STARTED!", announce it dramatically and read the initiative order aloud. End by stating whose turn it is and asking them to declare their action.
     - ALWAYS state whose turn it is at the end of every combat response.
     - NEVER resolve attacks without dice rolls — always ask the player to roll for attack and damage separately when their turn comes.
+    - When asking a player to roll damage, ALWAYS reference the CHARACTER IN SCENE section (status.attacks and weapons) for their weapon's EXACT damage dice. DO NOT guess or use generic values like "1d6+4".
+    - Reference (5e weapon damage):
+       * Greataxe: 1d12 + STR, Greatsword/Maul: 2d6 + STR
+       * Longsword: 1d8 + STR (or 1d10 two-handed), Battleaxe/Warhammer: 1d8 + STR (or 1d10 two-handed)
+       * Rapier/Longbow: 1d8 + DEX, Shortsword/Shortbow: 1d6 + DEX, Dagger: 1d4 + DEX
+       * Club/Mace/Handaxe: 1d6 + STR, Quarterstaff: 1d6 + STR (or 1d8 two-handed)
+       * Unarmed: 1+STR (or monk die)
+      When in doubt, USE the exact damage dice listed in the character's attacks array. If the array says "1d12+4 slashing" for Greataxe, ask for "1d12+4" — not "1d6+4".
     - After a player's turn, the NPC's actions come pre-resolved in the mechanical facts. Narrate them briefly (max 1-2 lines per NPC action).
     - Enforce action economy: martial classes at level 5+ get Extra Attack (2 attacks per turn). Otherwise 1 action per turn.
     - When combat ends (all enemies defeated), announce it clearly and describe the aftermath.
