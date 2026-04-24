@@ -28,7 +28,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-010 | Vercel Root Directory config | CHORE | P3 | OPEN |
 | SAM-011 | Commlink Realtime + auto-mark-as-read | FEAT | P2 | OPEN |
 | SAM-012 | Quitar console.logs de debug (presence tracking) | CHORE | P3 | OPEN |
-| SAM-013 | Narrator inventa números en iniciativa (no respeta DM_ROLL tag) | BUG | P1 | OPEN |
+| SAM-013 | Narrator inventa números en iniciativa (no respeta DM_ROLL tag) | BUG | P1 | DONE |
 
 ---
 
@@ -172,20 +172,6 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 
 ---
 
-### SAM-013 — Narrator inventa números en iniciativa
-
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
-
-El narrator viola la ground truth de los DM_ROLL tags. En el último playtest, el DM_ROLL del enemy dice `"result": 5` pero el texto dice "la criatura se mueve con un 9" y el orden de iniciativa listado fue "Vex (13), la criatura (9), Björn (5)".
-
-La RULE 16 del narrator ya tiene el principio de HP ground truth pero no lo extiende a initiative.
-
-**Archivos afectados:** `backend/agents/narrator.py` (RULE 16).
-
-**Enfoque propuesto:** agregar bullet explícito a RULE 16 — "Initiative results in DM_ROLL tags are GROUND TRUTH. When narrating the order, quote the exact `result` from each tag. Never invent or round initiative numbers. The narrated number and the chip number MUST match."
-
-**Criterio de done:** en combates de prueba, el número en el chip y el número en la narración de iniciativa coinciden siempre.
-
 ---
 
 ## Tickets cerrados
@@ -195,3 +181,9 @@ La RULE 16 del narrator ya tiene el principio de HP ground truth pero no lo exti
 **Tipo:** FEAT · **Prio:** P0 · **Estado:** DONE · **Commit:** `839ba73`
 
 Implementado en instrucción 209. Turn guard bloquea acciones fuera de turno; Extra Attack para martials ≥ lvl 5 respetado via `actions_remaining` + `consume_action()` + `turn_is_over()`. Detalle completo en `SAM_progress_log.md`.
+
+### SAM-013 — Narrator inventa números en iniciativa
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `738f85f`
+
+Implementado en instrucción 212. RULE 16 del narrator reforzada con "INITIATIVE GROUND TRUTH" — el `result` dentro de cada `<DM_ROLL>` es autoritativo, prosa y turn order deben citar números exactos, ties se resuelven por orden listado en los facts. Detalle en `SAM_progress_log.md`.

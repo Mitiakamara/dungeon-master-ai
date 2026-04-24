@@ -609,6 +609,129 @@ e189447 fix: stabilize Realtime subscriptions — useRef for Supabase client
 **Bug fix posterior — auto-refresh character no funcionaba (commit `f48bb55`):**
 La primera implementación creó un `useRealtime` separado en `game-layout.tsx` para escuchar `messages.INSERT`. Resultó conflictivo con el `useRealtime` ya existente en `chat-interface.tsx` para la misma tabla — Supabase no garantiza routing limpio cuando un mismo cliente se subscribe dos veces al mismo table con filtros distintos, y el `createClient()` en cada render del hook causa re-subscriptions agresivas. Fix: eliminar el listener duplicado y reusar el de `chat-interface.tsx` via callback prop `onSamMessageReceived?: () => void`. Cuando el listener procesa un mensaje con `role === 'assistant'`, llama el callback que dispara `setTimeout(fetchCharacterData, 1500)` en `game-layout.tsx`. Una sola subscription, callback con deps frescas via `useCallback`.
 
+### Sesión 23-24 Abr 2026 — Combat System: Trigger, Bug Fixes, Visible Initiative, HP Ground Truth
+
+**Contexto:** El orchestrator tenía toda la infraestructura de combate (`CombatState`, `_resolve_npc_turns`, `resolve_npc_turn`, `DiceRoller`) desde la Sesión 26 Mar, pero nunca se activaba en el nuevo flujo multi-agente. Esta sesión implementa el trigger completo y resuelve 10+ bugs detectados en playtest.
+
+**Fase 1 — Trigger y Monster Lookup (`6673cd0`):**
+1. **Intent `start_combat`** — Nuevo tipo en `interpreter.py`. Solo se activa cuando `in_combat=False`. Detecta lenguaje agresivo EN/ES ("ataco al golem", "I charge at the creature", "saco mi espada"). Extrae `target` del mensaje. Si `in_combat=True`, el interpreter usa `"attack"` en vez de `"start_combat"`.
+2. **`_handle_start_combat()`** — En `orchestrator.py`. Rola iniciativa para todos los PCs (1d20 + dex_mod) y NPC, llama `combat.start_combat()`, emite facts con orden de iniciativa.
+3. **`_lookup_monster()`** — Busca monstruo via `match_compendium` RPC (embedding con nombre del target), luego re-query directo a tabla `monsters` por nombre para obtener datos estructurados (hp, ac, cr, stats, actions → attacks). Fallback genérico `{hp:50, ac:15, attacks: [{bonus:"+5", damage:"1d8+3"}], cr:3}` si no se encuentra.
+4. **Combat reminder** — Si `combat.active` y el intent es roleplay/movement/free_action/ability, inyecta fact "It's X's turn. Remind the player to declare their action and roll their dice." El narrator ya no puede resolver ataques narrativos sin dados.
+5. **Narrator RULE 16** — Reglas de combate: anunciar iniciativa dramáticamente, siempre decir de quién es el turno, NUNCA resolver ataques sin dados, narración ≤1 párrafo por turno, enforce Extra Attack a nivel 5+.
+
+**Fase 2 — Auto-resolver primer turno + Frontend contract (`255681d`):**
+- **Bug 1:** Si el primer turno en initiative order era de un NPC o player delegado (`controlled_by != None`), el combate se congelaba porque nadie rolaba. **Fix:** `_resolve_npc_turns` acepta `advance_first` (default `True`). El flujo de `dice_roll` sigue usando el default; `_handle_start_combat` llama con `advance_first=False` cuando el primer combatiente es NPC o delegado.
+- **Bug 2:** Frontend `chat-interface.tsx` leía `combatState.current_turn` (string con nombre) pero `CombatState.to_dict()` solo exponía `current_turn_index`. Placeholder mostraba "undefined's turn". **Fix:** `to_dict()` ahora incluye `current_turn: <name>` derivado de `get_current_turn()`.
+
+**Fase 3 — Damage parser + DM_ROLL emission (`88c6d34`):**
+- **Bug:** `resolve_npc_turn` y `_double_dice` crasheaban con damage strings que incluyen damage type (ej: `"2d10 fire"`, `"1d6+2 slashing"`). El parser hacía `split("d")` sobre el string completo → `int("10 fire")` crasheaba.
+- **Fix:** Tokenizar con `split()` (whitespace) primero. Primer token = dice expression (`"2d10"`, `"1d6+2"`), resto = damage type (`"fire"`, `"slashing"`). Aplicado en ambos lugares. Guard `ValueError` con fallback a `1d6` si malformed. Nuevos campos `damage_type` y `damage_spec` en el resultado del attack.
+- **DM_ROLL para NPC attacks:** `_resolve_npc_turns` ahora emite `<DM_ROLL>` tags para attack roll Y damage roll en formato frontend: `{"result", "roll", "reason"}`. Matchea el renderer existente en `chat-interface.tsx` línea 745.
+- **Narrator RULE 9 split:** 9 sigue prohibiendo inventar tags XML; 9a requiere preservar `<DM_ROLL>` verbatim cuando viene en MECHANICAL FACTS. Sin esto, el narrator los stripearía.
+
+**Fase 4 — Delegated PCs + HP updates (`d1613fa`):**
+- **Bug 1 (CRÍTICO):** Personajes delegados (`controlled_by != None`) atacaban a sus propios aliados en vez de los enemigos. `_resolve_npc_turns` pasaba `players_in_combat` como targets sin importar quién atacaba. **Fix:** Construir DOS listas (`players_in_combat`, `npcs_in_combat`). NPCs reales atacan players; PCs delegados atacan NPCs.
+- **Bug 2:** PCs delegados usaban ataques genéricos en vez de los del character sheet. **Fix:** Nuevo helper `_build_combatant_from_character(char)` extrae ataques del `status.attacks` real. Fallback inteligente: `max(STR_mod, DEX_mod) + proficiency_bonus` (calculado del level, no hardcoded +5).
+- **Bug 3:** HP no actualizaba después de ataques. **Root cause:** `resolve_npc_turn` leía `target_char.get("hp_current")` (top-level) pero las filas DB de party_characters lo tienen dentro de `status` nested dict → retornaba 0 → `calculate_hp_change(0, damage, 0)` → new_hp=0 siempre. **Fix:** Nuevo helper `_flatten_player_for_combat(char)` hoista `status.hp_current/hp_max/ac` a top-level antes de pasarlo al engine. Guard defensivo en `mechanic.resolve_npc_turn`: si top-level falta, lee de `status`; si `hp_max` es 0, usa `hp_current` como floor.
+- **Bug 4:** Narrator pedía "1d6+4" para la greataxe de Björn (debería ser 1d12+STR). **Fix:** RULE 16 reforzada con referencia 5e (Greataxe 1d12, Longsword 1d8, Rapier 1d8+DEX, etc.) + instrucción estricta de leer `status.attacks`. `_resolve_npc_turns` inyecta cheat-sheet de armas en los facts cuando es turno de un player: "Björn's available attacks: Greataxe: to-hit +7, damage 1d12+4 slashing".
+- **Extra fix:** Parser de `attack.bonus` ahora maneja `"-1"` y padding correctamente.
+
+**Fase 5 — Initiative visible + HP ground truth (`d337241`):**
+- **Fix 1:** SAM auto-rolaba iniciativa pero no mostraba los rolls. **Fix:** `_handle_start_combat` pre-rola init para el NPC también, emite un `<DM_ROLL>` tag por combatiente con formato frontend (`{"result":18,"roll":"1d20+1","reason":"Björn Initiative"}`), agrega breakdown legible a los facts + instrucción al narrator para anunciar dramáticamente. Narrator RULE 16 actualizada para narrar cada roll y preservar tags.
+- **Fix 2:** Narrator inventaba HP del monstruo (drift entre turnos: "41/50" luego "43/50" en la misma pelea). **Fix:** `_resolve_npc_turns` inyecta bloque `COMBAT STATUS:` al final con HP exacto de todos los combatientes (fuente de verdad: `combat.initiative_order` para NPCs, `party_characters[].status.hp_current/hp_max` para players con overlay fresh DB values). El flujo principal también inyecta el bloque cuando `combat.active` y aún no está presente (player mid-action con pending roll). Narrator RULE 16 nueva cláusula "HP GROUND TRUTH": citar verbatim, nunca inventar ni redondear.
+
+**Arquitectura final del combat loop:**
+1. Player escribe "ataco al golem" → interpreter detecta `start_combat` (porque `in_combat=False`)
+2. `_handle_start_combat` → lookup monster, rola init para todos (PCs via DEX mod, NPC via compendium mod), emite DM_ROLL tags, llama `combat.start_combat()`
+3. Si primer turno es NPC/delegado → auto-resolver con `advance_first=False`
+4. Facts incluyen: COMBAT STARTED + Initiative rolls + Initiative order + COMBAT STATUS + weapon cheat-sheet + "It's X's turn"
+5. Narrator preserva DM_ROLL tags + anuncia iniciativa + pide acción al primer player real
+6. Player escribe "ataco con hacha" → interpreter detecta `attack` (porque `in_combat=True`)
+7. Player rolea 1d20 → mechanic procesa → si acierta, pide damage roll
+8. Player rolea damage → mechanic aplica → `_resolve_npc_turns` ejecuta NPC turns con DM_ROLL tags + COMBAT STATUS + weapon cheat-sheet para el siguiente player
+
+### Commits en main (23-24 Abr 2026)
+```
+d337241 Feat: Visible initiative rolls + authoritative combat HP status for narrator
+d1613fa Fix: Delegated PCs attack enemies not allies, HP updates from nested status, weapon cheat-sheet
+88c6d34 Fix: damage dice parser handles damage type suffix + DM_ROLL emission for NPC attacks
+255681d Fix: Auto-resolve NPC/delegated first turns after combat starts + current_turn name
+6673cd0 Feat: Combat system trigger — start_combat intent, monster lookup, combat reminders
+```
+
+### Sesión 16 Abr 2026 — Fetch robustness + admin persistence + player damage
+
+**Fetch error handling (`3a71c4e`):**
+- **Problema:** `authenticatedFetch` podía colgarse indefinidamente en mobile background suspension; el frontend renderizaba mensajes optimísticamente pero no detectaba 4xx/5xx ni network failures de forma consistente; el dice tray caía a fallback client-side (`Math.random`) silenciosamente sin avisar al usuario.
+- **Fix 1:** `DEFAULT_TIMEOUT_MS = 30000` + `AbortController` en `lib/api.ts`. Señal se combina con `options.signal ?? controller.signal` para respetar aborts externos. `clearTimeout` en `finally` — nunca leaks.
+- **Fix 2:** `handleSendMessage` en `chat-interface.tsx` ahora hace `if (!res.ok) throw new Error(...)` antes de parsear JSON → los errores HTTP caen al `catch` que ya mostraba toast con retry action.
+- **Fix 3:** `dice-tray.tsx` importa `toast` y muestra `toast.warning("⚠️ Dice rolled locally")` cuando `/api/roll` falla antes de caer al fallback local. El usuario ya no roba resultados "fake" silenciosamente.
+
+**Admin command persistence (`52e95de`):**
+- **Problema:** Respuestas de comandos admin (`/list`, `/checkpoint`, `/load`, `/gold`, `/memory`, `/delegate`, `/undelegate`) se devolvían directamente como JSON del endpoint pero NO se insertaban en la tabla `messages`. El jugador que ejecutó el comando veía el resultado, pero el resto de la party no — y el GM no tenía record histórico al recargar.
+- **Fix:** Después de `AdminService.handle_command()` y antes del `return`, si `cid` está disponible y el comando NO es `/reset` (que ya hace su propio broadcast con `CLEAR_CHAT`), insertar `admin_response` en `messages` como `role=assistant`, `sender_id=None`, `visibility=public`. El INSERT dispara Realtime → todos los clientes reciben la respuesta.
+- **Defensive:** Wrap en try/except — si el insert falla, el comando igual retorna al jugador original.
+
+**Player damage application (`a8ced24`) — BUG CRÍTICO:**
+- **Problema:** Durante combate, las tiradas del dice tray (d20 de ataque, d12 de daño) no aplicaban daño al HP del NPC. El `COMBAT STATUS` fact seguía mostrando HP original → narrator inventaba HP → combate infinito.
+- **Root cause:** El interpreter clasificaba `[SYSTEM EVENT] rolled 1d20` como `dice_roll`, pero `engine.pending_player_roll` era `None` (nadie llamó `process_attack`). `process_player_roll` hacía return con `{"action": "freeform_roll"}` → sin side effects → HP del NPC intacto.
+- **Fix:** Nuevo método `_setup_combat_freeform_pending()` en `orchestrator.py`. Antes de `_handle_dice_roll`, si `combat.active` y no hay pending, infiere intent del dado:
+  - **d20** → `pending_player_roll = weapon_attack` contra el primer NPC vivo, usando el primer arma del personaje (`status.attacks[0]`). Fallback: unarmed strike.
+  - **non-d20** → `pending_player_roll = weapon_damage`, matcheando el dado (ej: d12) contra el `weapon.damage` del personaje (ej: `"1d12+4 slashing"`). Fallback: primer arma.
+- **Por qué funciona:** Los resolvers existentes (`_resolve_weapon_attack`, `_resolve_weapon_damage`) ya llaman `combat.update_npc_hp(name, new_hp)`, y `CombatState.update_npc_hp` ya llama `remove_combatant` si `hp <= 0`, que llama `end_combat` si no quedan NPCs vivos. Solo faltaba que el flujo `dice_roll` alcanzara esos resolvers.
+- **Flujo completo post-fix:**
+  1. Björn tira d20 → orquestador detecta combat + no pending → autoconfigura `weapon_attack` con greataxe contra zombie → `_resolve_weapon_attack` hace d20+bonus vs AC → HIT → deja `pending_player_roll = weapon_damage` persistido en `combat_dict`
+  2. Björn tira 1d12 → restaurado como `weapon_damage` → `_resolve_weapon_damage` aplica vía `update_npc_hp` → si HP ≤ 0, `remove_combatant` + `end_combat` si no quedan NPCs
+  3. Post-damage roll (pending limpio) → `_resolve_npc_turns` ejecuta — respetando que el turno enemigo sucede **después** del daño, no del attack roll
+  4. `COMBAT STATUS` inyectado al narrador refleja el HP real del NPC
+
+### Commits en main (16 Abr 2026)
+```
+a8ced24 fix: apply player damage to NPC HP during combat
+52e95de feat: persist admin command responses to messages table
+3a71c4e feat: 30s AbortController timeout + robust fetch error handling
+```
+
+### Sesión 24 Abr 2026 — DM_ROLL grouping + turn enforcement + tickets system
+
+**DM_ROLL chips stacking (`73f8a38`):**
+- **Problema UX:** chips `<DM_ROLL>` inline dentro del párrafo dejaban los rolls de iniciativa (3-4 seguidos) esparcidos a través del texto.
+- **Fix:** `renderMessageContent()` en `chat-interface.tsx` ahora camina los parts del split y agrupa DM_ROLLs consecutivos separados solo por whitespace en un `<div flex flex-col gap-1 my-2 items-start>`. Un solo DM_ROLL sigue inline; 2+ → columna. Typo `Invlaid` → `Invalid` corregido. (Ticket SAM-001 sigue IN_PROGRESS — hoist absoluto aún pendiente.)
+
+**Turn enforcement + Extra Attack (`839ba73`) — SAM-002 DONE:**
+- **Problema:** jugadores podían actuar fuera de turno (escribir "ataco al zombie" cuando era el turno de otro) y el sistema procesaba la acción. Además, no se respetaba Extra Attack (martials nivel 5+).
+- **Turn guard en `orchestrator.process_message()`:** el intent se parsea primero, luego el guard revisa. Si `combat.active` y `sender_name != current_name`:
+  - Intents `attack`/`spell`/`ability`/`start_combat` → bloqueados, emite fact `OUT_OF_TURN: It's {current}'s turn, not {sender}'s.` → narrator produce solo recordatorio in-character.
+  - Intent `dice_roll` → permitido solo si `pending_player_roll.character_name == sender_name` (stamped en `_setup_combat_freeform_pending` con `sender_name`).
+- **Action economy en `combat_state.py`:**
+  - Nuevo helper top-level `has_extra_attack(combatant)` — True si class ∈ {Barbarian, Fighter, Paladin, Ranger} y level ≥ 5 (Fighter 11/20 simplificado a 2).
+  - `actions_remaining` seeded por `_set_actions_for_current_turn()` en `start_combat` y al final de `advance_turn` → si nuevo current es player, 2 o 1 según extra attack; si NPC, 0.
+  - `consume_action()` + `turn_is_over()` (`actions_remaining <= 0 and pending_action is None`).
+  - Field persistido en `to_dict()` → sobrevive entre requests.
+- **Dice_roll handler en orchestrator:** snapshot de `previous_pending_type` antes de `_handle_dice_roll`. Después, si pending se limpió:
+  - Consume acción si previous ∈ {`weapon_attack`, `weapon_damage`, `spell_attack`, `spell_damage`} — cubre HIT + damage aplicado Y también MISS (attack resuelto sin damage follow-up).
+  - `turn_is_over()` → `_resolve_npc_turns()` normal.
+  - Else → facts += `"→ Björn has 1 action(s) remaining. Ask if they attack again."`
+- **Player combatants stamped con `class` + `level`** en `_handle_start_combat` para que `advance_turn` pueda calcular Extra Attack sin cargar el character de DB.
+- **Narrator RULE 16 ampliada:** bullet para OUT_OF_TURN (<30 words, in-character) + bullet para "action(s) remaining" (invitar segundo ataque en una oración, NO narrar).
+
+**Admin command persistence verification (`52e95de`):** Confirmado en playtest que `/list`, `/checkpoint`, etc. ahora broadcastean via Realtime.
+
+**Sistema de tickets (`061f24a`):** Nuevo archivo `SAM_tickets.md` con 13 tickets iniciales + convenciones (IDs `SAM-XXX`, tipo, prio P0-P3, estado OPEN/IN_PROGRESS/BLOCKED/DONE). Workflow: ticket abierto antes de instrucción, referenciado en el título, cerrado con commit + absorción de detalle en este log.
+
+**Initiative ground truth (`738f85f`) — SAM-013 DONE:**
+- **Problema:** narrator inventaba números de iniciativa violando el `result` dentro de los `<DM_ROLL>` tags. Playtest mostró chip con `result:5` narrado como "la criatura se mueve con un 9" y turn order incongruente.
+- **Fix:** RULE 16 del narrator reemplaza el bullet genérico de initiative con "INITIATIVE GROUND TRUTH" — 4 sub-reglas explícitas: (1) preservar tags verbatim, (2) prosa cita `result` exacto, (3) turn order list cita números exactos, (4) empates siguen el orden de los facts. Agregada cláusula "Violation of this rule breaks the player's trust in the dice."
+
+### Commits en main (24 Abr 2026)
+```
+738f85f  fix: enforce INITIATIVE GROUND TRUTH in narrator RULE 16 (SAM-013)
+061f24a  chore: add SAM_tickets.md with 13 initial tickets and workflow conventions
+839ba73  feat: combat turn enforcement + Extra Attack action economy
+73f8a38  feat: stack consecutive DM_ROLL chips vertically + fix typo
+```
+
 ---
 
 ## 4. Estado Actual — Abril 2026
@@ -669,8 +792,11 @@ La primera implementación creó un `useRealtime` separado en `game-layout.tsx` 
 - **localStorage cleanup:** 404 en character → limpia + auto-select fallback. Delete character → limpia localStorage.
 - **Narrator constraints:** Nunca cambia stats/level/abilities por pedido del jugador. Levels solo via XP.
 - **Mobile UX:** `100dvh` layout, `pb-safe` para iOS notch, header compacto, dice tray con botones pequeños + auto-close, input area con margin extra.
+- **Combat damage application completo:** Dice-tray rolls (d20/non-d20) durante combate autoconfiguran `pending_player_roll` → `_resolve_weapon_attack` y `_resolve_weapon_damage` aplican daño real al HP del NPC vía `combat.update_npc_hp()`. NPCs muertos se limpian con `remove_combatant` → `end_combat` automático si no quedan enemigos. COMBAT STATUS refleja HP real.
+- **Fetch robustness:** `authenticatedFetch` aborta tras 30s vía `AbortController` (protege contra mobile background hangs). `handleSendMessage` valida `!res.ok` antes de parsear JSON. Dice tray muestra `toast.warning` cuando `/api/roll` falla antes de caer al fallback local (`Math.random`).
+- **Admin commands persistidos:** Respuestas de `/list`, `/checkpoint`, `/load`, `/gold`, `/memory`, `/delegate`, `/undelegate` se insertan en `messages` table (`role=assistant`, `sender_id=NULL`) → broadcast a toda la party vía Realtime. `/reset` queda excepcional (ya hace su propio broadcast con `CLEAR_CHAT`).
 
-### Completitud: ~95% (app funcional) + arquitectura multi-agente integrada
+### Completitud: ~96% (app funcional) + arquitectura multi-agente + combat loop con damage application
 
 ### Pendiente para "done"
 - Commlink: Realtime para nuevos mensajes + auto-mark-as-read al abrir
@@ -720,4 +846,4 @@ La primera implementación creó un `useRealtime` separado en `game-layout.tsx` 
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 12 Abr 2026 — AI avatars (Imagen 4 with DiceBear fallback), narrator brevity + character knowledge, Realtime subscription stability fix, localStorage stale character cleanup.*
+*Última actualización: 16 Abr 2026 — Player damage application durante combate (autoconfigura pending_player_roll desde dice_roll freeform → resolvers existentes aplican daño a NPC HP vía combat.update_npc_hp), admin commands persistidos en messages table para broadcast Realtime, authenticatedFetch con AbortController 30s timeout + !res.ok check + toast warning en dice tray fallback. 3 commits: a8ced24 + 52e95de + 3a71c4e.*
