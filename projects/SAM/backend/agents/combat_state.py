@@ -2,6 +2,26 @@ from typing import Optional
 from .dice import DiceRoller
 
 
+# D&D 5e classes that gain Extra Attack at level 5 (2 attacks/turn)
+# Fighter gets a 3rd at 11, a 4th at 20 — simplified to 2 here.
+EXTRA_ATTACK_CLASSES = {"barbarian", "fighter", "paladin", "ranger"}
+
+
+def has_extra_attack(combatant: dict) -> bool:
+    """
+    True if this combatant is a player whose class grants Extra Attack
+    (Barbarian/Fighter/Paladin/Ranger at level 5+).
+    """
+    if not combatant or combatant.get("is_npc"):
+        return False
+    cls = str(combatant.get("class", "") or "").lower()
+    try:
+        level = int(combatant.get("level", 1) or 1)
+    except (TypeError, ValueError):
+        level = 1
+    return cls in EXTRA_ATTACK_CLASSES and level >= 5
+
+
 class CombatState:
     """Manages combat state — initiative, turns, NPC HP."""
 
@@ -12,6 +32,15 @@ class CombatState:
         self.current_turn_index = data.get("current_turn_index", 0)
         self.initiative_order = data.get("initiative_order", [])
         self.pending_action = data.get("pending_action", None)  # Waiting for player dice
+        self.actions_remaining = data.get("actions_remaining", 0)
+
+    def _set_actions_for_current_turn(self):
+        """Seed actions_remaining when entering a new player's turn."""
+        current = self.get_current_turn()
+        if current and not current.get("is_npc"):
+            self.actions_remaining = 2 if has_extra_attack(current) else 1
+        else:
+            self.actions_remaining = 0
 
     def start_combat(self, combatants: list[dict]) -> dict:
         """Start combat with a list of combatants. Rolls initiative for NPCs."""
@@ -31,6 +60,7 @@ class CombatState:
         self.active = True
         self.round = 1
         self.current_turn_index = 0
+        self._set_actions_for_current_turn()
         return self.to_dict()
 
     def get_current_turn(self) -> Optional[dict]:
@@ -47,7 +77,17 @@ class CombatState:
         if self.current_turn_index >= len(self.initiative_order):
             self.current_turn_index = 0
             self.round += 1
+        self._set_actions_for_current_turn()
         return self.to_dict()
+
+    def consume_action(self):
+        """Decrement actions_remaining when a player completes an action (damage applied)."""
+        if self.actions_remaining > 0:
+            self.actions_remaining -= 1
+
+    def turn_is_over(self) -> bool:
+        """True when the current combatant has no actions left and no pending dice."""
+        return self.actions_remaining <= 0 and self.pending_action is None
 
     def remove_combatant(self, name: str):
         """Remove a combatant (dead/fled)."""
@@ -74,6 +114,7 @@ class CombatState:
         self.round = 0
         self.current_turn_index = 0
         self.pending_action = None
+        self.actions_remaining = 0
 
     def set_pending_action(self, action: dict):
         """Set a pending action waiting for player dice."""
@@ -93,7 +134,8 @@ class CombatState:
             "current_turn_index": self.current_turn_index,
             "current_turn": current.get("name") if current else None,
             "initiative_order": self.initiative_order,
-            "pending_action": self.pending_action
+            "pending_action": self.pending_action,
+            "actions_remaining": self.actions_remaining,
         }
 
     @classmethod

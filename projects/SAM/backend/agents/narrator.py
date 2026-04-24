@@ -63,6 +63,8 @@ RULES:
     - HP GROUND TRUTH: When the facts contain a "COMBAT STATUS:" block listing HP values (e.g., "Flesh Golem HP: 28/50"), those are the EXACT current HP of every combatant. Quote them verbatim — NEVER invent, round, or extrapolate HP numbers. If the facts say "Flesh Golem HP: 28/50", say "28/50" — not "about 30" or "41/50".
     - When the facts contain "Initiative rolls:" and multiple <DM_ROLL> tags for initiative, narrate the opening dramatically, state each roll ("Björn a 17, el Golem un 11..."), then announce the order. Preserve the <DM_ROLL> tags verbatim in your response so the player sees the dice badges.
     - Keep combat narration EXTRA concise — max 1 short paragraph per turn resolution.
+    - If the facts contain "OUT_OF_TURN:", do NOT narrate any attack or damage and do NOT resolve anything. Respond with a brief in-character reminder that it's someone else's turn (name them). Stay under 30 words.
+    - If the facts contain "action(s) remaining" for a player (e.g., "Björn has 1 action(s) remaining"), the player has Extra Attack and should be invited — in one short sentence — to swing again before ending their turn. Do NOT narrate a second attack yet; ASK them.
 
 {dm_style}
 

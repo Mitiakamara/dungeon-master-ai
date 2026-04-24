@@ -76,17 +76,51 @@ class SAMOrchestrator:
 
         print(f"🎯 Intent: {json.dumps(intent, default=str)}")
 
+        # ─── TURN GUARD ───
+        # Prevent players from acting out of turn during combat.
+        # Roleplay / movement / free_action still pass through.
+        out_of_turn_facts = None
+        if combat.active:
+            current_tc = combat.get_current_turn()
+            current_name = current_tc.get("name") if current_tc else None
+
+            if current_name and sender_name and sender_name != current_name:
+                action_intents = ("attack", "spell", "ability", "start_combat")
+                if intent["type"] in action_intents:
+                    out_of_turn_facts = (
+                        f"OUT_OF_TURN: It's {current_name}'s turn, not {sender_name}'s. "
+                        f"Ignore the attempted action and remind the player to wait."
+                    )
+                elif intent["type"] == "dice_roll":
+                    # Allow if pending roll belongs to this sender
+                    pending = engine.pending_player_roll or {}
+                    pending_owner = pending.get("character_name")
+                    if pending_owner != sender_name:
+                        out_of_turn_facts = (
+                            f"OUT_OF_TURN: It's {current_name}'s turn, not {sender_name}'s. "
+                            f"Ignore the attempted dice roll and remind the player to wait."
+                        )
+
         # ─── STEP 2: Execute mechanics based on intent ───
         mechanical_facts = ""
         prompt_player_roll = None
 
-        if intent["type"] == "dice_roll":
+        if out_of_turn_facts:
+            # Skip all mechanics — narrator produces only the reminder.
+            mechanical_facts = out_of_turn_facts
+
+        elif intent["type"] == "dice_roll":
             # During combat, a bare dice roll (via dice tray) needs context:
             # a d20 is an attack roll, a non-d20 is a damage roll. Wire up
             # pending_player_roll so process_player_roll routes to the proper
             # resolver (which already applies damage to NPC HP).
             if combat.active and not engine.pending_player_roll:
-                self._setup_combat_freeform_pending(engine, intent, character_context, combat)
+                self._setup_combat_freeform_pending(engine, intent, character_context, combat, sender_name)
+
+            # Snapshot pending type before it gets cleared by process_player_roll
+            previous_pending_type = None
+            if engine.pending_player_roll:
+                previous_pending_type = engine.pending_player_roll.get("type")
 
             # Player rolled dice — process the result
             self._handle_dice_roll(engine, intent, character_context, combat)
@@ -96,11 +130,27 @@ class SAMOrchestrator:
             if engine.pending_player_roll:
                 prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
 
-            # After resolving player action, resolve NPC turns if applicable
+            # After resolving player action, decide whether to advance or keep turn
             if not engine.pending_player_roll and combat.active:
-                npc_facts = self._resolve_npc_turns(engine, combat, party_characters)
-                if npc_facts:
-                    mechanical_facts += "\n" + npc_facts
+                # Consume an action when the attack/spell cycle is fully resolved:
+                #   - HIT + damage applied  → previous = weapon_damage / spell_damage
+                #   - MISS (attack roll resolved, no damage follow-up) → previous = weapon_attack / spell_attack
+                if previous_pending_type in (
+                    "weapon_damage", "spell_damage",
+                    "weapon_attack", "spell_attack",
+                ):
+                    combat.consume_action()
+
+                if combat.turn_is_over():
+                    npc_facts = self._resolve_npc_turns(engine, combat, party_characters)
+                    if npc_facts:
+                        mechanical_facts += "\n" + npc_facts
+                elif combat.actions_remaining > 0:
+                    # Extra Attack still available — invite the player to use it
+                    mechanical_facts += (
+                        f"\n→ {sender_name} has {combat.actions_remaining} action(s) remaining. "
+                        f"Ask if they attack again."
+                    )
 
         elif intent["type"] == "spell":
             self._handle_spell(engine, intent, character_context, combat)
@@ -217,7 +267,7 @@ class SAMOrchestrator:
                 mechanical_facts = ""
 
         # Warning if a dice roll happened but no state updates were generated
-        if intent["type"] == "dice_roll" and not engine.state_updates:
+        if intent["type"] == "dice_roll" and not out_of_turn_facts and not engine.state_updates:
             print(f"⚠️ Dice roll processed but no state_updates generated — damage may be narrative-only")
 
         # ─── STEP 3: RAG lookup if needed ───
@@ -330,7 +380,8 @@ class SAMOrchestrator:
         return engine.process_player_roll(character_context, roll_data)
 
     def _setup_combat_freeform_pending(self, engine: MechanicEngine, intent: dict,
-                                       character_context: dict, combat: CombatState) -> None:
+                                       character_context: dict, combat: CombatState,
+                                       sender_name: str = "") -> None:
         """
         When combat is active and the player rolls dice without a prior
         mechanic setup (e.g. a raw d20 or damage die from the dice tray),
@@ -342,6 +393,9 @@ class SAMOrchestrator:
         Sets engine.pending_player_roll so the subsequent process_player_roll
         call routes through the normal _resolve_weapon_attack / _resolve_weapon_damage
         path, which already updates combat NPC HP.
+
+        sender_name is stamped as character_name on the pending dict so the
+        turn guard can verify the next dice roll belongs to the active player.
         """
         dice_str = str(intent.get("dice", "")).strip().lower()
         m = re.match(r"(\d*)d(\d+)", dice_str)
@@ -359,6 +413,7 @@ class SAMOrchestrator:
             return
 
         attacks = (character_context.get("status") or {}).get("attacks") or []
+        character_name = sender_name or character_context.get("name", "")
 
         if sides == 20:
             # Attack roll — use first declared weapon (fallback: unarmed strike)
@@ -370,6 +425,7 @@ class SAMOrchestrator:
                 "weapon": weapon,
                 "target": target_npc["name"],
                 "target_data": target_npc,
+                "character_name": character_name,
             }
         else:
             # Damage roll — match weapon whose damage starts with "NdX" on same sides
@@ -390,6 +446,7 @@ class SAMOrchestrator:
                 "target": target_npc["name"],
                 "target_data": target_npc,
                 "critical": False,
+                "character_name": character_name,
             }
 
     def _handle_spell(self, engine: MechanicEngine, intent: dict,
@@ -443,6 +500,8 @@ class SAMOrchestrator:
                 "hp": status.get("hp_current", status.get("hp_max", 10)),
                 "hp_max": status.get("hp_max", 10),
                 "ac": status.get("ac", 10),
+                "class": pc.get("class", ""),
+                "level": int(pc.get("level", 1) or 1),
             })
             mod_str = f"+{dex_mod}" if dex_mod >= 0 else str(dex_mod)
             init_dm_rolls.append(
