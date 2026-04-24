@@ -729,51 +729,21 @@ export function ChatInterface({
     // SAM messages: senderId is null
 
     // [PHASE 16] Visualizer for DM Rolls
-    // Single DM_ROLL → inline chip flowing with the narrative.
-    // Two or more DM_ROLLs separated only by whitespace → stacked column (one per row).
+    // 2+ DM_ROLLs in a message → HOIST mode: stack all chips at the top of the
+    //                           bubble, remove tags from the narrative text below.
+    // 0 or 1 DM_ROLL           → INLINE mode: single chip flows with the prose.
     const renderMessageContent = (content: string, role: string = 'assistant') => {
         // Safety net: strip any machine tags that survived processing
         content = stripSystemTags(content, role)
-        // Split by the tag, keeping the delimiter
-        const parts = content.split(/(<DM_ROLL>[\s\S]*?<\/DM_ROLL>)/g);
 
         type RollData = { result: string | number; roll: string; reason: string };
-        const parseRoll = (part: string): RollData | null => {
+        const parseRoll = (raw: string): RollData | null => {
             try {
-                return JSON.parse(part.replace(/<\/?DM_ROLL>/g, ""));
+                return JSON.parse(raw);
             } catch {
                 return null;
             }
         };
-
-        type Segment =
-            | { type: "text"; content: string }
-            | { type: "roll"; data: RollData | null }
-            | { type: "roll_group"; rolls: Array<RollData | null> };
-        const segments: Segment[] = [];
-
-        let i = 0;
-        while (i < parts.length) {
-            const part = parts[i];
-            if (part.startsWith("<DM_ROLL>")) {
-                const group: Array<RollData | null> = [parseRoll(part)];
-                let j = i + 1;
-                // Absorb consecutive DM_ROLLs separated only by whitespace
-                while (j + 1 < parts.length && parts[j].trim() === "" && parts[j + 1].startsWith("<DM_ROLL>")) {
-                    group.push(parseRoll(parts[j + 1]));
-                    j += 2;
-                }
-                if (group.length >= 2) {
-                    segments.push({ type: "roll_group", rolls: group });
-                } else {
-                    segments.push({ type: "roll", data: group[0] });
-                }
-                i = j;
-            } else {
-                segments.push({ type: "text", content: part });
-                i += 1;
-            }
-        }
 
         const chipBase = "inline-flex items-center gap-1.5 bg-black/40 text-purple-300 border border-purple-500/30 px-2 py-1 rounded-md text-xs font-mono select-none";
 
@@ -787,30 +757,51 @@ export function ChatInterface({
             </>
         );
 
-        return segments.map((seg, idx) => {
-            if (seg.type === "text") {
-                return <span key={idx}>{seg.content}</span>;
-            }
-            if (seg.type === "roll") {
-                if (!seg.data) {
+        const dmRollRegex = /<DM_ROLL>([\s\S]*?)<\/DM_ROLL>/g;
+        const matches = [...content.matchAll(dmRollRegex)];
+
+        // ─── HOIST MODE — 2+ rolls ───
+        if (matches.length >= 2) {
+            const rolls = matches.map(m => parseRoll(m[1]));
+
+            // Remove all DM_ROLL tags from the narrative text
+            let textOnly = content.replace(dmRollRegex, "");
+            // Collapse horizontal whitespace left behind by removed tags
+            textOnly = textOnly
+                .replace(/[ \t]+/g, " ")
+                .replace(/ *\n/g, "\n")
+                .replace(/\n{3,}/g, "\n\n")
+                .trim();
+
+            return (
+                <>
+                    <div className="flex flex-col gap-1 my-2 items-start">
+                        {rolls.map((r, i) => (
+                            r
+                                ? <span key={i} className={`${chipBase} w-fit`}>{renderChipBody(r)}</span>
+                                : <span key={i} className="text-red-500 text-xs">[Invalid Roll Data]</span>
+                        ))}
+                    </div>
+                    {textOnly && <div className="whitespace-pre-wrap">{textOnly}</div>}
+                </>
+            );
+        }
+
+        // ─── INLINE MODE — 0 or 1 roll ───
+        const parts = content.split(/(<DM_ROLL>[\s\S]*?<\/DM_ROLL>)/g);
+        return parts.map((part, idx) => {
+            if (part.startsWith("<DM_ROLL>")) {
+                const data = parseRoll(part.replace(/<\/?DM_ROLL>/g, ""));
+                if (!data) {
                     return <span key={idx} className="text-red-500 text-xs">[Invalid Roll Data]</span>;
                 }
                 return (
                     <span key={idx} className={`${chipBase} mx-1 my-1`}>
-                        {renderChipBody(seg.data)}
+                        {renderChipBody(data)}
                     </span>
                 );
             }
-            // roll_group — stacked vertically, left-aligned
-            return (
-                <div key={idx} className="flex flex-col gap-1 my-2 items-start">
-                    {seg.rolls.map((r, ri) => (
-                        r
-                            ? <span key={ri} className={`${chipBase} w-fit`}>{renderChipBody(r)}</span>
-                            : <span key={ri} className="text-red-500 text-xs">[Invalid Roll Data]</span>
-                    ))}
-                </div>
-            );
+            return <span key={idx}>{part}</span>;
         });
     };
 
