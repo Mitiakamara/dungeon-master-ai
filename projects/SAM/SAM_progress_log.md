@@ -803,8 +803,13 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 - **Combat damage application completo:** Dice-tray rolls (d20/non-d20) durante combate autoconfiguran `pending_player_roll` → `_resolve_weapon_attack` y `_resolve_weapon_damage` aplican daño real al HP del NPC vía `combat.update_npc_hp()`. NPCs muertos se limpian con `remove_combatant` → `end_combat` automático si no quedan enemigos. COMBAT STATUS refleja HP real.
 - **Fetch robustness:** `authenticatedFetch` aborta tras 30s vía `AbortController` (protege contra mobile background hangs). `handleSendMessage` valida `!res.ok` antes de parsear JSON. Dice tray muestra `toast.warning` cuando `/api/roll` falla antes de caer al fallback local (`Math.random`).
 - **Admin commands persistidos:** Respuestas de `/list`, `/checkpoint`, `/load`, `/gold`, `/memory`, `/delegate`, `/undelegate` se insertan en `messages` table (`role=assistant`, `sender_id=NULL`) → broadcast a toda la party vía Realtime. `/reset` queda excepcional (ya hace su propio broadcast con `CLEAR_CHAT`).
+- **Turn enforcement en combate:** Turn guard en `orchestrator.process_message()` bloquea intents `attack/spell/ability/start_combat` cuando `sender_name != current_turn` → emite `OUT_OF_TURN:` fact → narrator produce solo recordatorio in-character (<30 palabras). Dice rolls permitidos sólo si `pending_player_roll.character_name == sender_name`.
+- **Extra Attack action economy:** `CombatState.actions_remaining` seeded por `has_extra_attack()` (Barbarian/Fighter/Paladin/Ranger ≥ lvl 5 → 2 acciones, resto → 1). `consume_action()` post-damage/miss. `turn_is_over()` gate antes de `_resolve_npc_turns`. Si queda acción, facts inyectan "X has N action(s) remaining. Ask if they attack again." y narrator invita al segundo swing.
+- **Initiative ground truth:** Narrator RULE 16 con contrato explícito — los números dentro de cada `<DM_ROLL>` son autoritativos, prosa + turn order MUST citar el `result` exacto, empates siguen el orden de los facts. Fin de "la criatura se mueve con un 9" cuando el chip dice 5.
+- **DM_ROLL hoist:** Cuando un mensaje tiene 2+ `<DM_ROLL>`, `renderMessageContent` los levanta a un `flex flex-col` al tope de la burbuja y renderiza el texto narrativo sin tags debajo (whitespace colapsado). Con 0 o 1 chip se mantiene inline.
+- **Sistema de tickets:** `projects/SAM/SAM_tickets.md` trackea bugs/features/chores con IDs `SAM-XXX`, tipo, prio P0-P3 y estado. Workflow: ticket abierto antes de instrucción, referenciado en el título, cerrado con commit + absorción de detalle en este log.
 
-### Completitud: ~96% (app funcional) + arquitectura multi-agente + combat loop con damage application
+### Completitud: ~97% (app funcional) + arquitectura multi-agente + combat loop completo con turn enforcement + Extra Attack
 
 ### Pendiente para "done"
 - Commlink: Realtime para nuevos mensajes + auto-mark-as-read al abrir
@@ -854,4 +859,4 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 7. **Vercel config** — configurar Root Directory → `projects/SAM/frontend`
 
 ---
-*Última actualización: 16 Abr 2026 — Player damage application durante combate (autoconfigura pending_player_roll desde dice_roll freeform → resolvers existentes aplican daño a NPC HP vía combat.update_npc_hp), admin commands persistidos en messages table para broadcast Realtime, authenticatedFetch con AbortController 30s timeout + !res.ok check + toast warning en dice tray fallback. 3 commits: a8ced24 + 52e95de + 3a71c4e.*
+*Última actualización: 24 Abr 2026 — DM_ROLL stacking (73f8a38) → hoist when 2+ rolls (c215cc7, SAM-001 DONE), turn enforcement + Extra Attack action economy (839ba73, SAM-002 DONE), tickets system (061f24a), initiative ground truth en narrator RULE 16 (738f85f, SAM-013 DONE). Sesión previa 16 Abr (a8ced24 + 52e95de + 3a71c4e): player damage application, admin command persistence, fetch robustness.*
