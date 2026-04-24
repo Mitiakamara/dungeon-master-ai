@@ -724,8 +724,16 @@ a8ced24 fix: apply player damage to NPC HP during combat
 - **Problema:** narrator inventaba números de iniciativa violando el `result` dentro de los `<DM_ROLL>` tags. Playtest mostró chip con `result:5` narrado como "la criatura se mueve con un 9" y turn order incongruente.
 - **Fix:** RULE 16 del narrator reemplaza el bullet genérico de initiative con "INITIATIVE GROUND TRUTH" — 4 sub-reglas explícitas: (1) preservar tags verbatim, (2) prosa cita `result` exacto, (3) turn order list cita números exactos, (4) empates siguen el orden de los facts. Agregada cláusula "Violation of this rule breaks the player's trust in the dice."
 
+**DM_ROLL hoist (`c215cc7`) — SAM-001 DONE:**
+- **Problema:** el agrupador del `73f8a38` solo funcionaba cuando los `<DM_ROLL>` estaban separados por whitespace puro. Gemini los intercala con prosa corta ("Björn saca un 17, mientras la criatura..."), así que en la práctica los chips quedaban esparcidos por el párrafo.
+- **Fix:** `renderMessageContent` ahora cuenta los `<DM_ROLL>` en el mensaje y branchea:
+  - **2+ rolls → modo HOIST:** extrae los chips con `content.matchAll(/<DM_ROLL>([\s\S]*?)<\/DM_ROLL>/g)`, los renderiza en un `<div flex flex-col gap-1 my-2 items-start>` al tope de la burbuja, y renderiza el texto narrativo (`content.replace(dmRollRegex, "")`) debajo. Limpieza de whitespace post-strip: `[ \t]+ → " "`, ` *\n → \n`, `\n{3,} → \n\n`, `trim()`.
+  - **0 o 1 roll → modo INLINE:** se mantiene el split-and-walk clásico para que un chip solitario (ej. skill check) siga fluyendo dentro de la oración.
+- **Estilos del chip:** idénticos en ambos modos (fondo negro semi, borde morado, emoji 🎲, mono font, `w-fit` en hoist, `mx-1 my-1` en inline).
+
 ### Commits en main (24 Abr 2026)
 ```
+c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 738f85f  fix: enforce INITIATIVE GROUND TRUTH in narrator RULE 16 (SAM-013)
 061f24a  chore: add SAM_tickets.md with 13 initial tickets and workflow conventions
 839ba73  feat: combat turn enforcement + Extra Attack action economy

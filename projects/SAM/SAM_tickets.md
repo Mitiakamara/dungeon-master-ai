@@ -16,7 +16,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 
 | ID | Título | Tipo | Prio | Estado |
 |----|--------|------|------|--------|
-| SAM-001 | DM_ROLL chips apilados verticalmente | BUG | P1 | IN_PROGRESS |
+| SAM-001 | DM_ROLL chips apilados verticalmente | BUG | P1 | DONE |
 | SAM-002 | Turn enforcement + Extra Attack | FEAT | P0 | DONE |
 | SAM-003 | Sneak Attack modeling | FEAT | P1 | OPEN |
 | SAM-004 | `/delegate` rechaza rol `admin` | BUG | P2 | OPEN |
@@ -33,22 +33,6 @@ Sistema de tracking de bugs, features y chores pendientes.
 ---
 
 ## Detalle — Tickets activos
-
-### SAM-001 — DM_ROLL chips apilados verticalmente
-
-**Tipo:** BUG · **Prio:** P1 · **Estado:** IN_PROGRESS
-
-Los chips `<DM_ROLL>` aparecen inline dentro del texto narrativo. Cuando hay múltiples rolls seguidos (iniciativa, múltiples ataques), quedan esparcidos y visualmente desordenados.
-
-El agrupador actual (commit `73f8a38`) agrupa solo cuando el texto entre dos DM_ROLLs es whitespace-only. Pero el narrator intercala prosa corta ("Björn reacciona con un 5, mientras"), lo que rompe el criterio.
-
-**Archivos afectados:** `frontend/components/chat-interface.tsx` (`renderMessageContent`).
-
-**Enfoque propuesto (pendiente de implementar):** hoist — mover todos los DM_ROLLs al inicio como bloque vertical, quitarlos del flujo de texto, limpiar conectores huérfanos.
-
-**Criterio de done:** en un mensaje con 3+ DM_ROLLs, los chips aparecen apilados verticalmente al inicio del mensaje; el texto narrativo fluye abajo sin referencias huérfanas.
-
----
 
 ### SAM-003 — Sneak Attack modeling
 
@@ -187,3 +171,9 @@ Implementado en instrucción 209. Turn guard bloquea acciones fuera de turno; Ex
 **Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `738f85f`
 
 Implementado en instrucción 212. RULE 16 del narrator reforzada con "INITIATIVE GROUND TRUTH" — el `result` dentro de cada `<DM_ROLL>` es autoritativo, prosa y turn order deben citar números exactos, ties se resuelven por orden listado en los facts. Detalle en `SAM_progress_log.md`.
+
+### SAM-001 — DM_ROLL chips apilados verticalmente
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `c215cc7`
+
+Implementado en instrucción 213. `renderMessageContent` ahora cuenta los `<DM_ROLL>` del mensaje: si hay 2+, entra en modo HOIST — renderiza todos los chips en un `<div flex flex-col gap-1 my-2 items-start>` al inicio de la burbuja y abajo el texto narrativo con los tags removidos y el whitespace colapsado (spaces/tabs → 1 space, espacios antes de `\n` eliminados, `\n{3,}` → `\n\n`). Con 0 o 1 chip se mantiene el flujo inline anterior. Detalle en `SAM_progress_log.md`.
