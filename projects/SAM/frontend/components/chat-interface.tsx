@@ -729,33 +729,88 @@ export function ChatInterface({
     // SAM messages: senderId is null
 
     // [PHASE 16] Visualizer for DM Rolls
+    // Single DM_ROLL → inline chip flowing with the narrative.
+    // Two or more DM_ROLLs separated only by whitespace → stacked column (one per row).
     const renderMessageContent = (content: string, role: string = 'assistant') => {
         // Safety net: strip any machine tags that survived processing
         content = stripSystemTags(content, role)
-        // Split by the tag, keeping the delimiter (DM_ROLL has its own visual renderer)
+        // Split by the tag, keeping the delimiter
         const parts = content.split(/(<DM_ROLL>[\s\S]*?<\/DM_ROLL>)/g);
 
-        return parts.map((part, index) => {
-            if (part.startsWith("<DM_ROLL>")) {
-                try {
-                    // Extract JSON
-                    const jsonStr = part.replace(/<\/?DM_ROLL>/g, "");
-                    const data = JSON.parse(jsonStr);
-
-                    return (
-                        <span key={index} className="inline-flex items-center gap-1.5 bg-black/40 text-purple-300 border border-purple-500/30 px-2 py-1 rounded-md text-xs font-mono mx-1 my-1 select-none">
-                            <span className="text-lg">🎲</span>
-                            <span className="font-semibold text-purple-100">{data.result}</span>
-                            <span className="text-muted-foreground">({data.roll})</span>
-                            <span className="mx-1 text-purple-500/50">|</span>
-                            <span className="italic text-purple-200">{data.reason}</span>
-                        </span>
-                    );
-                } catch (e) {
-                    return <span key={index} className="text-red-500 text-xs">[Invlaid Roll Data]</span>;
-                }
+        type RollData = { result: string | number; roll: string; reason: string };
+        const parseRoll = (part: string): RollData | null => {
+            try {
+                return JSON.parse(part.replace(/<\/?DM_ROLL>/g, ""));
+            } catch {
+                return null;
             }
-            return <span key={index}>{part}</span>;
+        };
+
+        type Segment =
+            | { type: "text"; content: string }
+            | { type: "roll"; data: RollData | null }
+            | { type: "roll_group"; rolls: Array<RollData | null> };
+        const segments: Segment[] = [];
+
+        let i = 0;
+        while (i < parts.length) {
+            const part = parts[i];
+            if (part.startsWith("<DM_ROLL>")) {
+                const group: Array<RollData | null> = [parseRoll(part)];
+                let j = i + 1;
+                // Absorb consecutive DM_ROLLs separated only by whitespace
+                while (j + 1 < parts.length && parts[j].trim() === "" && parts[j + 1].startsWith("<DM_ROLL>")) {
+                    group.push(parseRoll(parts[j + 1]));
+                    j += 2;
+                }
+                if (group.length >= 2) {
+                    segments.push({ type: "roll_group", rolls: group });
+                } else {
+                    segments.push({ type: "roll", data: group[0] });
+                }
+                i = j;
+            } else {
+                segments.push({ type: "text", content: part });
+                i += 1;
+            }
+        }
+
+        const chipBase = "inline-flex items-center gap-1.5 bg-black/40 text-purple-300 border border-purple-500/30 px-2 py-1 rounded-md text-xs font-mono select-none";
+
+        const renderChipBody = (data: RollData) => (
+            <>
+                <span className="text-lg">🎲</span>
+                <span className="font-semibold text-purple-100">{data.result}</span>
+                <span className="text-muted-foreground">({data.roll})</span>
+                <span className="mx-1 text-purple-500/50">|</span>
+                <span className="italic text-purple-200">{data.reason}</span>
+            </>
+        );
+
+        return segments.map((seg, idx) => {
+            if (seg.type === "text") {
+                return <span key={idx}>{seg.content}</span>;
+            }
+            if (seg.type === "roll") {
+                if (!seg.data) {
+                    return <span key={idx} className="text-red-500 text-xs">[Invalid Roll Data]</span>;
+                }
+                return (
+                    <span key={idx} className={`${chipBase} mx-1 my-1`}>
+                        {renderChipBody(seg.data)}
+                    </span>
+                );
+            }
+            // roll_group — stacked vertically, left-aligned
+            return (
+                <div key={idx} className="flex flex-col gap-1 my-2 items-start">
+                    {seg.rolls.map((r, ri) => (
+                        r
+                            ? <span key={ri} className={`${chipBase} w-fit`}>{renderChipBody(r)}</span>
+                            : <span key={ri} className="text-red-500 text-xs">[Invalid Roll Data]</span>
+                    ))}
+                </div>
+            );
         });
     };
 
