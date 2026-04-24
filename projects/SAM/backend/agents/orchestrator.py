@@ -81,6 +81,13 @@ class SAMOrchestrator:
         prompt_player_roll = None
 
         if intent["type"] == "dice_roll":
+            # During combat, a bare dice roll (via dice tray) needs context:
+            # a d20 is an attack roll, a non-d20 is a damage roll. Wire up
+            # pending_player_roll so process_player_roll routes to the proper
+            # resolver (which already applies damage to NPC HP).
+            if combat.active and not engine.pending_player_roll:
+                self._setup_combat_freeform_pending(engine, intent, character_context, combat)
+
             # Player rolled dice — process the result
             self._handle_dice_roll(engine, intent, character_context, combat)
             mechanical_facts = engine.get_results_summary()
@@ -321,6 +328,69 @@ class SAMOrchestrator:
             "rolls": intent.get("rolls", [])
         }
         return engine.process_player_roll(character_context, roll_data)
+
+    def _setup_combat_freeform_pending(self, engine: MechanicEngine, intent: dict,
+                                       character_context: dict, combat: CombatState) -> None:
+        """
+        When combat is active and the player rolls dice without a prior
+        mechanic setup (e.g. a raw d20 or damage die from the dice tray),
+        infer intent from the die:
+          - d20    → weapon_attack against the first alive NPC
+          - non-d20 → weapon_damage, matching the die to one of the character's
+                      attacks (fallback: first attack)
+
+        Sets engine.pending_player_roll so the subsequent process_player_roll
+        call routes through the normal _resolve_weapon_attack / _resolve_weapon_damage
+        path, which already updates combat NPC HP.
+        """
+        dice_str = str(intent.get("dice", "")).strip().lower()
+        m = re.match(r"(\d*)d(\d+)", dice_str)
+        if not m:
+            return
+        sides = int(m.group(2))
+
+        # Target = first alive NPC in initiative
+        target_npc = next(
+            (c for c in combat.initiative_order
+             if c.get("is_npc") and c.get("hp", 0) > 0),
+            None,
+        )
+        if not target_npc:
+            return
+
+        attacks = (character_context.get("status") or {}).get("attacks") or []
+
+        if sides == 20:
+            # Attack roll — use first declared weapon (fallback: unarmed strike)
+            weapon = attacks[0] if attacks else {
+                "name": "Unarmed Strike", "bonus": "+0", "damage": "1",
+            }
+            engine.pending_player_roll = {
+                "type": "weapon_attack",
+                "weapon": weapon,
+                "target": target_npc["name"],
+                "target_data": target_npc,
+            }
+        else:
+            # Damage roll — match weapon whose damage starts with "NdX" on same sides
+            matching_weapon = None
+            for w in attacks:
+                dmg = str(w.get("damage", "")).strip().lower()
+                wm = re.match(r"\d*d(\d+)", dmg)
+                if wm and int(wm.group(1)) == sides:
+                    matching_weapon = w
+                    break
+            if not matching_weapon:
+                matching_weapon = attacks[0] if attacks else {
+                    "name": "Unarmed Strike", "bonus": "+0", "damage": dice_str,
+                }
+            engine.pending_player_roll = {
+                "type": "weapon_damage",
+                "weapon": matching_weapon,
+                "target": target_npc["name"],
+                "target_data": target_npc,
+                "critical": False,
+            }
 
     def _handle_spell(self, engine: MechanicEngine, intent: dict,
                       character_context: dict, combat: CombatState) -> dict:
