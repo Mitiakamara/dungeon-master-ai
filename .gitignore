@@ -23,3 +23,14 @@ build/
 # IDE
 .vscode/
 .idea/
+
+# Credentials and secrets — never commit (defensive, applies even if
+# files are in subdirectories not currently tracked by any repo)
+*Credentials*.txt
+*Credentials*.md
+PostmarkAPI.txt
+*ApiKey*.txt
+*ApiKey*.md
+*.env
+*.env.local
+*.env.*.local
