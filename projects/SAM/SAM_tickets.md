@@ -29,6 +29,10 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-011 | Commlink Realtime + auto-mark-as-read | FEAT | P2 | OPEN |
 | SAM-012 | Quitar console.logs de debug (presence tracking) | CHORE | P3 | OPEN |
 | SAM-013 | Narrator inventa números en iniciativa (no respeta DM_ROLL tag) | BUG | P1 | DONE |
+| SAM-014 | NPC damage no persiste a `characters.status.hp_current` | BUG | P1 | BLOCKED |
+| SAM-015 | DM_ROLL chips de turnos NPC llegan como "Invalid Roll Data" | BUG | P1 | BLOCKED |
+| SAM-016 | Extra Attack no se activa para Barbarian Lvl 7 (pendiente confirmar) | BUG | P1 | BLOCKED |
+| SAM-017 | Narrator SYSTEM_PROMPT explota con KeyError por JSON literal (regresión SAM-013) | BUG | P0 | IN_PROGRESS |
 
 ---
 
@@ -153,6 +157,48 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 **Archivos afectados:** `frontend/components/party-roster.tsx`, `frontend/components/game-layout.tsx` u otros.
 
 **Criterio de done:** consola del browser en producción limpia de logs manuales de debug.
+
+---
+
+### SAM-017 — Narrator SYSTEM_PROMPT explota con KeyError por JSON literal
+
+**Tipo:** BUG · **Prio:** P0 · **Estado:** IN_PROGRESS
+
+Regresión introducida en SAM-013 (commit `738f85f`). El bullet "INITIATIVE GROUND TRUTH" de RULE 16 agregó un ejemplo JSON literal `{"result": 5, "reason": "enemy Initiative"}` dentro del `SYSTEM_PROMPT`. `narrator.py:122` hace `SYSTEM_PROMPT.format(...)`, y `str.format()` interpreta `{"result"...}` como placeholder → `KeyError: '"result"'`.
+
+**Impacto:** TODOS los mensajes de combate caían al legacy `SAMBrain` (`ai.py`), perdiendo turn enforcement, persistencia consistente de HP, y validez de DM_ROLLs. Causa raíz de SAM-014, SAM-015, SAM-016 (BLOCKED hasta validar).
+
+Log (Render, 2026-06-05T20:54:21): `KeyError: '"result"'` en `narrate_mechanics` → `⚠️ Orchestrator failed, falling back to legacy SAMBrain`.
+
+**Archivos afectados:** `backend/agents/narrator.py`.
+
+**Fix aplicado:** llaves del JSON de ejemplo escapadas a `{{...}}` en RULE 16. Auditoría completa del archivo: era la única llave literal sin escapar. Smoke test local `SYSTEM_PROMPT.format()` pasa sin KeyError (6596 chars).
+
+**Criterio de done:** smoke test local OK ✅ · en prod ningún chat de combate cae al legacy · logs muestran `💚 HP updated:` consistente · sidebar HP coincide con HP narrativo tras F5. Pendiente: validación post-deploy.
+
+---
+
+### SAM-014 — NPC damage no persiste a `characters.status.hp_current`
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017)
+
+Detectado en playtest. El HP del PC no se actualiza tras el turno de contraataque del NPC. **Sospecha:** síntoma del fallback al legacy causado por SAM-017, no un bug propio del pipeline multi-agente. Validar tras deploy de SAM-017: si el HP persiste correctamente → cerrar como "resuelto por SAM-017". Si persiste, diagnóstico dedicado.
+
+---
+
+### SAM-015 — DM_ROLL chips de turnos NPC llegan como "Invalid Roll Data"
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017)
+
+Detectado en playtest. Los `<DM_ROLL>` de los turnos NPC se renderizan como "Invalid Roll Data". **Sospecha:** el legacy `SAMBrain` no emite los tags en el formato que espera el renderer del frontend. Validar tras deploy de SAM-017: si los DM_ROLLs llegan parseables → cerrar como "resuelto por SAM-017".
+
+---
+
+### SAM-016 — Extra Attack no se activa para Barbarian Lvl 7
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017)
+
+Detectado en playtest (pendiente confirmar). SAM no pregunta por el segundo ataque tras el primer damage roll de un Barbarian nivel 7. **Sospecha:** la action economy vive en el pipeline multi-agente (`combat_state.py`), inactivo bajo el fallback legacy. Validar tras deploy de SAM-017: si SAM invita al segundo ataque → cerrar como "resuelto por SAM-017".
 
 ---
 

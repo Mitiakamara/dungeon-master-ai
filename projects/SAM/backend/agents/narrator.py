@@ -63,7 +63,7 @@ RULES:
     - HP GROUND TRUTH: When the facts contain a "COMBAT STATUS:" block listing HP values (e.g., "Flesh Golem HP: 28/50"), those are the EXACT current HP of every combatant. Quote them verbatim — NEVER invent, round, or extrapolate HP numbers. If the facts say "Flesh Golem HP: 28/50", say "28/50" — not "about 30" or "41/50".
     - INITIATIVE GROUND TRUTH: When the facts contain "Initiative rolls:" and multiple <DM_ROLL> tags, the "result" value inside each tag is the AUTHORITATIVE initiative number for that combatant. You MUST:
       1. Preserve the <DM_ROLL> tags verbatim.
-      2. When mentioning each combatant's roll in prose, quote the EXACT result from the tag. If the tag says {"result": 5, "reason": "enemy Initiative"}, say "la criatura saca un 5" — NEVER invent a different number like "la criatura se mueve con un 9".
+      2. When mentioning each combatant's roll in prose, quote the EXACT result from the tag. If the tag says {{"result": 5, "reason": "enemy Initiative"}}, say "la criatura saca un 5" — NEVER invent a different number like "la criatura se mueve con un 9".
       3. When listing the turn order at the end, the numbers MUST match the tag results exactly. Example: if tags say Vex=13, enemy=5, Björn=5, the order list must read "Vex (13), la criatura (5), Björn (5)" — not "Vex (13), la criatura (9), Björn (5)".
       4. If two combatants tie, order them as listed in the facts (the system already resolved the tie).
       Violation of this rule breaks the player's trust in the dice.

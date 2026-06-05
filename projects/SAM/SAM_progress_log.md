@@ -740,6 +740,23 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 73f8a38  feat: stack consecutive DM_ROLL chips vertically + fix typo
 ```
 
+### Sesión 5 Jun 2026 — SAM-017: regresión KeyError en narrator (combate caía al legacy)
+
+**Contexto:** Playtest del 5 Jun reveló que TODOS los mensajes de combate caían al legacy `SAMBrain` (`ai.py`). Logs de Render (`2026-06-05T20:54:21`) mostraban `KeyError: '"result"'` en `narrator.py:122` (`narrate_mechanics` → `SYSTEM_PROMPT.format(...)`), seguido de `⚠️ Orchestrator failed, falling back to legacy SAMBrain`.
+
+**Causa raíz (regresión de SAM-013, commit `738f85f`):** El bullet "INITIATIVE GROUND TRUTH" agregado a RULE 16 incluyó un ejemplo JSON literal `{"result": 5, "reason": "enemy Initiative"}` dentro del `SYSTEM_PROMPT`. Como ese prompt pasa por `str.format()`, Python interpretó `{"result"...}` como placeholder y buscó un argumento `"result"` → `KeyError`.
+
+**Impacto:** Al caer al legacy en cada combate se perdían turn enforcement, persistencia consistente de HP, y la validez de los DM_ROLLs. Esto convirtió a SAM-017 en causa raíz de tres síntomas observados en playtest (SAM-014 HP no persiste, SAM-015 DM_ROLL "Invalid Roll Data", SAM-016 Extra Attack no se activa), que quedaron BLOCKED hasta validar el fix.
+
+**Fix:**
+1. **Escape de llaves** — En RULE 16, `{"result": 5, "reason": "enemy Initiative"}` → `{{"result": 5, "reason": "enemy Initiative"}}` (escape de `str.format()`).
+2. **Auditoría completa** — `grep` de todas las `{` del archivo. Confirmado que la línea 66 era la única llave literal sin escapar; el resto son placeholders válidos del `.format()` (`dm_style`, `campaign_context`, `character_context`, `party_context`, `mechanical_facts`, `character_name`, `player_message`) o f-strings de código Python (líneas 177, 194, 206, 209) que no pasan por `.format()`.
+3. **Smoke test local** — `Narrator.SYSTEM_PROMPT.format(dm_style=..., campaign_context=..., character_context=..., party_context=...)` corre sin `KeyError` (6596 chars).
+
+**Pendiente:** validación post-deploy en prod (campaña Genie's Wishes): confirmar que ningún chat de combate cae al legacy, que los logs muestran `💚 HP updated:` consistente, y que el sidebar HP coincide con el HP narrativo tras F5. Según resultado, cerrar SAM-014/015/016 como "resuelto por SAM-017" o diagnosticar individualmente.
+
+**Lección:** cualquier ejemplo con llaves literales (`{`/`}`) dentro de un string que después pasa por `str.format()` debe escaparse como `{{`/`}}`. Vale la pena un smoke test del `.format()` cada vez que se edita un prompt con llaves.
+
 ---
 
 ## 4. Estado Actual — Abril 2026
