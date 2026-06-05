@@ -14,7 +14,10 @@ def has_extra_attack(combatant: dict) -> bool:
     """
     if not combatant or combatant.get("is_npc"):
         return False
-    cls = str(combatant.get("class", "") or "").lower()
+    # PDF import stores class with a level suffix ("Barbarian 7"); take the
+    # first word so "barbarian 7" matches the class set. Guard against empty.
+    cls_raw = str(combatant.get("class", "") or "").lower().strip()
+    cls = cls_raw.split()[0] if cls_raw else ""
     try:
         level = int(combatant.get("level", 1) or 1)
     except (TypeError, ValueError):
