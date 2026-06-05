@@ -196,31 +196,177 @@ Log (Render, 2026-06-05T20:54:21): `KeyError: '"result"'` en `narrate_mechanics`
 
 ### SAM-014 — NPC damage no persiste a `characters.status.hp_current`
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017)
+**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017) — reconciliado por auditoría SAM-020
 
-Detectado en playtest. El HP del PC no se actualiza tras el turno de contraataque del NPC. **Sospecha:** síntoma del fallback al legacy causado por SAM-017, no un bug propio del pipeline multi-agente. Validar tras deploy de SAM-017: si el HP persiste correctamente → cerrar como "resuelto por SAM-017". Si persiste, diagnóstico dedicado.
+**Reconciliación (auditoría 5 Jun):** en el pipeline NUEVO el HP del jugador **sí persiste server-side** — `server.py:293-299` aplica el `state_update` tipo `player_hp` con `UPDATE characters.status.hp_current`. El síntoma "no persiste" era el fallback al legacy (SAM-017), donde el HP depende del `<UPDATE>` client-side y nunca pasa por ese handler. Validar tras deploy de SAM-017: si el daño NPC persiste y el sidebar coincide con la BD → cerrar como "resuelto por SAM-017".
+
+**Residual independiente:** el bloque `COMBAT STATUS` que ve el narrador lee HP de jugador desactualizado (`party_characters` stale) → drift narrativo. Trackeado por separado en **SAM-022** (no se cierra con SAM-017).
 
 ---
 
 ### SAM-015 — DM_ROLL chips de turnos NPC llegan como "Invalid Roll Data"
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017)
+**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017) — reconciliado por auditoría SAM-020
 
-Detectado en playtest. Los `<DM_ROLL>` de los turnos NPC se renderizan como "Invalid Roll Data". **Sospecha:** el legacy `SAMBrain` no emite los tags en el formato que espera el renderer del frontend. Validar tras deploy de SAM-017: si los DM_ROLLs llegan parseables → cerrar como "resuelto por SAM-017".
+**Reconciliación (auditoría 5 Jun):** confirmado el **formato dual de `<DM_ROLL>`**. El orchestrator emite JSON (`orchestrator.py:508,816,833`); el legacy `ai.py` instruye al LLM a emitir **texto libre/breakdown** (`ai.py:87,93,220`). El frontend hace `JSON.parse` (`chat-interface.tsx:740`) → si falla, renderiza `[Invalid Roll Data]` (`:782,796`). El texto libre del screenshot nace en el legacy → bajo fallback (SAM-017) todos los DM_ROLL de NPC fallan el parse.
+
+**Criterio de done:** se resuelve al no caer al legacy (SAM-017). *Defensivo opcional:* hacer `parseRoll` tolerante a texto libre (mostrar el texto crudo en vez de `[Invalid Roll Data]`).
 
 ---
 
 ### SAM-016 — Extra Attack no se activa para Barbarian Lvl 7
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017)
+**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017) — reconciliado por auditoría SAM-020
 
-Detectado en playtest (pendiente confirmar). SAM no pregunta por el segundo ataque tras el primer damage roll de un Barbarian nivel 7. **Sospecha:** la action economy vive en el pipeline multi-agente (`combat_state.py`), inactivo bajo el fallback legacy. Validar tras deploy de SAM-017: si SAM invita al segundo ataque → cerrar como "resuelto por SAM-017".
+**Reconciliación (auditoría 5 Jun):** la action economy del orchestrator es **correcta** — `combat_state.py:37-90` (`has_extra_attack`, seed/`consume_action`/`turn_is_over`) y los combatientes se estampan con `class`/`level` en `orchestrator.py:503-504`. El legacy NO tiene esta lógica → bajo fallback (SAM-017) Extra Attack desaparece.
+
+**Criterio de done:** se resuelve al no caer al legacy (SAM-017). Revalidar con Barbarian Lvl 7: SAM debe invitar al segundo ataque tras el primer damage roll.
+
+---
+
+### SAM-018 — Initiative/ataque-delegado modifiers +0 (stats nesting)
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+Contrato roto confirmado en auditoría SAM-020. `stats` es **columna top-level** (`schema_game_engine.sql:16`, `characters.py:29`), pero el orchestrator la lee anidada: `orchestrator.py:488` (iniciativa de jugadores) y `:603` (`_build_combatant_from_character`, ataques de PC delegado) hacen `status.get("stats")` → vacío → `dex_mod`/`str_mod` = 0. En cambio `mechanic.py:419` (skill modifier) lee `character.get("stats")` top-level → correcto. Asimetría.
+
+**Archivos afectados:** `backend/agents/orchestrator.py` (2 call-sites: `:488`, `:603`).
+
+**Criterio de done:** iniciativa de jugador refleja su DEX mod real (no +0); ataque de PC delegado usa STR/DEX+proficiency reales. Detalle en `SAM_audit_2026-06-05.md` §6.
+
+---
+
+### SAM-021 — Orchestrator no implementa loot/XP/level-up/imágenes
+
+**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** OPEN
+
+Hallazgo principal de la auditoría SAM-020. El pipeline nuevo no porta features del legacy: `mechanic.award_xp` (`:614`) existe pero **nunca se llama**; `give_loot` solo está en tools legacy; el narrator tiene prohibido emitir `<LOOT>/<XP_GAIN>/<EVENT>/<IMAGE>` (`narrator.py:39`). Esas features solo viven en `ai.py`, alcanzado solo por excepción (`server.py:398-406`). En operación normal (orchestrator OK) se descartan en silencio. **Subsume SAM-009** (servicio de imágenes).
+
+**Enfoque:** agregar intents/handlers de loot y XP al orchestrator (o delegación explícita al legacy, no por excepción) + conectar generación de imagen.
+
+**Criterio de done:** matar un enemigo otorga XP + dispara level-up; encontrar tesoro persiste loot en inventario; SAM puede generar imágenes — todo sin depender del fallback legacy. Detalle en `SAM_audit_2026-06-05.md` §1, §5.
+
+---
+
+### SAM-022 — COMBAT STATUS muestra HP de jugador stale (drift narrador vs BD)
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+
+El overlay de HP de jugador en el bloque `COMBAT STATUS` (`orchestrator.py:856-868` y `:319-329`) lee `party_characters[].status.hp_current` = snapshot del inicio del request (`server.py:247`), ANTES de que el `state_update` de este turno se persista (`server.py:293` corre después de `process_message`). Resultado: el narrador ve HP viejo en COMBAT STATUS pero HP nuevo en el fact `damage_applied`; RULE 16 lo manda a citar COMBAT STATUS → narra el viejo. Tras F5, el sidebar lee BD = nuevo → mismatch narrativo↔sidebar. Residual de SAM-014, independiente de SAM-017.
+
+**Criterio de done:** el bloque COMBAT STATUS refleja el HP post-daño (leído de los resultados del engine / `state_updates`, no de `party_characters` stale). Detalle en `SAM_audit_2026-06-05.md` §4.
+
+---
+
+### SAM-023 — Respuestas de comandos admin duplicadas para el emisor
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+
+`server.py:159-168` inserta la respuesta admin en `messages` (→ Realtime INSERT) y además la retorna al frontend; el frontend hace **append optimista** del `data.response` **sin `id`** (`chat-interface.tsx:693-701`). Cuando llega el Realtime INSERT con `id` real, la dedup `prev.some(m => m.id === incomingMsg.id)` no matchea (el optimista tiene `id=undefined`) → se agrega de nuevo → **duplicado**. Afecta `/delegate`, `/undelegate`, `/gold`, `/memory` (`/reset` se exime, `/load` se enmascara con su reload).
+
+**Criterio de done:** eliminar el append optimista de comandos admin (confiar solo en Realtime, como el chat normal) o estampar un `id` compartido. Detalle en `SAM_audit_2026-06-05.md` §7.
+
+---
+
+### SAM-024 — Legacy `<UPDATE>` HP solo client-side + ambigüedad multiplayer
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+
+Bajo fallback legacy, `server.py` ignora los `updates` que retorna `generate_response` (`ai.py:480`); el HP depende del `<UPDATE>` parseado **client-side** (`chat-interface.tsx:253-275`) y se aplica al `selectedCharacter` del **espectador**, sin atribución de personaje. En multiplayer, si SAM daña al jugador A, la pantalla del jugador B aplicaría el `<UPDATE>` a su propio personaje.
+
+**Criterio de done:** mitigado si se deprecia el legacy (SAM-025) o se porta todo al orchestrator (SAM-021). Mientras el legacy exista, evaluar atribución del `<UPDATE>`. Detalle en `SAM_audit_2026-06-05.md` §1, §4.
+
+---
+
+### SAM-025 — Extraer de `ai.py` piezas no-game-loop reusadas
+
+**Tipo:** REFACTOR · **Prio:** P2 · **Estado:** OPEN
+
+El orchestrator depende del legacy: `sam_brain.supabase` (cliente Supabase usado por todo `server.py` y `KnowledgeService`), `_build_dm_style` (`server.py:260`), `parse_character_pdf` + avatares (`characters.py:71`). No se puede deprecar `generate_response` sin extraer esto a módulos neutrales.
+
+**Criterio de done:** `_build_dm_style` → `services/style.py`; cliente Supabase → `core/supabase.py`; PDF import + avatares → `services/character_import.py`. Recién entonces evaluar deprecación del game-loop legacy. Precondición de SAM-021. Detalle en `SAM_audit_2026-06-05.md` §5.
+
+---
+
+### SAM-026 — Código muerto: `pending_action` + `<ACTION>RELOAD_CHAT>`
+
+**Tipo:** CHORE · **Prio:** P3 · **Estado:** OPEN
+
+`pending_action`/`set_pending_action`/`clear_pending_action` (`combat_state.py:119-125`) nunca se invocan; siempre vale `None`; `turn_is_over` (`:88-90`) depende de eso. Coexiste con el `pending_player_roll` vivo (confusión de nombres). Además, `/load` emite `<ACTION>RELOAD_CHAT</ACTION>` (`admin.py:172`) que el frontend nunca maneja.
+
+**Criterio de done:** eliminar `pending_action` y helpers muertos; simplificar `turn_is_over` a `actions_remaining <= 0`; remover/implementar `RELOAD_CHAT`. Detalle en `SAM_audit_2026-06-05.md` §1, §3.
+
+---
+
+### SAM-027 — Warning cuando un intent llega sin handler mecánico
+
+**Tipo:** CHORE · **Prio:** P3 · **Estado:** OPEN
+
+Agregar un intent nuevo al interpreter sin handler en el orchestrator cae silenciosamente al grupo de narración (`orchestrator.py:253`). No hay log de "intent sin handler". `ability` y `movement` hoy son narración-only (sin resolución mecánica).
+
+**Criterio de done:** log defensivo cuando un intent no tiene handler dedicado. Opcional: resolución mecánica básica de `ability`. Detalle en `SAM_audit_2026-06-05.md` §2.
+
+---
+
+### SAM-028 — Unificar shape de `settings.combat` legacy vs orchestrator
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+
+El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dict()` (sin `actions_remaining`/`current_turn_index`; `initiative_order` viene del LLM, `server.py:425-427`). Si un mensaje cae al legacy a mitad de combate y el siguiente vuelve al orchestrator, `CombatState.from_dict` lee estado inconsistente (p.ej. `actions_remaining=0` → `turn_is_over` inmediato).
+
+**Criterio de done:** unificar el shape o impedir que el legacy escriba `settings.combat` cuando el orchestrator es dueño del combate. Mitigado si se deprecia el legacy. Detalle en `SAM_audit_2026-06-05.md` §3.
+
+---
+
+### SAM-029 — Aplicar `state_updates` por `character_id` en vez de por `name`
+
+**Tipo:** REFACTOR · **Prio:** P3 · **Estado:** OPEN
+
+`server.py` matchea personajes por nombre al aplicar state_updates (`:295`, `:303`, `:321`, `:354`). Homónimos colisionan; un rename rompe el update.
+
+**Criterio de done:** los handlers de `player_hp`/`xp_update`/`spell_slot_consume`/`inventory_remove` resuelven por `character_id`. Requiere que el engine propague el id en los `state_updates`. Detalle en `SAM_audit_2026-06-05.md` §4.
+
+---
+
+### SAM-030 — Incluir `stats` en `_format_character_context`
+
+**Tipo:** CHORE · **Prio:** P3 · **Estado:** OPEN
+
+`_format_character_context` (`orchestrator.py:970-982`) no incluye los ability scores → el narrador no puede responder preguntas de stats con exactitud, aunque RULE 15 (`narrator.py:46`) promete lo contrario.
+
+**Criterio de done:** el contexto del narrador incluye STR/DEX/CON/INT/WIS/CHA. Detalle en `SAM_audit_2026-06-05.md` §6.
+
+---
+
+### SAM-031 — Gate `debug_log.txt` por env DEBUG
+
+**Tipo:** CHORE · **Prio:** P3 · **Estado:** OPEN
+
+`ai.py:418` (cada respuesta legacy) y `:507` (cada import PDF) escriben `debug_log.txt`. En Render (FS efímero) crece sin rotación y es I/O en el hot-path.
+
+**Criterio de done:** escritura condicionada a una env var `DEBUG`; sin I/O de disco en producción por defecto. Detalle en `SAM_audit_2026-06-05.md` §8.
+
+---
+
+### SAM-032 — Retry/backoff para `RemoteProtocolError` (httpx)
+
+**Tipo:** CHORE · **Prio:** P3 · **Estado:** OPEN
+
+`RemoteProtocolError` de httpx (transporte Gemini/Supabase) no tiene manejo dedicado → burbujea al `except` genérico (`ai.py:484`, `server.py:476`) y el usuario ve "SYSTEM ERROR". Es transitorio.
+
+**Criterio de done:** retry con backoff corto en las llamadas Gemini/Supabase antes de degradar a error de usuario. Detalle en `SAM_audit_2026-06-05.md` §8.
 
 ---
 
 ---
 
 ## Tickets cerrados
+
+### SAM-020 — Auditoría arquitectónica del sistema
+
+**Tipo:** CHORE · **Prio:** P1 · **Estado:** DONE · **Commit:** `03bc7b9`
+
+Auditoría read-only del estado real del sistema (instrucción 215). Entregable: `SAM_audit_2026-06-05.md` — 8 secciones (tags, intent, combate, persistencia HP, legacy vs orchestrator, contratos rotos, formato, errores silenciosos) con ESTADO ACTUAL / INCONSISTENCIAS / RIESGOS / TICKETS. Produjo 13 tickets nuevos (SAM-018, 021–032) y reconcilió SAM-014/015/016 con la causa raíz SAM-017. Sin cambios de código.
 
 ### SAM-002 — Turn enforcement + Extra Attack
 
