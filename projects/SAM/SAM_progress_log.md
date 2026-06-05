@@ -768,6 +768,13 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 - **Hallazgo lateral (corrige la reconciliación previa de SAM-016):** el campo `class` viene del PDF con sufijo de nivel (`"Barbarian 7"`, `"Rogue 7"`). `has_extra_attack` (`combat_state.py:17,22`) hace membresía EXACTA de set (`cls in EXTRA_ATTACK_CLASSES`) → `"barbarian 7"` ∉ `{"barbarian",...}` → **Extra Attack nunca se activa** para personajes importados de PDF, aún con el orchestrator activo. SAM-016 tiene por tanto DOS capas: el fallback legacy (SAM-017) y este class-matching roto. Ticket SAM-016 actualizado a OPEN con fix propuesto (`cls.split()[0]` o match por prefijo).
 - **Lección:** un contrato de datos con dos niveles posibles (`stats` top-level vs `status.stats`) es una trampa silenciosa; leer del nivel equivocado se enmascara como "todo en +0" sin crashear (gracias al `or {}`). Verificar el shape real en BD antes de asumir.
 
+**SAM-016 — Extra Attack: normalizar `class` en `has_extra_attack` (commit `186e462`):**
+- **Causa raíz (de SAM-018):** `has_extra_attack` (`combat_state.py`) hacía membresía exacta de set sobre el `class` crudo, pero el PDF import lo guarda con sufijo de nivel (`"Barbarian 7"`) → `"barbarian 7"` ∉ `{"barbarian",...}` → Extra Attack nunca se activaba para martials importados de PDF.
+- **Fix:** `cls_raw.split()[0] if cls_raw else ""` — extrae la primera palabra (la clase real), con guard anti-IndexError para class vacío.
+- **Verificación pre-deploy (query read-only):** `level` es columna entera poblada (Björn 7, Vex 7), separada del `class` → `level >= 5` ya funcionaba, **sin segundo bug**. Björn (Barbarian 7) → 2 ataques; Vex (Rogue 7) → 1.
+- **Capas de SAM-016:** (1) fallback legacy sin action economy (SAM-017, revalidar) + (2) class-matching roto (este fix). Ambas debían resolverse.
+- **Lección:** un campo que mezcla dos datos (`class` = clase + nivel) rompe cualquier comparación exacta; normalizar antes de comparar.
+
 ---
 
 ## 4. Estado Actual — Abril 2026

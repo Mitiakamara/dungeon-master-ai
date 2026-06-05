@@ -31,7 +31,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-013 | Narrator inventa números en iniciativa (no respeta DM_ROLL tag) | BUG | P1 | DONE |
 | SAM-014 | NPC damage no persiste a `characters.status.hp_current` | BUG | P1 | BLOCKED |
 | SAM-015 | DM_ROLL chips de turnos NPC llegan como "Invalid Roll Data" | BUG | P1 | BLOCKED |
-| SAM-016 | Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel ("Barbarian 7") | BUG | P1 | OPEN |
+| SAM-016 | Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel ("Barbarian 7") | BUG | P1 | DONE |
 | SAM-017 | Narrator SYSTEM_PROMPT explota con KeyError por JSON literal (regresión SAM-013) | BUG | P0 | IN_PROGRESS |
 | SAM-018 | Initiative/ataque-delegado modifiers +0 — orchestrator lee `status.stats` en vez de `stats` top-level | BUG | P1 | DONE |
 | SAM-020 | Auditoría arquitectónica del sistema (`SAM_audit_2026-06-05.md`) | CHORE | P1 | DONE |
@@ -214,21 +214,6 @@ Log (Render, 2026-06-05T20:54:21): `KeyError: '"result"'` en `narrate_mechanics`
 
 ---
 
-### SAM-016 — Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel
-
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (dos capas de causa)
-
-**Causa raíz adicional (hallada en SAM-018, 5 Jun):** la mecánica de action economy (`seed`/`consume_action`/`turn_is_over`) es correcta, pero el **matching de clase está roto**. `has_extra_attack` (`combat_state.py:17,22`) hace `cls in EXTRA_ATTACK_CLASSES` (membresía EXACTA de set). El campo `class` viene del PDF import **con sufijo de nivel** — verificado en prod: `"Barbarian 7"`, `"Rogue 7"` (schema `ai.py:553`). `"barbarian 7" ∉ {"barbarian","fighter","paladin","ranger"}` → `has_extra_attack` siempre `False` → **Extra Attack NUNCA se activa** para personajes importados de PDF, incluso con el orchestrator corriendo. NO es solo síntoma del fallback legacy.
-
-**Capa 1 (SAM-017):** bajo fallback al legacy no hay action economy en absoluto.
-**Capa 2 (esta):** aún con el orchestrator activo, el class-matching falla.
-
-**Fix propuesto:** en `has_extra_attack`, normalizar el `class` extrayendo la primera palabra (`cls.split()[0]`) o hacer match por prefijo contra `EXTRA_ATTACK_CLASSES`.
-
-**Criterio de done:** Björn (class `"Barbarian 7"`) recibe 2 acciones; SAM invita al segundo ataque tras el primer damage roll. Revalidar también tras SAM-017.
-
----
-
 ### SAM-021 — Orchestrator no implementa loot/XP/level-up/imágenes
 
 **Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** OPEN
@@ -366,6 +351,12 @@ Auditoría read-only del estado real del sistema (instrucción 215). Entregable:
 **Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `5f6a880`
 
 Instrucción 217. El orchestrator leía `status.stats` (anidado, vacío) en `_handle_start_combat` (iniciativa de jugadores) y `_build_combatant_from_character` (ataque de PC delegado), pero `stats` es columna top-level → todos los modificadores salían +0. Fix: leer `char.get("stats")` en ambos call-sites (`orchestrator.py:488,603`). Verificado contra prod Supabase (Björn DEX 14 → +2, Vex DEX 20 → +5; `status.stats` = None). Detalle en `SAM_audit_2026-06-05.md` §6 y `SAM_progress_log.md`. **Hallazgo lateral:** SAM-016 tiene causa raíz adicional (class con sufijo de nivel rompe `has_extra_attack`).
+
+### SAM-016 — Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `186e462`
+
+Instrucción 218 (causa raíz hallada en SAM-018). El PDF import guarda `class` con sufijo de nivel (`"Barbarian 7"`, `ai.py:553`), pero `has_extra_attack` (`combat_state.py`) hacía membresía exacta de set (`cls in EXTRA_ATTACK_CLASSES`) → `"barbarian 7"` nunca matcheaba → Extra Attack jamás se activaba para martials importados de PDF, aun con el orchestrator activo. Fix: extraer la primera palabra del class (`cls_raw.split()[0]`, con guard anti-IndexError). Verificado en prod que `level` es columna entera (7) separada del class → `level >= 5` ya funcionaba (sin segundo bug). Björn (Barbarian 7) → 2 ataques; Vex (Rogue 7) → 1. La capa SAM-017 (fallback legacy sin action economy) se valida por separado. Detalle en `SAM_progress_log.md`.
 
 ### SAM-002 — Turn enforcement + Extra Attack
 
