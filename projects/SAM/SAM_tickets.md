@@ -31,9 +31,9 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-013 | Narrator inventa números en iniciativa (no respeta DM_ROLL tag) | BUG | P1 | DONE |
 | SAM-014 | NPC damage no persiste a `characters.status.hp_current` | BUG | P1 | BLOCKED |
 | SAM-015 | DM_ROLL chips de turnos NPC llegan como "Invalid Roll Data" | BUG | P1 | BLOCKED |
-| SAM-016 | Extra Attack no se activa para Barbarian Lvl 7 (pendiente confirmar) | BUG | P1 | BLOCKED |
+| SAM-016 | Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel ("Barbarian 7") | BUG | P1 | OPEN |
 | SAM-017 | Narrator SYSTEM_PROMPT explota con KeyError por JSON literal (regresión SAM-013) | BUG | P0 | IN_PROGRESS |
-| SAM-018 | Initiative/ataque-delegado modifiers +0 — orchestrator lee `status.stats` en vez de `stats` top-level | BUG | P1 | OPEN |
+| SAM-018 | Initiative/ataque-delegado modifiers +0 — orchestrator lee `status.stats` en vez de `stats` top-level | BUG | P1 | DONE |
 | SAM-020 | Auditoría arquitectónica del sistema (`SAM_audit_2026-06-05.md`) | CHORE | P1 | DONE |
 | SAM-021 | Orchestrator no implementa loot/XP/level-up/imágenes (solo en legacy `ai.py`) | REFACTOR | P1 | OPEN |
 | SAM-022 | COMBAT STATUS muestra HP de jugador stale → drift narrador vs BD/sidebar | BUG | P2 | OPEN |
@@ -214,25 +214,18 @@ Log (Render, 2026-06-05T20:54:21): `KeyError: '"result"'` en `narrate_mechanics`
 
 ---
 
-### SAM-016 — Extra Attack no se activa para Barbarian Lvl 7
+### SAM-016 — Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017) — reconciliado por auditoría SAM-020
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (dos capas de causa)
 
-**Reconciliación (auditoría 5 Jun):** la action economy del orchestrator es **correcta** — `combat_state.py:37-90` (`has_extra_attack`, seed/`consume_action`/`turn_is_over`) y los combatientes se estampan con `class`/`level` en `orchestrator.py:503-504`. El legacy NO tiene esta lógica → bajo fallback (SAM-017) Extra Attack desaparece.
+**Causa raíz adicional (hallada en SAM-018, 5 Jun):** la mecánica de action economy (`seed`/`consume_action`/`turn_is_over`) es correcta, pero el **matching de clase está roto**. `has_extra_attack` (`combat_state.py:17,22`) hace `cls in EXTRA_ATTACK_CLASSES` (membresía EXACTA de set). El campo `class` viene del PDF import **con sufijo de nivel** — verificado en prod: `"Barbarian 7"`, `"Rogue 7"` (schema `ai.py:553`). `"barbarian 7" ∉ {"barbarian","fighter","paladin","ranger"}` → `has_extra_attack` siempre `False` → **Extra Attack NUNCA se activa** para personajes importados de PDF, incluso con el orchestrator corriendo. NO es solo síntoma del fallback legacy.
 
-**Criterio de done:** se resuelve al no caer al legacy (SAM-017). Revalidar con Barbarian Lvl 7: SAM debe invitar al segundo ataque tras el primer damage roll.
+**Capa 1 (SAM-017):** bajo fallback al legacy no hay action economy en absoluto.
+**Capa 2 (esta):** aún con el orchestrator activo, el class-matching falla.
 
----
+**Fix propuesto:** en `has_extra_attack`, normalizar el `class` extrayendo la primera palabra (`cls.split()[0]`) o hacer match por prefijo contra `EXTRA_ATTACK_CLASSES`.
 
-### SAM-018 — Initiative/ataque-delegado modifiers +0 (stats nesting)
-
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
-
-Contrato roto confirmado en auditoría SAM-020. `stats` es **columna top-level** (`schema_game_engine.sql:16`, `characters.py:29`), pero el orchestrator la lee anidada: `orchestrator.py:488` (iniciativa de jugadores) y `:603` (`_build_combatant_from_character`, ataques de PC delegado) hacen `status.get("stats")` → vacío → `dex_mod`/`str_mod` = 0. En cambio `mechanic.py:419` (skill modifier) lee `character.get("stats")` top-level → correcto. Asimetría.
-
-**Archivos afectados:** `backend/agents/orchestrator.py` (2 call-sites: `:488`, `:603`).
-
-**Criterio de done:** iniciativa de jugador refleja su DEX mod real (no +0); ataque de PC delegado usa STR/DEX+proficiency reales. Detalle en `SAM_audit_2026-06-05.md` §6.
+**Criterio de done:** Björn (class `"Barbarian 7"`) recibe 2 acciones; SAM invita al segundo ataque tras el primer damage roll. Revalidar también tras SAM-017.
 
 ---
 
@@ -367,6 +360,12 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 **Tipo:** CHORE · **Prio:** P1 · **Estado:** DONE · **Commit:** `03bc7b9`
 
 Auditoría read-only del estado real del sistema (instrucción 215). Entregable: `SAM_audit_2026-06-05.md` — 8 secciones (tags, intent, combate, persistencia HP, legacy vs orchestrator, contratos rotos, formato, errores silenciosos) con ESTADO ACTUAL / INCONSISTENCIAS / RIESGOS / TICKETS. Produjo 13 tickets nuevos (SAM-018, 021–032) y reconcilió SAM-014/015/016 con la causa raíz SAM-017. Sin cambios de código.
+
+### SAM-018 — Initiative/ataque-delegado modifiers +0 (stats nesting)
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `5f6a880`
+
+Instrucción 217. El orchestrator leía `status.stats` (anidado, vacío) en `_handle_start_combat` (iniciativa de jugadores) y `_build_combatant_from_character` (ataque de PC delegado), pero `stats` es columna top-level → todos los modificadores salían +0. Fix: leer `char.get("stats")` en ambos call-sites (`orchestrator.py:488,603`). Verificado contra prod Supabase (Björn DEX 14 → +2, Vex DEX 20 → +5; `status.stats` = None). Detalle en `SAM_audit_2026-06-05.md` §6 y `SAM_progress_log.md`. **Hallazgo lateral:** SAM-016 tiene causa raíz adicional (class con sufijo de nivel rompe `has_extra_attack`).
 
 ### SAM-002 — Turn enforcement + Extra Attack
 

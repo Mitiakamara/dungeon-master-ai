@@ -757,6 +757,17 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Lección:** cualquier ejemplo con llaves literales (`{`/`}`) dentro de un string que después pasa por `str.format()` debe escaparse como `{{`/`}}`. Vale la pena un smoke test del `.format()` cada vez que se edita un prompt con llaves.
 
+### Sesión 5 Jun 2026 (cont.) — SAM-020 auditoría + SAM-018 fix de stats
+
+**SAM-020 — Auditoría arquitectónica (`SAM_audit_2026-06-05.md`, commits `03bc7b9`/`3cba19c`):** mapa read-only del estado real del sistema en 8 secciones (tags, intent, combate, persistencia HP, legacy vs orchestrator, contratos rotos, formato, errores silenciosos). Hallazgo principal: el pipeline nuevo (orchestrator) **no implementa loot/XP/level-up/imágenes** — solo viven en el legacy `ai.py`, alcanzado solo por excepción → en operación normal se descartan. Generó 13 tickets (SAM-018, 021–032) y reconcilió SAM-014/015/016 con la causa raíz SAM-017.
+
+**SAM-018 — Initiative/ataque-delegado modifiers +0 (commit `5f6a880`):**
+- **Causa raíz:** `characters` tiene dos columnas jsonb separadas: `stats` (top-level, `{str,dex,...}` enteros) y `status` (HP/AC/attacks/...). El orchestrator leía `status.get("stats")` (anidado, siempre vacío) en `_handle_start_combat` (`orchestrator.py:488`, iniciativa de jugadores) y `_build_combatant_from_character` (`:603`, ataques de PC delegado) → `dex_mod`/`str_mod` = 0 → toda iniciativa y ataque delegado sin modificador. `mechanic.py:419` (skill checks) ya leía el lugar correcto → asimetría que delató el bug.
+- **Fix:** ambos call-sites pasan a `pc.get("stats")`/`char.get("stats")` (top-level). `status` se mantiene para HP/AC/attacks.
+- **Verificación pre-deploy (query read-only a prod Supabase):** Björn Glacierfist (Barbarian, `stats.dex`=14 → +2) y Vex Was (Rogue, `stats.dex`=20 → +5); `status.stats` = `None` en ambos. Confirma el diagnóstico. `py_compile` OK.
+- **Hallazgo lateral (corrige la reconciliación previa de SAM-016):** el campo `class` viene del PDF con sufijo de nivel (`"Barbarian 7"`, `"Rogue 7"`). `has_extra_attack` (`combat_state.py:17,22`) hace membresía EXACTA de set (`cls in EXTRA_ATTACK_CLASSES`) → `"barbarian 7"` ∉ `{"barbarian",...}` → **Extra Attack nunca se activa** para personajes importados de PDF, aún con el orchestrator activo. SAM-016 tiene por tanto DOS capas: el fallback legacy (SAM-017) y este class-matching roto. Ticket SAM-016 actualizado a OPEN con fix propuesto (`cls.split()[0]` o match por prefijo).
+- **Lección:** un contrato de datos con dos niveles posibles (`stats` top-level vs `status.stats`) es una trampa silenciosa; leer del nivel equivocado se enmascara como "todo en +0" sin crashear (gracias al `or {}`). Verificar el shape real en BD antes de asumir.
+
 ---
 
 ## 4. Estado Actual — Abril 2026
