@@ -485,7 +485,7 @@ class SAMOrchestrator:
         # Players: use dex mod for initiative, roll 1d20 + dex_mod
         for pc in party_characters or []:
             status = pc.get("status") or {}
-            stats = status.get("stats") or {}
+            stats = pc.get("stats") or {}  # SAM-018: stats is a top-level column, not nested in status
             dex = int(stats.get("dex", 10) or 10)
             dex_mod = (dex - 10) // 2
             init_roll = DiceRoller.roll(20)
@@ -600,7 +600,7 @@ class SAMOrchestrator:
         Attacks come from status.attacks; fallback to a proficiency-based unarmed strike.
         """
         status = char.get("status") or {}
-        stats = status.get("stats") or {}
+        stats = char.get("stats") or {}  # SAM-018: stats is a top-level column, not nested in status
         level = int(char.get("level", 1) or 1)
         prof = 2 + (level - 1) // 4  # D&D 5e proficiency: +2 at 1-4, +3 at 5-8, ...
 
