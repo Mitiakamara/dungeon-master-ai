@@ -18,7 +18,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 |----|--------|------|------|--------|
 | SAM-001 | DM_ROLL chips apilados verticalmente | BUG | P1 | DONE |
 | SAM-002 | Turn enforcement + Extra Attack | FEAT | P0 | DONE |
-| SAM-003 | Sneak Attack modeling | FEAT | P1 | OPEN |
+| SAM-003 | Sneak Attack modeling | FEAT | P1 | DONE |
 | SAM-004 | `/delegate` rechaza rol `admin` | BUG | P2 | OPEN |
 | SAM-005 | Vex tiene Unarmed Strike incorrecto | BUG | P3 | OPEN |
 | SAM-006 | MemoryService trunca JSON de Gemini | BUG | P3 | OPEN |
@@ -47,7 +47,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-030 | Incluir `stats` en `_format_character_context` (gap narrator RULE 15) | CHORE | P3 | OPEN |
 | SAM-031 | Gate `debug_log.txt` por env DEBUG (no I/O en hot-path) | CHORE | P3 | OPEN |
 | SAM-032 | Retry/backoff para `RemoteProtocolError` httpx (Gemini/Supabase) | CHORE | P3 | OPEN |
-| SAM-033 | Narrator alucina combate completo (rolls/daño/HP) sin mechanical facts | BUG | P1 | OPEN |
+| SAM-033 | Narrator alucina combate completo (rolls/daño/HP) sin mechanical facts | BUG | P1 | DONE |
 | SAM-034 | No existe forma de terminar el turno voluntariamente | BUG | P1 | DONE |
 | SAM-035 | skill_check en combate no consume acción → acciones infinitas | BUG | P2 | DONE |
 
@@ -56,22 +56,6 @@ Sistema de tracking de bugs, features y chores pendientes.
 ---
 
 ## Detalle — Tickets activos
-
-### SAM-003 — Sneak Attack modeling
-
-**Tipo:** FEAT · **Prio:** P1 · **Estado:** OPEN
-
-El Rogue Sneak Attack es 1d8 weapon damage + 4d6 sneak damage como una sola acción. El pipeline actual solo conoce `weapon_attack → weapon_damage`. El 4d6 llega como `dice_roll` huérfano y queda narrativo — no se aplica al NPC.
-
-Log confirmatorio: `⚠️ Dice roll processed but no state_updates generated — damage may be narrative-only`.
-
-**Archivos afectados:** `backend/agents/interpreter.py`, `backend/agents/mechanic.py`, `backend/agents/orchestrator.py`.
-
-**Enfoque propuesto:** extender `pending_player_roll` con `follow_up_dice` (ej. `"4d6"`). Cuando se resuelve `weapon_damage` con follow-up seteado, encadenar un pending `sneak_damage` que aplique al mismo target.
-
-**Criterio de done:** Vex tira d20 (hit) → 1d8 (aplica al NPC) → 4d6 (aplica al mismo NPC). HP del NPC refleja la suma total.
-
----
 
 ### SAM-004 — `/delegate` rechaza rol `admin`
 
@@ -339,21 +323,23 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 
 ---
 
-### SAM-033 — Narrator alucina combate completo sin mechanical facts
-
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
-
-Con intent `roleplay` y combate inexistente, el narrator inventó iniciativas, ataques enemigos, daño y "Tu HP baja a 61/68" — todo fake, con formato `<DM_ROLL formula=.../>` aprendido de mensajes legacy presentes en el history. Evidencia: playtest 2026-06-09, primer "combate" alucinado antes del `start_combat` real.
-
-**Archivos afectados:** `backend/agents/narrator.py` (ROLEPLAY_TEMPLATE / RULE 16); posible sanitización del history que se pasa al narrator.
-
-**Criterio de done:** con intent roleplay y sin combate activo, el narrator no emite rolls, daño, cambios de HP ni tags `<DM_ROLL>` inventados.
-
 ---
 
 ---
 
 ## Tickets cerrados
+
+### SAM-033 — Narrator alucina combate completo sin mechanical facts
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `2c08fcb`
+
+Instrucción 220. Con intent `roleplay` y combate inexistente, el narrator inventó iniciativas, ataques enemigos, daño y "Tu HP baja a 61/68" — todo fake, con formato `<DM_ROLL formula=.../>` aprendido de mensajes legacy en el history (evidencia: playtest 2026-06-09). Fix en dos vectores: (1) regla 9b en SYSTEM_PROMPT — prohibido generar tags `<DM_ROLL>` propios en cualquier formato — y bloque CRITICAL en ROLEPLAY_TEMPLATE que prohíbe iniciativas/ataques/daño/HP/DM_ROLL sin mechanical facts; (2) sanitización del history en `_invoke`: regex elimina los DM_ROLL legacy attribute-style de mensajes assistant (los JSON correctos se conservan como buen ejemplo; la forma emparejada se procesa antes que la self-closing para no dejar closers huérfanos). Validación post-deploy pendiente con la frase exacta que disparó la alucinación. Detalle en `SAM_progress_log.md`.
+
+### SAM-003 — Sneak Attack modeling
+
+**Tipo:** FEAT · **Prio:** P1 · **Estado:** DONE · **Commit:** `2c08fcb`
+
+Instrucción 221. El 4d6 de Sneak Attack llegaba como `dice_roll` huérfano y quedaba narrativo. Fix: chain de pending rolls — `_get_sneak_dice` detecta Rogue (tolera sufijo de nivel) y calcula `ceil(level/2)d6`; el pending `weapon_attack` (declarado o freeform d20 del dice tray) lleva `sneak_dice` si `combat.sneak_available()`; en HIT se propaga al pending `weapon_damage`; al aplicarse el daño del arma (target vivo) se encadena un pending `sneak_damage` contra el mismo target con HP actualizado; `_resolve_sneak_damage` aplica el daño, marca `sneak_used` (once per turn, persiste en `CombatState.to_dict`, resetea por turno). La acción se consume UNA vez al final del chain (`sneak_damage` agregado al tuple de consumo). El warning de rolls narrative-only ahora solo dispara para rolls realmente huérfanos. Interpreter: "sneak attack" mencionado con ataque de arma → type `attack`, no `ability`. Narrator RULE 16: narrar el sneak como parte del MISMO ataque. Verificado con harness local de 8 escenarios. Detalle en `SAM_progress_log.md`.
 
 ### SAM-034 — No existe forma de terminar el turno voluntariamente
 

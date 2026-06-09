@@ -792,6 +792,28 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Pendiente post-deploy:** Tests A–D del playtest (pasar turno básico, pasar con Extra Attack restante, shove consume acción, "Paso" fuera de combate). SAM-033 (narrator alucina combate en roleplay) queda OPEN P1 — probable mitigación via sanitización del history legacy + refuerzo del ROLEPLAY_TEMPLATE.
 
+### Sesión 9 Jun 2026 (cont.) — SAM-033 anti-alucinación + SAM-003 Sneak Attack
+
+**Instrucciones 220 y 221, un solo commit de código (`2c08fcb`), deploy junto con 219.**
+
+**SAM-033 — Narrator no puede inventar mecánica sin facts:**
+- **Regla 9b** (SYSTEM_PROMPT): prohibido generar tags `<DM_ROLL>` propios en CUALQUIER formato (ni JSON, ni el attribute-style viejo `<DM_ROLL formula=.../>`); solo se permiten los copiados verbatim de MECHANICAL FACTS. Los tags legacy del history son artefactos deprecados, nunca imitarlos.
+- **ROLEPLAY_TEMPLATE**: bloque "CRITICAL — NO COMBAT MECHANICS IN ROLEPLAY MODE" — sin mechanical facts no hay iniciativas, ni "¡COMBATE INICIADO!", ni resolución de ataques/daño/HP, ni tags DM_ROLL. Si el jugador quiere pelear, se le pide declarar el ataque para que el sistema arranque combate real.
+- **Sanitización del history** (`_invoke`): los mensajes assistant se limpian con regex de los DM_ROLL legacy attribute-style ANTES de pasar al LLM (la fuente del formato alucinado). Los DM_ROLL en formato JSON se conservan (son el ejemplo bueno). Orden importante: la forma emparejada (`<DM_ROLL formula=...>...</DM_ROLL>`, DOTALL) se procesa antes que la self-closing — la regex self-closing matchearía el tag de apertura y dejaría un `</DM_ROLL>` huérfano.
+- Ambos prompts pasan smoke test de `.format()` (lección SAM-017).
+
+**SAM-003 — Sneak Attack como chain de pending rolls:**
+- **Diseño:** dados por nivel de Rogue `(level+1)//2` d6 (Vex Rogue 7 → 4d6). MVP: aplica automáticamente si la clase es Rogue (asumimos ventaja/aliado adyacente en party de 2). Límite RAW: una vez por turno.
+- **`combat_state.py`:** campo `sneak_used` (persiste en `to_dict`/`__init__`, resetea en `_set_actions_for_current_turn` y `end_combat`) + `mark_sneak_used()`/`sneak_available()`.
+- **`orchestrator.py`:** `_get_sneak_dice()` (tolera sufijo de nivel en class, mismo patrón SAM-016); el pending `weapon_attack` lleva `sneak_dice` tanto en ataque declarado (`_handle_attack`, que ahora también estampa `character_name` para el turn guard) como en d20 freeform del dice tray (`_setup_combat_freeform_pending`). `sneak_damage` agregado al tuple de consumo de acción → la acción se consume UNA vez al final del chain completo (weapon_damage se saltea el consumo porque el pending de sneak sigue vivo). `_get_roll_prompt` pide el sneak en español.
+- **`mechanic.py`:** `_resolve_weapon_attack` propaga `sneak_dice` al pending de daño en HIT; `_resolve_weapon_damage` aplica el daño del arma y, si había `sneak_dice` y el target sigue vivo, encadena pending `sneak_damage` con el target actualizado (HP post-daño) — si el target murió, no hay chain. `_resolve_sneak_damage` (nuevo) aplica el daño al mismo target via `update_npc_hp` y marca `sneak_used`. `get_results_summary` narra el sneak como parte del mismo ataque.
+- **Warning de orphan rolls refinado:** antes disparaba para cualquier dice_roll sin `state_updates` (incluyendo daño a NPC correctamente aplicado, que vive en combat state). Ahora solo dispara si no hay resultados, ni pending, ni updates — rolls realmente huérfanos (el caso del 4d6 de abril).
+- **`interpreter.py`:** regla nueva — "ataco con rapier y sneak attack" sigue siendo type `attack` (no `ability`), el sistema aplica el sneak solo.
+
+**Verificación local (FakeLLM, 8 escenarios):** sanitización del history (legacy fuera, JSON intacto, sin closers huérfanos) · attack declara sneak_dice 4d6 · HIT propaga al weapon_damage · weapon damage aplica 11 (6+5) y encadena sneak SIN consumir acción · 4d6 aplica 14 más, consume UNA acción, NPCs actúan, turno avanza · once-per-turn (sneak_used=True → sin chain) · no-Rogue sin sneak · kill por weapon damage no encadena y termina combate · freeform d20 del dice tray también arma el chain. Todos pasan, cero warnings espurios.
+
+**Pendiente post-deploy:** test SAM-033 con la frase exacta ("Quiero probar mi suerte en combate e iniciativa" → no debe inventar nada) y test SAM-003 con Vex no-delegada (d20 → 1d8+5 → 4d6, HP del NPC baja dos veces, una sola acción, sneak no repetible en el mismo turno).
+
 ---
 
 ## 4. Estado Actual — Abril 2026
