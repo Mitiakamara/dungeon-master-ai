@@ -36,9 +36,11 @@ class CombatState:
         self.initiative_order = data.get("initiative_order", [])
         self.pending_action = data.get("pending_action", None)  # Waiting for player dice
         self.actions_remaining = data.get("actions_remaining", 0)
+        self.sneak_used = data.get("sneak_used", False)  # Sneak Attack: once per turn (SAM-003)
 
     def _set_actions_for_current_turn(self):
         """Seed actions_remaining when entering a new player's turn."""
+        self.sneak_used = False  # Sneak Attack refreshes each turn
         current = self.get_current_turn()
         if current and not current.get("is_npc"):
             self.actions_remaining = 2 if has_extra_attack(current) else 1
@@ -88,6 +90,14 @@ class CombatState:
         if self.actions_remaining > 0:
             self.actions_remaining -= 1
 
+    def mark_sneak_used(self):
+        """Sneak Attack is once per turn — mark it spent (SAM-003)."""
+        self.sneak_used = True
+
+    def sneak_available(self) -> bool:
+        """True if Sneak Attack hasn't been used this turn."""
+        return not self.sneak_used
+
     def turn_is_over(self) -> bool:
         """True when the current combatant has no actions left and no pending dice."""
         return self.actions_remaining <= 0 and self.pending_action is None
@@ -118,6 +128,7 @@ class CombatState:
         self.current_turn_index = 0
         self.pending_action = None
         self.actions_remaining = 0
+        self.sneak_used = False
 
     def set_pending_action(self, action: dict):
         """Set a pending action waiting for player dice."""
@@ -139,6 +150,7 @@ class CombatState:
             "initiative_order": self.initiative_order,
             "pending_action": self.pending_action,
             "actions_remaining": self.actions_remaining,
+            "sneak_used": self.sneak_used,
         }
 
     @classmethod

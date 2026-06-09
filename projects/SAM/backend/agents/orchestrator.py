@@ -134,9 +134,13 @@ class SAMOrchestrator:
                 # Consume an action when the attack/spell cycle is fully resolved:
                 #   - HIT + damage applied  → previous = weapon_damage / spell_damage
                 #   - MISS (attack roll resolved, no damage follow-up) → previous = weapon_attack / spell_attack
+                # sneak_damage ends the Rogue attack chain — the action is
+                # consumed ONCE for the whole attack (weapon_damage is skipped
+                # in that case because the sneak pending was still set).
                 if previous_pending_type in (
                     "weapon_damage", "spell_damage",
                     "weapon_attack", "spell_attack",
+                    "sneak_damage",
                 ):
                     combat.consume_action()
                 elif previous_pending_type == "skill_check" and previous_pending.get("consumes_action"):
@@ -296,8 +300,12 @@ class SAMOrchestrator:
             else:
                 mechanical_facts = ""
 
-        # Warning if a dice roll happened but no state updates were generated
-        if intent["type"] == "dice_roll" and not out_of_turn_facts and not engine.state_updates:
+        # Warning for ORPHAN dice rolls: nothing resolved (no engine results),
+        # nothing pending, no state updates. Resolved rolls against NPCs update
+        # combat state instead of state_updates, so they must not warn.
+        if (intent["type"] == "dice_roll" and not out_of_turn_facts
+                and not engine.state_updates and not engine.results
+                and not engine.pending_player_roll):
             print(f"⚠️ Dice roll processed but no state_updates generated — damage may be narrative-only")
 
         # ─── STEP 3: RAG lookup if needed ───
@@ -456,6 +464,7 @@ class SAMOrchestrator:
                 "target": target_npc["name"],
                 "target_data": target_npc,
                 "character_name": character_name,
+                "sneak_dice": self._get_sneak_dice(character_context) if combat.sneak_available() else None,
             }
         else:
             # Damage roll — match weapon whose damage starts with "NdX" on same sides
@@ -755,6 +764,23 @@ class SAMOrchestrator:
             print(f"⚠️ Monster lookup failed for '{target_name}': {e}")
             return fallback
 
+    def _get_sneak_dice(self, character_context: dict) -> Optional[str]:
+        """
+        Return Sneak Attack dice (e.g. '4d6') if the character is a Rogue,
+        else None. Class may include a level suffix ('Rogue 7'). Dice scale
+        ceil(level/2)d6 per 5e RAW.
+        """
+        cls_raw = str(character_context.get("class", "") or "").lower().strip()
+        cls = cls_raw.split()[0] if cls_raw else ""
+        if cls != "rogue":
+            return None
+        try:
+            level = int(character_context.get("level", 1) or 1)
+        except (TypeError, ValueError):
+            level = 1
+        n = (level + 1) // 2
+        return f"{n}d6"
+
     def _handle_attack(self, engine: MechanicEngine, intent: dict,
                        character_context: dict, combat: CombatState) -> dict:
         """Handle a weapon attack."""
@@ -771,7 +797,14 @@ class SAMOrchestrator:
         if not target:
             return {"action": "error", "message": f"Target '{target_name}' not found"}
 
-        return engine.process_attack(character_context, weapon, target)
+        result = engine.process_attack(character_context, weapon, target)
+        # SAM-003: stamp owner + Sneak Attack chain hint on the pending attack
+        if engine.pending_player_roll and engine.pending_player_roll.get("type") == "weapon_attack":
+            engine.pending_player_roll.setdefault("character_name", character_context.get("name"))
+            engine.pending_player_roll["sneak_dice"] = (
+                self._get_sneak_dice(character_context) if combat.sneak_available() else None
+            )
+        return result
 
     def _resolve_npc_turns(self, engine: MechanicEngine, combat: CombatState,
                            party_characters: list[dict], advance_first: bool = True) -> str:
@@ -991,6 +1024,8 @@ class SAMOrchestrator:
             return f"Tira {weapon.get('damage', '1d6')} de daño."
         elif ptype == "spell_damage":
             return f"Tira el daño de {pending.get('spell', 'tu hechizo')}."
+        elif ptype == "sneak_damage":
+            return f"Tira {pending.get('dice', '1d6')} de daño de Sneak Attack."
         elif ptype == "skill_check":
             return f"Tira 1d20 para {pending.get('skill', 'tu check')}."
         elif ptype == "self_damage":

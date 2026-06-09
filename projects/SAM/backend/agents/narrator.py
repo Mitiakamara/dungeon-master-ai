@@ -4,6 +4,7 @@ Receives mechanical facts and generates narrative.
 NEVER calculates, NEVER emits XML tags, NEVER rolls dice.
 """
 
+import re
 from typing import Optional
 
 
@@ -38,6 +39,7 @@ RULES:
 8. NEVER invent dice results or damage numbers. The facts already have them.
 9. NEVER output XML tags like <UPDATE>, <LOOT>, <COMBAT>, <XP_GAIN>, <IMAGE>, <ACTION>, <EVENT>.
 9a. DM_ROLL tags: If the MECHANICAL FACTS contain <DM_ROLL>...</DM_ROLL> tags, PRESERVE them verbatim in your response — copy each tag exactly as it appears. They render as visual dice badges for the player. Do NOT invent new DM_ROLL tags, only pass through the ones already in the facts.
+9b. NEVER generate <DM_ROLL> tags yourself, in ANY format. Not the JSON format, not the old attribute format (<DM_ROLL formula="..." result="..."/>). The ONLY DM_ROLL tags allowed in your output are ones copied verbatim from the MECHANICAL FACTS block. If older messages in the conversation history contain DM_ROLL tags in other formats, those are deprecated artifacts — never imitate them.
 10. NEVER calculate HP, damage, or any math. Just narrate the numbers you receive.
 11. NEVER ask which player is speaking — the system handles that.
 12. NEVER prefix your response with [CharacterName]: — start with narrative directly.
@@ -71,6 +73,7 @@ RULES:
     - If the facts contain "OUT_OF_TURN:", do NOT narrate any attack or damage and do NOT resolve anything. Respond with a brief in-character reminder that it's someone else's turn (name them). Stay under 30 words.
     - If the facts contain "action(s) remaining" for a player (e.g., "Björn has 1 action(s) remaining"), the player has Extra Attack and should be invited — in one short sentence — to swing again before ending their turn. Do NOT narrate a second attack yet; ASK them.
     - If the facts say a player "ends their turn voluntarily", acknowledge it briefly (1 line, sarcasm welcome) and narrate the NPC turns that follow from the facts. Do NOT ask them again to declare an action.
+    - When the facts include a Sneak Attack damage prompt or result, narrate it as part of the SAME attack (the blade finding a vital spot), not as a separate action. Quote the exact damage numbers.
 
 {dm_style}
 
@@ -99,7 +102,17 @@ PLAYER'S ORIGINAL MESSAGE:
 
 Respond as S.A.M. the Dungeon Master. Describe what happens, control NPCs, set scenes. Be sarcastic and vivid.
 If the player needs to make a skill check, tell them which skill and ask them to roll.
-Do NOT resolve any dice rolls — just ask the player to roll when needed."""
+Do NOT resolve any dice rolls — just ask the player to roll when needed.
+
+CRITICAL — NO COMBAT MECHANICS IN ROLEPLAY MODE:
+You are narrating WITHOUT mechanical facts. This means NO combat has been resolved by the system. You MUST NOT:
+- Roll or invent initiative for anyone
+- Declare combat started ("¡COMBATE INICIADO!")
+- Resolve attacks, damage, or HP changes for ANY character or NPC
+- State HP values changing (e.g. "your HP drops to X")
+- Emit any <DM_ROLL> tag
+
+If the player wants to fight, narrate the tension and tell them to declare their attack (e.g. "ataco al lobo") — the system will then start real combat with real dice. If an NPC would logically attack the player, describe the threat narratively WITHOUT resolving it, and prompt the player to act."""
 
     def __init__(self, llm):
         """
@@ -196,6 +209,13 @@ Do NOT resolve any dice rolls — just ask the player to roll when needed."""
                     else:
                         messages.append(HumanMessage(content=content))
                 elif role == "assistant":
+                    # SAM-033: strip legacy attribute-style DM_ROLL tags from
+                    # history — the narrator imitates the deprecated format and
+                    # hallucinates rolls. JSON-format tags stay (good example).
+                    # Paired form first: the self-closing pattern would eat the
+                    # opening tag and orphan the closer.
+                    content = re.sub(r'<DM_ROLL\s+formula=[^>]*>.*?</DM_ROLL>', '', content, flags=re.DOTALL)
+                    content = re.sub(r'<DM_ROLL\s+formula=[^>]*/?>', '', content)
                     messages.append(AIMessage(content=content))
 
         messages.append(HumanMessage(content=user_message))

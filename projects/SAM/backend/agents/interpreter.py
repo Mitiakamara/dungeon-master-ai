@@ -102,6 +102,7 @@ RULES:
 - If the player initiates an attack and in_combat=False, use "start_combat" (not "attack").
 - If in_combat=True and the player attacks, use "attack" (combat already active).
 - If in_combat=True and the player passes or declines to act, use "end_turn" (not "free_action").
+- If the player mentions "sneak attack" with a weapon attack, still use type "attack" — the system applies sneak attack automatically for Rogues. Do NOT use type "ability" for sneak attack.
 - If you can't determine the action type, use "roleplay".
 - NEVER add fields that aren't in the templates above.
 - ALWAYS respond with valid JSON only.

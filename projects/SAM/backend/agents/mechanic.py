@@ -182,6 +182,8 @@ class MechanicEngine:
             return self._resolve_skill_check(character, roll_data, pending)
         elif pending["type"] == "weapon_damage":
             return self._resolve_weapon_damage(character, roll_data, pending)
+        elif pending["type"] == "sneak_damage":
+            return self._resolve_sneak_damage(character, roll_data, pending)
         elif pending["type"] == "healing":
             # Parse modifier from healing dice notation (e.g. "2d4+2" → +2)
             healing_dice = pending.get("healing_dice", "")
@@ -325,7 +327,10 @@ class MechanicEngine:
                 "weapon": weapon,
                 "target": target["name"],
                 "target_data": target,
-                "critical": hit_result["critical"]
+                "critical": hit_result["critical"],
+                # SAM-003: carry the Sneak Attack chain hint to the damage roll
+                "sneak_dice": pending.get("sneak_dice"),
+                "character_name": pending.get("character_name"),
             }
         else:
             result["needs_player_roll"] = False
@@ -371,6 +376,48 @@ class MechanicEngine:
             result["target_hp_max"] = target.get("hp_max", old_hp)
             result["target_killed"] = hp_result["is_unconscious"]
             self.combat.update_npc_hp(target["name"], hp_result["new_hp"])
+
+            # SAM-003: chain Sneak Attack damage on the same target, same action.
+            # Skip if the weapon damage already killed it (no point in overkill).
+            sneak_dice = pending.get("sneak_dice")
+            if sneak_dice and not result["target_killed"]:
+                result["needs_player_roll"] = True
+                result["prompt_player"] = f"¡Sneak Attack! Tira {sneak_dice} de daño adicional."
+                self.pending_player_roll = {
+                    "type": "sneak_damage",
+                    "dice": sneak_dice,
+                    "target": target["name"],
+                    "target_data": {**target, "hp": hp_result["new_hp"]},
+                    "character_name": pending.get("character_name"),
+                }
+
+        self.results.append(result)
+        return result
+
+    def _resolve_sneak_damage(self, character: dict, roll_data: dict, pending: dict) -> dict:
+        """Player rolled Sneak Attack bonus damage (chained after weapon damage)."""
+        damage = roll_data.get("result", 0)
+        target = pending["target_data"]
+
+        result = {
+            "action": "sneak_damage_applied",
+            "attacker": character.get("name", "Unknown"),
+            "target": target["name"],
+            "dice": pending.get("dice", ""),
+            "damage_rolls": roll_data.get("rolls", []),
+            "total_damage": damage,
+        }
+
+        if target.get("is_npc"):
+            old_hp = target.get("hp", 0)
+            hp_result = calculate_hp_change(old_hp, damage, target.get("hp_max", old_hp))
+            result["target_hp"] = hp_result["new_hp"]
+            result["target_hp_max"] = target.get("hp_max", old_hp)
+            result["target_killed"] = hp_result["is_unconscious"]
+            self.combat.update_npc_hp(target["name"], hp_result["new_hp"])
+
+        # Sneak Attack is once per turn (5e RAW)
+        self.combat.mark_sneak_used()
 
         self.results.append(result)
         return result
@@ -736,6 +783,16 @@ class MechanicEngine:
             elif action == "weapon_damage_applied":
                 lines.append(
                     f"{r['attacker']}'s {r['weapon']} deals {r['total_damage']} damage to {r['target']}. "
+                    f"{r['target']} HP: {r.get('target_hp', '?')}/{r.get('target_hp_max', '?')}."
+                    f"{' KILLED!' if r.get('target_killed') else ''}"
+                )
+                if r.get("prompt_player"):
+                    lines.append(f"→ {r['prompt_player']}")
+
+            elif action == "sneak_damage_applied":
+                lines.append(
+                    f"{r['attacker']}'s Sneak Attack ({r.get('dice', '')}) deals {r['total_damage']} "
+                    f"extra damage to {r['target']} — same attack, the blade finds a vital spot. "
                     f"{r['target']} HP: {r.get('target_hp', '?')}/{r.get('target_hp_max', '?')}."
                     f"{' KILLED!' if r.get('target_killed') else ''}"
                 )
