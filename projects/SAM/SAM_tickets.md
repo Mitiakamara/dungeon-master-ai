@@ -47,6 +47,9 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-030 | Incluir `stats` en `_format_character_context` (gap narrator RULE 15) | CHORE | P3 | OPEN |
 | SAM-031 | Gate `debug_log.txt` por env DEBUG (no I/O en hot-path) | CHORE | P3 | OPEN |
 | SAM-032 | Retry/backoff para `RemoteProtocolError` httpx (Gemini/Supabase) | CHORE | P3 | OPEN |
+| SAM-033 | Narrator alucina combate completo (rolls/daño/HP) sin mechanical facts | BUG | P1 | OPEN |
+| SAM-034 | No existe forma de terminar el turno voluntariamente | BUG | P1 | DONE |
+| SAM-035 | skill_check en combate no consume acción → acciones infinitas | BUG | P2 | DONE |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 reservado/sin asignar.
 
@@ -336,9 +339,33 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 
 ---
 
+### SAM-033 — Narrator alucina combate completo sin mechanical facts
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+Con intent `roleplay` y combate inexistente, el narrator inventó iniciativas, ataques enemigos, daño y "Tu HP baja a 61/68" — todo fake, con formato `<DM_ROLL formula=.../>` aprendido de mensajes legacy presentes en el history. Evidencia: playtest 2026-06-09, primer "combate" alucinado antes del `start_combat` real.
+
+**Archivos afectados:** `backend/agents/narrator.py` (ROLEPLAY_TEMPLATE / RULE 16); posible sanitización del history que se pasa al narrator.
+
+**Criterio de done:** con intent roleplay y sin combate activo, el narrator no emite rolls, daño, cambios de HP ni tags `<DM_ROLL>` inventados.
+
+---
+
 ---
 
 ## Tickets cerrados
+
+### SAM-034 — No existe forma de terminar el turno voluntariamente
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `89cda66`
+
+Instrucción 219. En combate, "Paso" / "Termino mi turno" / "No hago nada más" caía al intent `free_action` → el orchestrator recordaba en loop que el jugador declare su acción; no había forma de ceder el turno. Fix: nuevo intent `end_turn` en el interpreter (solo con `in_combat=True`; fuera de combate esas frases siguen siendo `free_action`), handler en el orchestrator que pone `actions_remaining=0`, limpia cualquier `pending_player_roll` abandonado y dispara `_resolve_npc_turns`, `end_turn` agregado a la lista del turn guard (pasar fuera de turno → OUT_OF_TURN), y bullet en RULE 16 del narrator para reconocer el pase sin volver a pedir acción. Verificado con tests locales de los 5 escenarios (básico, pending abandonado, fuera de turno, fuera de combate). Detalle en `SAM_progress_log.md`.
+
+### SAM-035 — skill_check en combate no consume acción
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** DONE · **Commit:** `89cda66`
+
+Instrucción 219. 5e RAW: usar una habilidad en combate (shove, grapple) consume la acción del turno, pero el branch `skill_check` nunca llamaba `consume_action()` → checks infinitos sin avance de turno. Como el d20 llega en el request siguiente, el fix estampa `consumes_action` + `character_name` en el `pending_player_roll` del check y consume la acción cuando el roll se resuelve (mismo patrón `previous_pending_type` de `weapon_damage`). `consumes_action` solo es True si el check es del jugador en turno — checks reactivos de jugadores fuera de turno no comen la acción del jugador activo. Detalle en `SAM_progress_log.md`.
 
 ### SAM-020 — Auditoría arquitectónica del sistema
 

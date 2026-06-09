@@ -775,6 +775,23 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 - **Capas de SAM-016:** (1) fallback legacy sin action economy (SAM-017, revalidar) + (2) class-matching roto (este fix). Ambas debían resolverse.
 - **Lección:** un campo que mezcla dos datos (`class` = clase + nivel) rompe cualquier comparación exacta; normalizar antes de comparar.
 
+### Sesión 9 Jun 2026 — SAM-034 end_turn + SAM-035 skill_check action economy
+
+**Contexto (instrucción 219):** playtest del 9 Jun reveló tres bugs nuevos: el narrator alucinó un combate completo sin mechanical facts (SAM-033, queda OPEN), no existía forma de terminar el turno voluntariamente (SAM-034) y los skill checks en combate no consumían acción (SAM-035). Se implementaron 034 y 035 en un solo commit (`89cda66`).
+
+**SAM-034 — intent `end_turn`:**
+- `interpreter.py`: nuevo ACTION TYPE 11 `{"type": "end_turn"}` con triggers ("Paso", "Termino mi turno", "No hago nada más", "No tomo más acciones") activos SOLO con `in_combat=True`; fuera de combate las mismas frases son `free_action`. Regla agregada a RULES.
+- `orchestrator.py`: handler nuevo antes del branch de roleplay — con combate activo pone `actions_remaining=0`, limpia el `pending_player_roll` abandonado (p.ej. ataque declarado nunca tirado) y llama `_resolve_npc_turns`; sin combate, cae a narración pura. `end_turn` agregado al tuple del turn guard → pasar fuera de turno produce el recordatorio OUT_OF_TURN estándar.
+- `narrator.py`: bullet en RULE 16 — reconocer el pase en 1 línea (sarcasmo bienvenido), narrar los turnos NPC de los facts, NO volver a pedir declaración de acción. Sin llaves literales (lección SAM-017); smoke test de `SYSTEM_PROMPT.format()` OK en ambos prompts.
+
+**SAM-035 — skill_check consume acción:**
+- Timing: el d20 del check llega en el request SIGUIENTE, así que el consumo no puede ocurrir al declarar. El branch `skill_check` estampa `character_name` + `consumes_action` en el `pending_player_roll` (que ya persiste entre requests via `combat_state`), y el flujo `dice_roll` consume la acción al resolverse el pending — patrón idéntico al de `weapon_damage`/`spell_damage` (`previous_pending` snapshot).
+- **Decisión de diseño:** `consumes_action` solo es True si el check pertenece al jugador en turno. El turn guard deja pasar `skill_check` de jugadores fuera de turno (checks reactivos, válidos en 5e); sin este gate, un check reactivo de Vex consumiría la acción de Björn. Stampear `character_name` además cierra un hueco del guard: antes un pending de skill_check sin owner bloqueaba el d20 del propio dueño si no era el current turn.
+
+**Verificación local (sin LLM real, FakeLLM + stub de langchain):** 6 escenarios — end_turn básico (NPC actúa, round avanza, acciones reseedean), end_turn limpia pending abandonado, skill_check consume acción y dispara NPCs cuando era la última, check reactivo NO consume, turn guard bloquea end_turn ajeno, end_turn fuera de combate cae a roleplay. Todos pasan. Nota de entorno: `python` no existe en esta máquina y el `.venv` del workspace apunta a un perfil viejo; se usó `python3.14` de `~/.local/bin`.
+
+**Pendiente post-deploy:** Tests A–D del playtest (pasar turno básico, pasar con Extra Attack restante, shove consume acción, "Paso" fuera de combate). SAM-033 (narrator alucina combate en roleplay) queda OPEN P1 — probable mitigación via sanitización del history legacy + refuerzo del ROLEPLAY_TEMPLATE.
+
 ---
 
 ## 4. Estado Actual — Abril 2026
