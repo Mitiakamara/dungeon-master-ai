@@ -85,7 +85,7 @@ class SAMOrchestrator:
             current_name = current_tc.get("name") if current_tc else None
 
             if current_name and sender_name and sender_name != current_name:
-                action_intents = ("attack", "spell", "ability", "start_combat")
+                action_intents = ("attack", "spell", "ability", "start_combat", "end_turn")
                 if intent["type"] in action_intents:
                     out_of_turn_facts = (
                         f"OUT_OF_TURN: It's {current_name}'s turn, not {sender_name}'s. "
@@ -117,10 +117,9 @@ class SAMOrchestrator:
             if combat.active and not engine.pending_player_roll:
                 self._setup_combat_freeform_pending(engine, intent, character_context, combat, sender_name)
 
-            # Snapshot pending type before it gets cleared by process_player_roll
-            previous_pending_type = None
-            if engine.pending_player_roll:
-                previous_pending_type = engine.pending_player_roll.get("type")
+            # Snapshot pending before it gets cleared by process_player_roll
+            previous_pending = engine.pending_player_roll or {}
+            previous_pending_type = previous_pending.get("type")
 
             # Player rolled dice — process the result
             self._handle_dice_roll(engine, intent, character_context, combat)
@@ -139,6 +138,10 @@ class SAMOrchestrator:
                     "weapon_damage", "spell_damage",
                     "weapon_attack", "spell_attack",
                 ):
+                    combat.consume_action()
+                elif previous_pending_type == "skill_check" and previous_pending.get("consumes_action"):
+                    # SAM-035: in-combat skill check (shove, grapple, etc.) was
+                    # the turn's action — consume it now that the d20 resolved.
                     combat.consume_action()
 
                 if combat.turn_is_over():
@@ -192,6 +195,16 @@ class SAMOrchestrator:
             skill = intent.get("skill", "Perception")
             dc = intent.get("dc")  # May be None — narrator will determine
             engine.process_skill_check(character_context, skill, dc)
+            # SAM-035: 5e RAW — using a skill in combat (shove, grapple, etc.)
+            # is the turn's action. The d20 arrives in the NEXT request, so flag
+            # the pending roll; consumption happens when the roll resolves.
+            # Only the active player's check consumes — reactive checks from
+            # out-of-turn players must not eat the current player's action.
+            if engine.pending_player_roll:
+                current_tc = combat.get_current_turn() if combat.active else None
+                is_senders_turn = bool(current_tc and current_tc.get("name") == sender_name)
+                engine.pending_player_roll["character_name"] = sender_name
+                engine.pending_player_roll["consumes_action"] = is_senders_turn
             mechanical_facts = engine.get_results_summary()
             prompt_player_roll = f"Tira 1d20 para {skill}."
 
@@ -249,6 +262,23 @@ class SAMOrchestrator:
                 sender_character=character_context,
                 party_characters=party_characters,
             )
+
+        elif intent["type"] == "end_turn":
+            # SAM-034: player voluntarily yields their turn.
+            if combat.active:
+                combat.actions_remaining = 0
+                # Drop any abandoned pending roll (e.g. declared attack never rolled)
+                engine.pending_player_roll = None
+                mechanical_facts = (
+                    f"{sender_name} ends their turn voluntarily. "
+                    f"No further actions taken."
+                )
+                npc_facts = self._resolve_npc_turns(engine, combat, party_characters)
+                if npc_facts:
+                    mechanical_facts += "\n" + npc_facts
+            else:
+                # end_turn outside combat = plain roleplay
+                mechanical_facts = ""
 
         elif intent["type"] in ("roleplay", "movement", "free_action", "ability"):
             # No mechanics — pure narration

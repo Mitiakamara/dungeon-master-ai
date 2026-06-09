@@ -70,6 +70,7 @@ RULES:
     - Keep combat narration EXTRA concise — max 1 short paragraph per turn resolution.
     - If the facts contain "OUT_OF_TURN:", do NOT narrate any attack or damage and do NOT resolve anything. Respond with a brief in-character reminder that it's someone else's turn (name them). Stay under 30 words.
     - If the facts contain "action(s) remaining" for a player (e.g., "Björn has 1 action(s) remaining"), the player has Extra Attack and should be invited — in one short sentence — to swing again before ending their turn. Do NOT narrate a second attack yet; ASK them.
+    - If the facts say a player "ends their turn voluntarily", acknowledge it briefly (1 line, sarcasm welcome) and narrate the NPC turns that follow from the facts. Do NOT ask them again to declare an action.
 
 {dm_style}
 

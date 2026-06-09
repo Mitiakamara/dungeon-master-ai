@@ -84,12 +84,24 @@ Extract the enemy target name from the message. If no specific enemy is named bu
 
 CRITICAL: If in_combat=True, NEVER use "start_combat". Use "attack", "spell", or "dice_roll" instead.
 
+11. End turn (player explicitly passes/ends their turn in combat):
+{{"type": "end_turn"}}
+
+Triggers (only when in_combat=True):
+- "Paso" / "I pass"
+- "Termino mi turno" / "End my turn" / "I end my turn"
+- "No hago nada más" / "Nothing else" / "I'm done"
+- "No tomo más acciones" / "No further actions"
+
+CRITICAL: If in_combat=False, these phrases are "free_action", NOT "end_turn". Only emit "end_turn" during active combat.
+
 RULES:
 - If the player names a spell, match it to their spell list. If not found, use closest match.
 - If the player says "attack" without specifying a weapon, use their first available weapon.
 - If target is ambiguous and there's only one enemy, use that enemy.
 - If the player initiates an attack and in_combat=False, use "start_combat" (not "attack").
 - If in_combat=True and the player attacks, use "attack" (combat already active).
+- If in_combat=True and the player passes or declines to act, use "end_turn" (not "free_action").
 - If you can't determine the action type, use "roleplay".
 - NEVER add fields that aren't in the templates above.
 - ALWAYS respond with valid JSON only.
