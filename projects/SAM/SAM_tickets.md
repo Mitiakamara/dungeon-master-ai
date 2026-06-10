@@ -29,7 +29,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-011 | Commlink Realtime + auto-mark-as-read | FEAT | P2 | OPEN |
 | SAM-012 | Quitar console.logs de debug (presence tracking) | CHORE | P3 | OPEN |
 | SAM-013 | Narrator inventa números en iniciativa (no respeta DM_ROLL tag) | BUG | P1 | DONE |
-| SAM-014 | NPC damage no persiste a `characters.status.hp_current` | BUG | P1 | BLOCKED |
+| SAM-014 | NPC damage no persiste a `characters.status.hp_current` | BUG | P1 | OPEN |
 | SAM-015 | DM_ROLL chips de turnos NPC llegan como "Invalid Roll Data" | BUG | P1 | BLOCKED |
 | SAM-016 | Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel ("Barbarian 7") | BUG | P1 | DONE |
 | SAM-017 | Narrator SYSTEM_PROMPT explota con KeyError por JSON literal (regresión SAM-013) | BUG | P0 | IN_PROGRESS |
@@ -50,6 +50,9 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-033 | Narrator alucina combate completo (rolls/daño/HP) sin mechanical facts | BUG | P1 | DONE |
 | SAM-034 | No existe forma de terminar el turno voluntariamente | BUG | P1 | DONE |
 | SAM-035 | skill_check en combate no consume acción → acciones infinitas | BUG | P2 | DONE |
+| SAM-036 | Daño de PC delegado a NPC se emite como `player_hp` → nunca baja el HP del NPC | BUG | P0 | DONE |
+| SAM-037 | Combate inactivo persiste `{"active": False}` descartando `initiative_order` → NPC revive a HP completo | BUG | P1 | OPEN |
+| SAM-038 | Instrumentación: logging de HP de NPC, transiciones de combate y descarte de estado | CHORE | P1 | DONE |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 reservado/sin asignar.
 
@@ -183,11 +186,29 @@ Log (Render, 2026-06-05T20:54:21): `KeyError: '"result"'` en `narrate_mechanics`
 
 ### SAM-014 — NPC damage no persiste a `characters.status.hp_current`
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** BLOCKED (por SAM-017) — reconciliado por auditoría SAM-020
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (reabierto, instrucción 223)
 
-**Reconciliación (auditoría 5 Jun):** en el pipeline NUEVO el HP del jugador **sí persiste server-side** — `server.py:293-299` aplica el `state_update` tipo `player_hp` con `UPDATE characters.status.hp_current`. El síntoma "no persiste" era el fallback al legacy (SAM-017), donde el HP depende del `<UPDATE>` client-side y nunca pasa por ese handler. Validar tras deploy de SAM-017: si el daño NPC persiste y el sidebar coincide con la BD → cerrar como "resuelto por SAM-017".
+**Nota de reapertura:** cerrado prematuramente como "resuelto por SAM-017" sin validar el caso daño-a-NPC; el daño a NPC nunca persistió. Subsumido por SAM-036/037.
 
-**Residual independiente:** el bloque `COMBAT STATUS` que ve el narrador lee HP de jugador desactualizado (`party_characters` stale) → drift narrativo. Trackeado por separado en **SAM-022** (no se cierra con SAM-017).
+**Reconciliación previa (auditoría 5 Jun):** en el pipeline NUEVO el HP del **jugador** sí persiste server-side (`server.py:293-299` aplica el `state_update` tipo `player_hp`). Pero el HP de los **NPCs** vive solo en `settings.combat.initiative_order`, y ese camino tiene dos fugas: el daño de PCs delegados nunca llega (SAM-036) y el estado se descarta al quedar inactivo (SAM-037).
+
+**Residual independiente:** el bloque `COMBAT STATUS` que ve el narrador lee HP de jugador desactualizado (`party_characters` stale) → drift narrativo. Trackeado por separado en **SAM-022**.
+
+**Criterio de done:** HP de NPC persiste correctamente entre requests (se cierra junto con SAM-036/037 validados en playtest).
+
+---
+
+### SAM-037 — Combate inactivo descarta `initiative_order` (NPC revive a HP completo)
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+`orchestrator.py:393`: al quedar `active=False` se persiste `{"active": False}`, borrando `initiative_order` y con él el HP de los NPCs. La próxima agresión re-dispara `start_combat` con lookup fresco del monstruo → vuelve a HP completo (rebote hacia arriba). Si el combate terminó legítimamente (NPC muerto) el descarte es correcto; el rebote ocurre cuando `active` pasa a False **sin** que el NPC haya muerto de verdad (hipótesis: muerte espuria por daño mal contabilizado — ver SAM-036).
+
+**Estado actual (commit `d0faa4c`):** instrumentación desplegada — el descarte se loguea distinguiendo fin legítimo de anómalo (`LIVE NPCs: [...]`). La lógica de persistencia NO se tocó todavía.
+
+**Plan:** confirmar con los logs del playtest cuándo exactamente `active` pasa a False ANTES de cambiar la persistencia. Puede que el fix de SAM-036 elimine las muertes espurias y haga innecesario tocar la persistencia.
+
+**Criterio de done:** el HP del NPC no rebota hacia arriba en playtest.
 
 ---
 
@@ -328,6 +349,18 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 ---
 
 ## Tickets cerrados
+
+### SAM-036 — Daño de PC delegado a NPC se emite como `player_hp`
+
+**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · **Commit:** `d0faa4c`
+
+Instrucción 223 (evidencia del diagnóstico 222: el HP del lobo no bajaba tras los turnos de Vex delegada). `resolve_npc_turn` (`mechanic.py`) emitía TODO el daño acumulado como `state_update` tipo `player_hp` sin mirar el target: cuando un PC delegado atacaba a un NPC, el update salía contra un nombre que no existe en `characters` y el HP del NPC en combat state nunca bajaba. Fix: bifurcación por `target.is_npc` — NPCs mutan `combat.update_npc_hp` (visible en logs `💢 NPC HP`), jugadores siguen por `player_hp`. El parámetro engañoso `players` se renombró a `targets` (el orchestrator pasa los NPCs enemigos cuando actúa un PC delegado — confirmado en `_resolve_npc_turns`). Verificado con harness local (Vex delegada +100 to-hit baja el HP del lobo; el lobo daña a Björn vía `player_hp`; cero `player_hp` con nombre de NPC). Validación final en playtest junto con SAM-014/037.
+
+### SAM-038 — Instrumentación de HP de NPC y transiciones de combate
+
+**Tipo:** CHORE · **Prio:** P1 · **Estado:** DONE · **Commit:** `d0faa4c`
+
+Instrucción 223, base de validación para SAM-036/037. `update_npc_hp` ahora matchea case/space-insensitive, loguea cada cambio (`💢 NPC HP: name old → new`), avisa con la initiative order completa si el nombre no matchea (antes fallaba en silencio), y loguea la muerte (`☠️ NPC down`). `start_combat`/`end_combat` loguean las transiciones (`⚔️`/`🏁`). El orchestrator loguea el descarte de combate inactivo distinguiendo fin legítimo de anómalo con NPCs vivos (`💾 ... LIVE NPCs: [...]` — la firma del rebote de SAM-037).
 
 ### SAM-033 — Narrator alucina combate completo sin mechanical facts
 

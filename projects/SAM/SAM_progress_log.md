@@ -814,6 +814,25 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Pendiente post-deploy:** test SAM-033 con la frase exacta ("Quiero probar mi suerte en combate e iniciativa" → no debe inventar nada) y test SAM-003 con Vex no-delegada (d20 → 1d8+5 → 4d6, HP del NPC baja dos veces, una sola acción, sneak no repetible en el mismo turno).
 
+### Sesión 10 Jun 2026 — SAM-036 daño delegado→NPC + SAM-038 instrumentación (+ SAM-014 reabierto, SAM-037 en diagnóstico)
+
+**Contexto (instrucción 223, sobre el diagnóstico 222):** el playtest mostró que el HP del lobo no bajaba con los ataques de Vex delegada y "rebotaba" a HP completo entre combates. Tres tickets nuevos (SAM-036/037/038) y reapertura de SAM-014 (cerrado prematuramente como "resuelto por SAM-017" sin validar el caso daño-a-NPC). Un commit de código (`d0faa4c`).
+
+**SAM-036 (P0) — daño de PC delegado ruteado al NPC:**
+- **Causa raíz:** `resolve_npc_turn` (`mechanic.py`) emitía TODO el daño acumulado como `state_update` tipo `player_hp` sin mirar el target. Con Vex delegada atacando al lobo, el update salía contra `characters` por un nombre de monstruo inexistente → el HP del NPC en combat state jamás bajaba. El parámetro se llamaba `players` aunque el orchestrator le pasa `npcs_in_combat` cuando actúa un PC delegado — ese nombre escondió el bug.
+- **Fix:** bifurcación por `target_char.get("is_npc")` en el loop de aplicación de daño: NPC → `self.combat.update_npc_hp(...)` (muta combat state, mismo path que el daño de jugadores reales a NPCs); jugador → `state_update player_hp` como siempre. El result `damage_applied` se emite igual en ambos casos (los facts del narrator no cambian). Parámetro renombrado `players` → `targets` con docstring que explica la dualidad.
+
+**SAM-038 — instrumentación (base de validación):**
+- `update_npc_hp`: match case/space-insensitive (antes un mismatch de mayúsculas fallaba EN SILENCIO), log `💢 NPC HP: name old → new` por cada cambio, `☠️ NPC down` al morir, y `⚠️ no combatant matched` con la initiative order completa si el nombre no matchea.
+- `start_combat`/`end_combat`: logs `⚔️ Combat STARTED with N combatants` / `🏁 Combat ENDED (round was N)`.
+- Persistencia (orchestrator): al descartar un combate inactivo se loguea `💾 Persisting INACTIVE combat`, agregando `LIVE NPCs: [...]` si quedaban NPCs vivos — esa variante es la firma del rebote de SAM-037 (desactivación anómala); sin NPCs vivos es un fin legítimo.
+
+**SAM-037 — decisión consciente de NO tocar la persistencia todavía:** la instrucción pedía confirmar con logs cuándo `active` pasa a False antes de cambiar la lógica (hipótesis: las "muertes" espurias del lobo venían del daño mal contabilizado de SAM-036, y con ese fix el rebote desaparece solo). Queda OPEN con la instrumentación desplegada; el playtest decide si hace falta preservar `initiative_order` en combates inactivos.
+
+**Verificación local (FakeLLM, 4 escenarios):** match insensible a case/espacios + warning sin crash · logs de muerte y fin de combate (último NPC muere → `☠️` + `🏁` + active=False) · party de 3 (Björn real, Vex delegada con `controlled_by`, lobo NPC): "Paso" de Björn → Vex delegada baja el HP del lobo vía `update_npc_hp` (log `💢` presente), cero `player_hp` con nombre de NPC, el mordisco del lobo a Björn sí sale como `player_hp`, turno vuelve a Björn round 2 · kill legítimo → shape persistido sigue siendo `{"active": False}` y el log de descarte NO marca NPCs vivos.
+
+**Pendiente post-deploy (logs de Render como criterio):** (1) ataque de Björn → `💢 NPC HP` baja; (2) turno de Vex delegada → `💢 NPC HP` baja de nuevo (antes se perdía); (3) HP del lobo monotónicamente decreciente, sin rebotes; (4) si el lobo muere: `☠️` + `🏁` y NO revive al siguiente mensaje; (5) si aparece `💾 ... LIVE NPCs`, ahí está la causa real de SAM-037 → reportar logs antes de tocar la persistencia. SAM-014 se cierra cuando 1–4 pasen.
+
 ---
 
 ## 4. Estado Actual — Abril 2026
