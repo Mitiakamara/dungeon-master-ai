@@ -66,6 +66,7 @@ class CombatState:
         self.round = 1
         self.current_turn_index = 0
         self._set_actions_for_current_turn()
+        print(f"⚔️ Combat STARTED with {len(combatants)} combatants")
         return self.to_dict()
 
     def get_current_turn(self) -> Optional[dict]:
@@ -113,16 +114,25 @@ class CombatState:
             self.end_combat()
 
     def update_npc_hp(self, name: str, new_hp: int):
-        """Update an NPC's HP."""
+        """Update an NPC's HP. Match is case/space-insensitive (SAM-038)."""
+        matched = False
         for c in self.initiative_order:
-            if c["name"] == name:
+            if c["name"].lower().strip() == name.lower().strip():
+                old = c.get("hp", 0)
                 c["hp"] = new_hp
+                matched = True
+                print(f"💢 NPC HP: {c['name']} {old} → {new_hp}")
                 if new_hp <= 0:
-                    self.remove_combatant(name)
+                    print(f"☠️ NPC down: {c['name']} (removing from combat)")
+                    self.remove_combatant(c["name"])
                 break
+        if not matched:
+            print(f"⚠️ update_npc_hp: no combatant matched '{name}'. "
+                  f"Order: {[c.get('name') for c in self.initiative_order]}")
 
     def end_combat(self):
         """End combat."""
+        print(f"🏁 Combat ENDED (round was {self.round})")
         self.active = False
         self.round = 0
         self.current_turn_index = 0

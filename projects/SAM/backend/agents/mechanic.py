@@ -525,20 +525,22 @@ class MechanicEngine:
     # NPC TURNS
     # ─────────────────────────────────────
 
-    def resolve_npc_turn(self, npc: dict, players: list[dict]) -> list[dict]:
+    def resolve_npc_turn(self, npc: dict, targets: list[dict]) -> list[dict]:
         """
-        Resolve an NPC's entire turn.
-        npc: NPC data from combat state (name, hp, ac, attacks, etc.)
-        players: list of player characters in the encounter
+        Resolve an NPC's (or SAM-delegated PC's) entire turn.
+        npc: attacker data (name, hp, ac, attacks, etc.)
+        targets: who the attacker can hit — real players (is_npc=False) when a
+                 monster acts, enemy NPCs (is_npc=True) when a delegated PC acts.
+                 Damage routing depends on it (SAM-036).
         Returns list of action results.
         """
         results = []
 
-        if not players:
+        if not targets:
             return results
 
-        # Pick target (for now: first player — TODO: smarter targeting)
-        target = players[0]
+        # Pick target (for now: first in list — TODO: smarter targeting)
+        target = targets[0]
 
         attacks = npc.get("attacks", [])
         total_damage_to_target = {}  # {target_name: total_damage}
@@ -612,7 +614,7 @@ class MechanicEngine:
 
         # Apply accumulated damage per target (one call, not one per attack)
         for target_name, total_dmg in total_damage_to_target.items():
-            target_char = next((p for p in players if p["name"] == target_name), None)
+            target_char = next((t for t in targets if t["name"] == target_name), None)
             if target_char:
                 # Read HP from top-level fields; fall back to nested "status" dict
                 # (raw DB character rows store these inside status).
@@ -633,14 +635,20 @@ class MechanicEngine:
                     hp_max = hp_current or 0
                 hp_result = calculate_hp_change(hp_current or 0, total_dmg, hp_max)
 
-                self.state_updates.append({
-                    "type": "player_hp",
-                    "character_name": target_name,
-                    "damage": total_dmg,
-                    "new_hp": hp_result["new_hp"],
-                    "hp_max": hp_max,
-                    "is_unconscious": hp_result["is_unconscious"]
-                })
+                if target_char.get("is_npc"):
+                    # SAM-036: delegated PC hitting an enemy NPC — the NPC's HP
+                    # lives in combat state, never in the characters table.
+                    self.combat.update_npc_hp(target_name, hp_result["new_hp"])
+                else:
+                    # Real NPC hitting a player — persist via state_update.
+                    self.state_updates.append({
+                        "type": "player_hp",
+                        "character_name": target_name,
+                        "damage": total_dmg,
+                        "new_hp": hp_result["new_hp"],
+                        "hp_max": hp_max,
+                        "is_unconscious": hp_result["is_unconscious"]
+                    })
 
                 results.append({
                     "action": "damage_applied",

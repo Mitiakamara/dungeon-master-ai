@@ -390,7 +390,19 @@ class SAMOrchestrator:
             )
 
         # ─── STEP 5: Compile response ───
-        combat_dict = combat.to_dict() if combat.active else {"active": False}
+        if combat.active:
+            combat_dict = combat.to_dict()
+        else:
+            # SAM-037/038: persisting inactive combat discards initiative_order
+            # (and with it NPC HP). Live NPCs here mean the combat deactivated
+            # anomalously — that's the HP-rebound signature.
+            alive_npcs = [c.get("name") for c in combat.initiative_order
+                          if c.get("is_npc") and c.get("hp", 0) > 0]
+            if alive_npcs:
+                print(f"💾 Persisting INACTIVE combat — initiative_order discarded with LIVE NPCs: {alive_npcs}")
+            else:
+                print(f"💾 Persisting INACTIVE combat (initiative_order discarded)")
+            combat_dict = {"active": False}
         if engine.pending_player_roll:
             combat_dict["pending_player_roll"] = engine.pending_player_roll
         else:
