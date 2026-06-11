@@ -116,6 +116,7 @@ class MechanicEngine:
                         "target": target["name"],
                         "target_data": target,
                         "damage_spec": clean_dice_spec(result["damage_dice"]),  # SAM-042
+                        "character_name": caster.get("name"),  # SAM-049: owner
                     }
                 else:
                     result["needs_player_roll"] = False
@@ -134,7 +135,8 @@ class MechanicEngine:
                 "spell": spell["name"],
                 "target": target["name"],
                 "target_data": target,
-                "attack_bonus": save_atk
+                "attack_bonus": save_atk,
+                "character_name": caster.get("name"),  # SAM-049: owner
             }
 
         self.results.append(result)
@@ -196,6 +198,18 @@ class MechanicEngine:
         pending = self.pending_player_roll
         if not pending:
             # No pending action — this might be initiative or a freeform roll
+            return {"action": "freeform_roll", "roll": roll_data, "character": character.get("name", "Unknown")}
+
+        # SAM-049: the pending belongs to a specific character. A die from anyone
+        # else is THEIR own freeform roll — never consume or resolve someone
+        # else's pending. This is the ONLY ownership check outside combat (the
+        # turn guard only runs when combat.active), so it guards exploration too
+        # (e.g. Björn's Perception pending vs a die Fekas rolls).
+        owner = (pending.get("character_name") or "").strip().lower()
+        roller = (character.get("name") or "").strip().lower()
+        if owner and roller and owner != roller:
+            print(f"🚫 Roll by {character.get('name')} ignored — pending belongs to "
+                  f"{pending.get('character_name')} (preserved)")
             return {"action": "freeform_roll", "roll": roll_data, "character": character.get("name", "Unknown")}
 
         # SAM-039/042: strict dice validation. If the rolled dice don't match
@@ -556,7 +570,8 @@ class MechanicEngine:
                 "type": "spell_damage",
                 "spell": pending["spell"],
                 "target": target["name"],
-                "target_data": target
+                "target_data": target,
+                "character_name": pending.get("character_name") or character.get("name"),  # SAM-049
             }
         else:
             result["needs_player_roll"] = False

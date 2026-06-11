@@ -993,6 +993,14 @@ Auditoría read-only (`SAM_audit_multiplayer_2026-06-11.md`) de preparación par
 
 **Protocolo recomendado:** fix SAM-049 antes de invitar a Fekas; brief operativo (sin comandos `/`, no spamear Reintentar, el roster puede mostrar HP viejo); monitorear `🔒/OUT_OF_TURN/⛔/💾/⚠️` en logs durante la sesión; retro post-playtest contra la tabla de hallazgos.
 
+### Sesión 11 Jun 2026 (cont.) — SAM-049 owner check + SAM-040 badge de delegación (instrucción 234, pre-vuelo de Fekas)
+
+Dos fixes del pre-vuelo, deploys independientes (backend→Render, frontend→Vercel), sin dependencia técnica.
+
+**SAM-049 (backend, bloqueante) — `pending_player_roll` con dueño:** la única validación de propiedad del pending vivía en el turn guard, que corre solo en combate → fuera de combate cualquier dado de cualquier jugador consumía el pending ajeno (el Perception de Björn resuelto con los stats de Fekas). Fix: `process_player_roll` compara `owner = pending.character_name` vs `roller = character.name` (normalizado) ANTES de la validación de dados; mismatch → `freeform_roll` del que tiró, pending intacto (`🚫 Roll ignored — pending belongs to Y`). Se estampó `character_name` en los pendings que no lo tenían: `spell_damage`/`spell_attack` (process_spell), `spell_damage` (_resolve_spell_attack), `healing` (orchestrator). Pendings sin dueño → lenient (compat single-player). Tests `test_sam049.py`: 11 checks; cero regresión en 039/042/044/045/046. **Lección:** la propiedad de un recurso compartido (un pending por campaña) debe validarse en el punto de consumo, no solo en una capa de turnos que no siempre está activa.
+
+**SAM-040 (frontend, badge de delegación):** _pendiente en este mismo log tras el segundo commit/deploy._
+
 ---
 
 ## 4. Estado Actual — Abril 2026

@@ -64,7 +64,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-046 | Unarmed Strike con daño fijo ("5"/"1d1") rompe prompt y validación — tratar como 1d4+STR | BUG | P2 | DONE |
 | SAM-047 | Auditoría de multiplayer pre-playtest grupal (`SAM_audit_multiplayer_2026-06-11.md`) | CHORE | P1 | DONE |
 | SAM-048 | Comandos admin sin verificación de rol server-side; `/reset` no-GM = nuclear wipe sin scope de campaña | BUG | P1 | OPEN |
-| SAM-049 | Pendings sin validación de dueño fuera de combate → cualquier jugador consume el pending ajeno | BUG | P1 | OPEN |
+| SAM-049 | Pendings sin validación de dueño fuera de combate → cualquier jugador consume el pending ajeno | BUG | P1 | DONE |
 | SAM-050 | Doble envío: INSERT de mensaje pre-lock + lock sin timeout + retry del cliente a 30s | BUG | P2 | OPEN |
 | SAM-051 | Atribución por primer personaje del usuario (`limit 1`) — `/api/chat` sin `character_id` explícito | REFACTOR | P2 | OPEN |
 | SAM-052 | Roster del party con HP congelado (fetch único, sin Realtime) + subscripciones sin filtro de campaña | UX | P2 | OPEN |
@@ -349,13 +349,15 @@ Auditoría SAM-047 §7. El frontend bloquea `/reset|/checkpoint|/load|/list` par
 
 ### SAM-049 — Pendings sin validación de dueño fuera de combate
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN — **bloqueante pre-playtest con Fekas**
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 234 (backend → Render)
 
 Auditoría SAM-047 §6 (hallazgo principal). `pending_player_roll` es uno por campaña; la validación de propiedad vive solo en el turn guard, que corre **solo si `combat.active`** (`orchestrator.py:83`). Fuera de combate (skill checks de exploración, hechizos, pociones), **cualquier dado de cualquier jugador consume el pending ajeno**: Björn pide Perception → Fekas tira un d20 → el check de Björn se resuelve con los modificadores de Fekas. Con dos humanos explorando esto ocurre en los primeros minutos. Además los pendings de spell (`process_spell`, `_resolve_spell_attack`) no estampan `character_name` (sin dueño).
 
 **Fix propuesto:** `process_player_roll` valida `pending.character_name` contra el personaje que tira, SIEMPRE; mismatch → el dado se procesa como `freeform_roll` del que tiró y el pending ajeno queda intacto. Estampar `character_name` en los pendings de spell.
 
 **Criterio de done:** con un pending de Björn activo (en o fuera de combate), un dado de Fekas NO lo consume; el pending sobrevive y Björn puede resolverlo después.
+
+**Resuelto (instrucción 234):** `process_player_roll` valida `owner = pending.character_name` vs `roller = character.name` (normalizado case/space) ANTES de validar dados; mismatch → `freeform_roll` del que tiró, pending intacto, log `🚫 Roll by X ignored — pending belongs to Y`. Estampado `character_name` en los pendings que faltaban: `spell_damage`/`spell_attack` (process_spell), `spell_damage` (_resolve_spell_attack), `healing` (orchestrator item). Pendings sin dueño quedan lenient (compat). Tests `test_sam049.py`: 11 checks (combate y exploración, Fekas no consume el pending de Björn, match normalizado, ownerless lenient, spell owner). Sin regresión en 039/042/044/045/046.
 
 ---
 

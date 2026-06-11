@@ -271,6 +271,7 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                     "healing_dice": healing_dice,
                     "target_name": heal_target_name,
                     "target_data": target_data,
+                    "character_name": sender_name,  # SAM-049: the player who drinks rolls
                 }
             else:
                 mechanical_facts = ""
