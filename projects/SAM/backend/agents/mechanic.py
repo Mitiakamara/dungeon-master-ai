@@ -220,6 +220,7 @@ class MechanicEngine:
             self.state_updates.append({
                 "type": "player_hp",
                 "character_name": target_name,
+                "character_id": (target or {}).get("id"),  # SAM-029
                 "damage": -total_healing,  # Negative = healing
                 "new_hp": hp_result["new_hp"],
                 "hp_max": hp_max,
@@ -249,6 +250,7 @@ class MechanicEngine:
             self.state_updates.append({
                 "type": "player_hp",
                 "character_name": char_name,
+                "character_id": (char or {}).get("id"),  # SAM-029
                 "damage": damage,
                 "new_hp": hp_result["new_hp"],
                 "hp_max": hp_max,
@@ -650,6 +652,7 @@ class MechanicEngine:
                     self.state_updates.append({
                         "type": "player_hp",
                         "character_name": target_name,
+                        "character_id": target_char.get("id"),  # SAM-029
                         "damage": total_dmg,
                         "new_hp": hp_result["new_hp"],
                         "hp_max": hp_max,
@@ -707,6 +710,7 @@ class MechanicEngine:
             update = {
                 "type": "xp_update",
                 "character_name": char["name"],
+                "character_id": char.get("id"),  # SAM-029
                 "xp_gained": xp_each,
                 "new_xp": new_xp,
                 "new_level": new_level,

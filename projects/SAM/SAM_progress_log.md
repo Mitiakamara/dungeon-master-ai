@@ -935,6 +935,20 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 - **Fix propuesto (pendiente de aprobación, NO implementado):** consolidar todos los cambios de `status` por personaje en memoria y hacer UN solo read-modify-write por personaje por request (atómico). Alternativa menor: re-leer status fresco antes de cada write. Preferencia: consolidación.
 - **Lección:** múltiples writes parciales al mismo registro desde el mismo snapshot en memoria es last-write-wins encubierto. La pista diagnóstica fue que `item` (append) sobrevivió y `money`/`xp` (overwrite de campo) no — el ítem ganó por ser el último handler, no por ser "más robusto".
 
+### Sesión 11 Jun 2026 (cont.) — SAM-044 + SAM-029: consolidación atómica de state_updates (instrucción 230)
+
+**Causa (diagnóstico 229):** cada handler del loop de `state_updates` en `server.py` hacía su propio read-modify-write del `status` completo, leyendo del `party_characters` en memoria (snapshot del inicio del request, nunca refrescado entre writes) → múltiples updates al mismo personaje → last-write-wins.
+
+**Fix — acumular, luego flushear una vez:**
+- La lógica se extrajo a una función de módulo `apply_state_updates(supabase, party_characters, state_updates)` (testeable). **Fase 1 (acumulación):** cada handler muta un `status` de trabajo por personaje (`pending_status[char_id]`, partido del snapshot la primera vez); ya no escribe a DB. Columnas top-level del level-up (level/class) se acumulan en `pending_top[char_id]`. **Fase 2 (flush):** un solo `.update({"status": ..., **top})` por personaje, try/except por personaje (un flush que falla no aborta los demás). El orden de los updates dejó de importar: xp+oro+ítem+HP conviven.
+- **SAM-029 (id matching):** `_find_char` prefiere `character_id`, fallback a nombre case/space-insensitive. Los 8 sitios de emisión (`mechanic.py`: 3× player_hp + award_xp; `orchestrator.py`: spell_slot_consume, inventory_remove, money_award, item_award) estampan `character_id` None-safe. `_award_loot` ahora captura el `killer_pc` dict para el id del ítem.
+
+**Tests (`test_sam044.py`, 6 escenarios / 15 checks, todos pasan):** (1) caso Björn — xp_update + money_award + item_award al mismo personaje → UN write con los tres (xp=350, gp=17, ítem); (2) dos personajes intercalados sin cruce; (3) player_hp + money_award conviven; (4) level-up flushea status + level + class en un `.update()`; (5) find_char por id (gana sobre nombre erróneo) y por nombre case-insensitive; (6) flush que falla para un personaje → warning, el otro persiste. (Nota Windows: el harness importa `server.py` que imprime emoji al cargar; correr con `PYTHONUTF8=1`.)
+
+**Pendiente post-deploy:** (1) reparación de datos — los PCs quedaron con `xp=0` (y Björn `gp=0`) por el bug; restaurar a los valores validados (xp=350 ambos, Björn gp=17). OJO: un `/reset` posterior los vuelve a 0, así que la reparación tiene sentido solo si NO se va a resetear estos PCs antes de mirarlos. (2) `/reset` → combate → matar lobo → logs `⭐×2 + 💰×2 + 🎁 + 💾 Status flushed ×2` → query con xp+gp+ítem en la misma corrida.
+
+**Lección de clase:** handlers que hacen read-modify-write del documento completo NO componen — acumular en memoria y flushear una vez por entidad.
+
 ---
 
 ## 4. Estado Actual — Abril 2026

@@ -87,6 +87,189 @@ def get_campaign_lock(campaign_id: str) -> asyncio.Lock:
         _campaign_locks[campaign_id] = asyncio.Lock()
     return _campaign_locks[campaign_id]
 
+
+def apply_state_updates(supabase, party_characters, state_updates):
+    """
+    Apply per-character status changes atomically (SAM-044). ACCUMULATE all
+    changes for a character in memory, then FLUSH one write per character — so
+    multiple updates in one request (XP + gold + item + HP + slots) no longer
+    clobber each other. Previously every handler did its own read-modify-write
+    of the WHOLE status off the stale in-memory snapshot → last-write-wins.
+
+    Characters resolve by id when the update carries `character_id`, else by
+    name (SAM-029). Top-level columns (level/class on level-up) flush in the
+    same write as the status.
+
+    Returns {"status": {char_id: status}, "top": {char_id: top_cols}} for
+    logging/testing.
+    """
+    pending_status: dict = {}   # char_id -> accumulated status dict
+    pending_top: dict = {}      # char_id -> top-level cols (level/class)
+    name_by_id: dict = {}       # char_id -> name (for logging)
+
+    def _find_char(upd):
+        uid = upd.get("character_id")
+        if uid:
+            return next((c for c in party_characters if c.get("id") == uid), None)
+        uname = (upd.get("character_name") or "").lower().strip()
+        if not uname:
+            return None
+        return next((c for c in party_characters
+                     if (c.get("name") or "").lower().strip() == uname), None)
+
+    def _working_status(char):
+        cid = char["id"]
+        if cid not in pending_status:
+            pending_status[cid] = dict(char.get("status") or {})
+            name_by_id[cid] = char.get("name")
+        return pending_status[cid]
+
+    def _working_top(char):
+        cid = char["id"]
+        if cid not in pending_top:
+            pending_top[cid] = {}
+        return pending_top[cid]
+
+    for update in state_updates or []:
+        try:
+            utype = update.get("type")
+
+            if utype == "player_hp":
+                char = _find_char(update)
+                if not char:
+                    print(f"⚠️ player_hp: character {update.get('character_name')} not found")
+                    continue
+                _working_status(char)["hp_current"] = update["new_hp"]
+                print(f"💚 HP: {char.get('name')} → {update['new_hp']}")
+
+            elif utype == "xp_update":
+                # SAM-021: values arrive precomputed from the orchestrator.
+                char = _find_char(update)
+                if not char:
+                    print(f"⚠️ xp_update: character {update.get('character_name')} not found")
+                    continue
+                status = _working_status(char)
+                status["xp"] = update["new_xp"]
+                if update.get("leveled_up"):
+                    top = _working_top(char)
+                    top["level"] = update["new_level"]
+                    if update.get("new_hp_max") is not None:
+                        status["hp_max"] = update["new_hp_max"]
+                        status["hp_current"] = update["new_hp_current"]
+                    # Keep "Barbarian 7"-style class suffix in sync
+                    cls = str(char.get("class") or "")
+                    cls_parts = cls.rsplit(" ", 1)
+                    if len(cls_parts) == 2 and cls_parts[1].isdigit():
+                        top["class"] = f"{cls_parts[0]} {update['new_level']}"
+                    print(f"🎉 LEVEL UP: {char.get('name')} → level {update['new_level']}")
+                print(f"⭐ XP: {char.get('name')} +{update.get('xp_gained', '?')} → {update['new_xp']}")
+
+            elif utype == "money_award":
+                # SAM-021 f2: gold precomputed by the orchestrator
+                char = _find_char(update)
+                if not char:
+                    print(f"⚠️ money_award: character {update.get('character_name')} not found")
+                    continue
+                gp = int(update.get("gp", 0) or 0)
+                if gp <= 0:
+                    continue
+                status = _working_status(char)
+                money = dict(status.get("money") or {})
+                money["gp"] = int(money.get("gp", 0) or 0) + gp
+                status["money"] = money
+                print(f"💰 Loot: {char.get('name')} +{gp} gp")
+
+            elif utype == "item_award":
+                # SAM-021 f2: flavor item named by the LLM, validated upstream
+                char = _find_char(update)
+                if not char:
+                    print(f"⚠️ item_award: character {update.get('character_name')} not found")
+                    continue
+                item = dict(update.get("item") or {})
+                if not item.get("item"):
+                    print(f"⚠️ item_award missing item name for {char.get('name')}")
+                    continue
+                status = _working_status(char)
+                inventory = list(status.get("inventory") or [])
+                inventory.append(item)
+                status["inventory"] = inventory
+                print(f"🎁 Loot: {char.get('name')} receives {item['item']}")
+
+            elif utype == "spell_slot_consume":
+                level = update.get("level")
+                if level is None:
+                    print(f"⚠️ spell_slot_consume missing level for {update.get('character_name')}")
+                    continue
+                char = _find_char(update)
+                if not char:
+                    print(f"⚠️ spell_slot_consume: character {update.get('character_name')} not found in party")
+                    continue
+                level_key = str(level)
+                status = _working_status(char)
+                slots = dict(status.get("spell_slots") or {})
+                if not slots:
+                    print(f"⚠️ Spell slot consume skipped: {char.get('name')} has no spell_slots")
+                    continue
+                slot = dict(slots.get(level_key) or {})
+                if not slot or "total" not in slot:
+                    print(f"⚠️ Spell slot consume skipped: {char.get('name')} has no slot at level {level_key}")
+                    continue
+                total = int(slot.get("total", 0) or 0)
+                used = int(slot.get("used", 0) or 0)
+                new_used = min(total, used + 1)
+                slot["used"] = new_used
+                slots[level_key] = slot
+                status["spell_slots"] = slots
+                print(f"🔮 Spell slot consumed: {char.get('name')} Level {level_key} → {new_used}/{total}")
+
+            elif utype == "inventory_remove":
+                item_name = (update.get("item_name") or "").strip()
+                if not item_name:
+                    print(f"⚠️ inventory_remove missing item_name for {update.get('character_name')}")
+                    continue
+                char = _find_char(update)
+                if not char:
+                    print(f"⚠️ inventory_remove: character {update.get('character_name')} not found in party")
+                    continue
+                qty_to_remove = int(update.get("qty", 1) or 1)
+                status = _working_status(char)
+                inventory = list(status.get("inventory") or [])
+                target_lower = item_name.lower()
+                idx = next(
+                    (i for i, it in enumerate(inventory)
+                     if isinstance(it, dict) and (it.get("item") or "").lower() == target_lower),
+                    None,
+                )
+                if idx is None:
+                    print(f"⚠️ inventory_remove: '{item_name}' not in {char.get('name')}'s inventory")
+                    continue
+                item_obj = dict(inventory[idx])
+                current_qty = int(item_obj.get("qty", 1) or 1)
+                new_qty = current_qty - qty_to_remove
+                if new_qty <= 0:
+                    inventory.pop(idx)
+                    print(f"📦 Item consumed: {char.get('name')} used {item_name} (removed from inventory)")
+                else:
+                    item_obj["qty"] = new_qty
+                    inventory[idx] = item_obj
+                    print(f"📦 Item consumed: {char.get('name')} used {item_name} (qty remaining: {new_qty})")
+                status["inventory"] = inventory
+        except Exception as upd_e:
+            print(f"⚠️ State update failed: {upd_e}")
+
+    # FLUSH (SAM-044): one write per character — accumulated status plus any
+    # top-level columns (level/class) from a level-up.
+    for cid, status in pending_status.items():
+        try:
+            update_data = {"status": status}
+            update_data.update(pending_top.get(cid, {}))
+            supabase.table("characters").update(update_data).eq("id", cid).execute()
+            print(f"💾 Status flushed: {name_by_id.get(cid)} ({len(status)} keys)")
+        except Exception as flush_e:
+            print(f"⚠️ Status flush failed for {name_by_id.get(cid)}: {flush_e}")
+
+    return {"status": pending_status, "top": pending_top}
+
 # --- Endpoints ---
 
 @app.get("/")
@@ -287,143 +470,12 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                     ai_response_text = result["narrative"]
                     print(f"🤖 Orchestrator response ({len(ai_response_text)} chars)")
 
-                    # Apply state updates (HP, XP, inventory)
-                    for update in result.get("state_updates", []):
-                        try:
-                            if update.get("type") == "player_hp":
-                                for char in party_characters:
-                                    if char.get("name") == update.get("character_name"):
-                                        merged = {**char.get("status", {}), "hp_current": update["new_hp"]}
-                                        sam_brain.supabase.table("characters").update({"status": merged}).eq("id", char["id"]).execute()
-                                        print(f"💚 HP updated: {update['character_name']} → {update['new_hp']}")
-                                        break
-
-                            elif update.get("type") == "xp_update":
-                                # SAM-021: values arrive precomputed from the orchestrator
-                                # (XP, level, HP) — this handler only persists them.
-                                for char in party_characters:
-                                    if char.get("name") == update.get("character_name"):
-                                        merged = {**char.get("status", {}), "xp": update["new_xp"]}
-                                        update_data = {"status": merged}
-                                        if update.get("leveled_up"):
-                                            update_data["level"] = update["new_level"]
-                                            if update.get("new_hp_max") is not None:
-                                                merged["hp_max"] = update["new_hp_max"]
-                                                merged["hp_current"] = update["new_hp_current"]
-                                            # Keep "Barbarian 7"-style class suffix in sync
-                                            cls = str(char.get("class") or "")
-                                            cls_parts = cls.rsplit(" ", 1)
-                                            if len(cls_parts) == 2 and cls_parts[1].isdigit():
-                                                update_data["class"] = f"{cls_parts[0]} {update['new_level']}"
-                                            print(f"🎉 LEVEL UP: {update['character_name']} → level {update['new_level']}")
-                                        sam_brain.supabase.table("characters").update(update_data).eq("id", char["id"]).execute()
-                                        print(f"⭐ XP: {update['character_name']} +{update.get('xp_gained', '?')} → {update['new_xp']}")
-                                        break
-
-                            elif update.get("type") == "money_award":
-                                # SAM-021 f2: gold precomputed by the orchestrator
-                                for char in party_characters:
-                                    if char.get("name") == update.get("character_name"):
-                                        gp = int(update.get("gp", 0) or 0)
-                                        if gp <= 0:
-                                            break
-                                        status = dict(char.get("status") or {})
-                                        money = dict(status.get("money") or {})
-                                        money["gp"] = int(money.get("gp", 0) or 0) + gp
-                                        status["money"] = money
-                                        sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
-                                        print(f"💰 Loot: {update['character_name']} +{gp} gp")
-                                        break
-
-                            elif update.get("type") == "item_award":
-                                # SAM-021 f2: flavor item named by the LLM, validated upstream
-                                for char in party_characters:
-                                    if char.get("name") == update.get("character_name"):
-                                        item = dict(update.get("item") or {})
-                                        if not item.get("item"):
-                                            print(f"⚠️ item_award missing item name for {update.get('character_name')}")
-                                            break
-                                        status = dict(char.get("status") or {})
-                                        inventory = list(status.get("inventory") or [])
-                                        inventory.append(item)
-                                        status["inventory"] = inventory
-                                        sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
-                                        print(f"🎁 Loot: {update['character_name']} receives {item['item']}")
-                                        break
-
-                            elif update.get("type") == "spell_slot_consume":
-                                target_name = update.get("character_name")
-                                level = update.get("level")
-                                if level is None:
-                                    print(f"⚠️ spell_slot_consume missing level for {target_name}")
-                                    continue
-                                level_key = str(level)
-                                applied = False
-                                for char in party_characters:
-                                    if char.get("name") != target_name:
-                                        continue
-                                    status = dict(char.get("status") or {})
-                                    slots = dict(status.get("spell_slots") or {})
-                                    if not slots:
-                                        print(f"⚠️ Spell slot consume skipped: {target_name} has no spell_slots")
-                                        break
-                                    slot = dict(slots.get(level_key) or {})
-                                    if not slot or "total" not in slot:
-                                        print(f"⚠️ Spell slot consume skipped: {target_name} has no slot at level {level_key}")
-                                        break
-                                    total = int(slot.get("total", 0) or 0)
-                                    used = int(slot.get("used", 0) or 0)
-                                    new_used = min(total, used + 1)
-                                    slot["used"] = new_used
-                                    slots[level_key] = slot
-                                    status["spell_slots"] = slots
-                                    sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
-                                    print(f"🔮 Spell slot consumed: {target_name} Level {level_key} → {new_used}/{total}")
-                                    applied = True
-                                    break
-                                if not applied:
-                                    print(f"⚠️ Spell slot consume: character {target_name} not found in party")
-
-                            elif update.get("type") == "inventory_remove":
-                                target_name = update.get("character_name")
-                                item_name = (update.get("item_name") or "").strip()
-                                qty_to_remove = int(update.get("qty", 1) or 1)
-                                if not item_name:
-                                    print(f"⚠️ inventory_remove missing item_name for {target_name}")
-                                    continue
-                                applied = False
-                                for char in party_characters:
-                                    if char.get("name") != target_name:
-                                        continue
-                                    status = dict(char.get("status") or {})
-                                    inventory = list(status.get("inventory") or [])
-                                    target_lower = item_name.lower()
-                                    idx = next(
-                                        (i for i, it in enumerate(inventory)
-                                         if isinstance(it, dict) and (it.get("item") or "").lower() == target_lower),
-                                        None,
-                                    )
-                                    if idx is None:
-                                        print(f"⚠️ inventory_remove: '{item_name}' not in {target_name}'s inventory")
-                                        break
-                                    item_obj = dict(inventory[idx])
-                                    current_qty = int(item_obj.get("qty", 1) or 1)
-                                    new_qty = current_qty - qty_to_remove
-                                    if new_qty <= 0:
-                                        inventory.pop(idx)
-                                        print(f"📦 Item consumed: {target_name} used {item_name} (removed from inventory)")
-                                    else:
-                                        item_obj["qty"] = new_qty
-                                        inventory[idx] = item_obj
-                                        print(f"📦 Item consumed: {target_name} used {item_name} (qty remaining: {new_qty})")
-                                    status["inventory"] = inventory
-                                    sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
-                                    applied = True
-                                    break
-                                if not applied:
-                                    print(f"⚠️ inventory_remove: character {target_name} not found in party")
-                        except Exception as upd_e:
-                            print(f"⚠️ State update failed: {upd_e}")
+                    # Apply state updates atomically per character (SAM-044 /
+                    # SAM-029): accumulate all changes, then flush one write each.
+                    apply_state_updates(
+                        sam_brain.supabase, party_characters,
+                        result.get("state_updates", []),
+                    )
 
                     # Update combat state
                     combat_state = result.get("combat_state")

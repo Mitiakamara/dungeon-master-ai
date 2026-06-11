@@ -206,6 +206,7 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                         engine.state_updates.append({
                             "type": "spell_slot_consume",
                             "character_name": sender_name,
+                            "character_id": character_context.get("id"),  # SAM-029
                             "level": spell_level,
                         })
 
@@ -280,6 +281,7 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                 engine.state_updates.append({
                     "type": "inventory_remove",
                     "character_name": sender_name,
+                    "character_id": character_context.get("id"),  # SAM-029
                     "item_name": item_name,
                     "qty": 1,
                 })
@@ -859,6 +861,7 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                 engine.state_updates.append({
                     "type": "money_award",
                     "character_name": pc.get("name"),
+                    "character_id": pc.get("id"),  # SAM-029
                     "gp": per_pc,
                 })
             lines.append(f"LOOT: {gold} gp split among the party ({per_pc} gp each).")
@@ -866,14 +869,17 @@ Respond ONLY with a JSON array, no markdown, no backticks:
         slots = int(budget.get("item_slots", 0) or 0)
         if slots > 0:
             killer = npc.get("_killed_by")
-            if not killer or not any(p.get("name") == killer for p in party_characters):
-                killer = party_characters[0].get("name")  # fallback: first PC
+            killer_pc = next((p for p in party_characters if p.get("name") == killer), None)
+            if not killer_pc:
+                killer_pc = party_characters[0]  # fallback: first PC
+                killer = killer_pc.get("name")
             items = self._generate_loot_items(
                 npc.get("name", "the creature"), slots, budget.get("item_rarity"))
             for item in items:
                 engine.state_updates.append({
                     "type": "item_award",
                     "character_name": killer,
+                    "character_id": killer_pc.get("id"),  # SAM-029
                     # status.inventory shape: {"item": str, "qty": int} (+ flavor)
                     "item": {"item": item["name"], "qty": 1,
                              "description": item.get("description", "")},

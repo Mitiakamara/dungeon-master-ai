@@ -44,7 +44,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-026 | Código muerto: `pending_action` + `<ACTION>RELOAD_CHAT>` no manejado | CHORE | P3 | OPEN |
 | SAM-027 | Log/warning cuando un intent llega sin handler mecánico dedicado | CHORE | P3 | OPEN |
 | SAM-028 | Unificar shape de `settings.combat` entre legacy y orchestrator | BUG | P2 | OPEN |
-| SAM-029 | Aplicar `state_updates` por `character_id` en vez de por `name` | REFACTOR | P3 | OPEN |
+| SAM-029 | Aplicar `state_updates` por `character_id` en vez de por `name` | REFACTOR | P2 | DONE |
 | SAM-030 | Incluir `stats` en `_format_character_context` (gap narrator RULE 15) | CHORE | P3 | OPEN |
 | SAM-031 | Gate `debug_log.txt` por env DEBUG (no I/O en hot-path) | CHORE | P3 | OPEN |
 | SAM-032 | Retry/backoff para `RemoteProtocolError` httpx (Gemini/Supabase) | CHORE | P3 | OPEN |
@@ -59,7 +59,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-041 | Declaraciones de acción producen facts vacíos → narrator de roleplay niega el ataque (deadlock) | BUG | P0 | DONE |
 | SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P1 | OPEN |
 | SAM-043 | Monster lookup no matchea nombres en español ("lobo" ≠ "Wolf") → fallback genérico infla XP/loot | BUG | P3 | OPEN |
-| SAM-044 | `state_updates` múltiples al mismo personaje se pisan entre sí (read-modify-write no consolidado en server.py) | BUG | P1 | OPEN |
+| SAM-044 | `state_updates` múltiples al mismo personaje se pisan entre sí (read-modify-write no consolidado en server.py) | BUG | P1 | DONE |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -247,7 +247,7 @@ Decisión revisada por el director tras playtests: el auto-roll de iniciativa se
 
 ### SAM-021 — Orchestrator no implementa loot/XP/level-up/imágenes
 
-**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** IN_PROGRESS — **fase 1/3 DONE** (XP/level-up, commit `d7aa6fb`, instrucción 225, validada en prod) · **fase 2/3 código DONE** (loot híbrido, commit `31b29f1`, instrucción 226) — **validación PARCIAL, BLOCKED por SAM-044** (el oro no llega al wallet). Pendiente: fase 3 imágenes (SAM-009).
+**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** IN_PROGRESS — **fase 1/3 DONE** (XP/level-up, commit `d7aa6fb`, instrucción 225, validada en prod) · **fase 2/3 código DONE** (loot híbrido, commit `31b29f1`, instrucción 226) — **SAM-044 resuelto** (instrucción 230, el oro/XP/ítem ya conviven); validación final del loot pendiente del playtest post-deploy. Pendiente: fase 3 imágenes (SAM-009).
 
 Hallazgo principal de la auditoría SAM-020. El pipeline nuevo no portaba features del legacy: `mechanic.award_xp` existía pero nunca se llamaba; `give_loot` solo está en tools legacy; el narrator tiene prohibido emitir `<LOOT>/<XP_GAIN>/<EVENT>/<IMAGE>` (`narrator.py:39`). Esas features solo viven en `ai.py`, alcanzado solo por excepción. **Subsume SAM-009** (servicio de imágenes).
 
@@ -331,16 +331,6 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 
 ---
 
-### SAM-029 — Aplicar `state_updates` por `character_id` en vez de por `name`
-
-**Tipo:** REFACTOR · **Prio:** P3 · **Estado:** OPEN
-
-`server.py` matchea personajes por nombre al aplicar state_updates (`:295`, `:303`, `:321`, `:354`). Homónimos colisionan; un rename rompe el update.
-
-**Criterio de done:** los handlers de `player_hp`/`xp_update`/`spell_slot_consume`/`inventory_remove` resuelven por `character_id`. Requiere que el engine propague el id en los `state_updates`. Detalle en `SAM_audit_2026-06-05.md` §4.
-
----
-
 ### SAM-030 — Incluir `stats` en `_format_character_context`
 
 **Tipo:** CHORE · **Prio:** P3 · **Estado:** OPEN
@@ -385,25 +375,19 @@ Playtest 2026-06-11: el target "lobo" no encontró "Wolf" en el compendio → `_
 
 ---
 
+## Tickets cerrados
+
 ### SAM-044 — `state_updates` múltiples al mismo personaje se pisan entre sí
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 230
 
-**Confirmado (diagnóstico instrucción 229, Parte B).** Cada handler de `state_update` en `server.py` (`player_hp`, `xp_update`, `money_award`, `item_award`, `spell_slot_consume`, `inventory_remove`) hace su propio read-modify-write: lee `char.get("status")` del `party_characters` en memoria (fetch del inicio del request, `server.py:247`), lo modifica y escribe el `status` ENTERO. Pero `party_characters` NUNCA se refresca entre writes → cada handler parte del status original → **el último write para un personaje pisa todos los anteriores**.
+Confirmado en diagnóstico 229: cada handler de `state_update` en `server.py` hacía su propio read-modify-write del `status` completo leyendo del `party_characters` en memoria (snapshot del inicio del request, nunca refrescado) → múltiples updates al mismo personaje se pisaban (last-write-wins: Björn perdió oro y XP, conservó el ítem por ser el último handler). **Fix:** la lógica se extrajo a `apply_state_updates(supabase, party_characters, state_updates)` (función de módulo en `server.py`) que **acumula** todos los cambios de `status` por personaje en memoria (`pending_status[char_id]`) y **flushea UN solo write por personaje** — status + columnas top-level (level/class del level-up) en el mismo `.update()`. El orden de los updates dejó de importar. Harness `test_sam044.py`: 6 escenarios / 15 checks, todos pasan (caso Björn xp+oro+ítem en un write, dos personajes sin cruce, hp+oro, level-up con columnas top-level, find_char por id/nombre, flush con fallo aislado por personaje). Validación final end-to-end pendiente del playtest post-deploy + reparación de datos (xp=0 heredado del bug). Lección: handlers que hacen read-modify-write del documento completo NO componen — acumular y flushear una vez.
 
-**Evidencia (playtest 2026-06-11):** en un solo request (muerte del lobo), Björn recibió `xp_update` + `money_award` (+17 gp) + `item_award` (Smooth River Stone). En BD quedó `money.gp=0, xp=0` con el ítem SÍ presente → el `item_award` (último) pisó al `money_award` y al `xp_update`. Vex (solo `xp_update` + `money_award`): `money.gp=17, xp=0` → el `money_award` pisó al `xp_update`. Sin `/reset` de por medio (Vex conserva 17 gp). Doble confirmación vía XP perdido en ambos.
+### SAM-029 — Aplicar `state_updates` por `character_id` en vez de por `name`
 
-**Alcance:** NO es un bug del loot — es de la **capa de persistencia**. Cualquier combinación de updates al mismo personaje en un request (XP + oro + ítem + HP) está en riesgo. Bloquea el cierre de SAM-021 fase 2.
+**Tipo:** REFACTOR · **Prio:** P2 (subido de P3) · **Estado:** DONE · Instrucción 230
 
-**Archivos:** `backend/server.py` (loop de `state_updates`, `:291` en adelante).
-
-**Fix propuesto (NO implementado — pendiente de aprobación):** consolidar todos los cambios de `status` de un mismo personaje en memoria y hacer UN solo read-modify-write por personaje por request (atómico, menos round-trips). Alternativa menor: re-leer status fresco dentro de cada handler justo antes de su write. Preferencia: lo primero.
-
-**Criterio de done:** un request con XP + oro + ítem + HP al mismo personaje persiste TODOS los cambios; query post-combate muestra los cuatro aplicados.
-
----
-
-## Tickets cerrados
+Junto con SAM-044. El loop de `state_updates` resuelve el personaje con `_find_char`: prefiere `character_id` si el update lo trae, fallback a match por nombre case/space-insensitive. Los 8 sitios de emisión estampan `character_id` (None-safe — el fallback por nombre cubre cualquier ausencia): `mechanic.py` (player_hp de healing/self_damage/npc-turn, xp_update de award_xp) y `orchestrator.py` (spell_slot_consume, inventory_remove, money_award, item_award — este último capturando el `killer_pc` dict). Homónimos y renames dejan de romper el update.
 
 ### SAM-041 — Declaraciones de acción producen facts vacíos (deadlock narrativo)
 
