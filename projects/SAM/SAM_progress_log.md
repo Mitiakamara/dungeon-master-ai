@@ -968,6 +968,17 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Lección de clase:** una sola fuente de verdad por dato derivado (el `damage_spec` resuelto), y validar las entradas del jugador contra lo que el motor pidió en vez de aceptar cualquier tirada — el pending preservado convierte un "rechazo" en un re-prompt sin perder estado.
 
+### Sesión 11 Jun 2026 (cont.) — SAM-045 + SAM-046: cantidad en attack rolls + unarmed 1d4+STR (instrucción 232)
+
+Dos bordes de la validación de dados (SAM-039/042) que el playtest 2026-06-11 expuso. La validación central funcionó en prod → **SAM-039 y SAM-042 quedan validados/cerrados**.
+
+- **SAM-045 (cantidad en attack rolls):** `_check_dice` validaba las caras del d20 pero no la cantidad → el jugador tiró 4d20/2d20 y se aceptaron. Fix: para attack rolls la cantidad debe ser **1 o 2** (normal / ventaja-desventaja); 0 o 3+ se rechaza con fact `INVALID DICE: an attack roll uses 1d20 (or 2d20 ...)` y pending preservado. Con 2d20 el resolver toma `rolls[0]` (primer d20); ventaja real (mayor/menor) es feature aparte — acá solo se impide 3+.
+- **SAM-046 (Unarmed = 1d4+STR):** el daño fijo "5"/"1" producía prompt "1d1+4" y dejaba pasar un 1d20 (19 aplicado). Nuevo `_effective_damage(weapon, character)` normaliza Unarmed Strike (o cualquier daño fijo/no parseable) a `1d4+{str_mod}` al armar el pending; el `weapon` del pending lleva el daño normalizado para que el parse del modificador y el prompt coincidan. Decisión del director (no se toca el dato del PDF — eso es SAM-005).
+- **Fail-closed (Change 3):** `_check_dice` ahora RECHAZA (en vez de aceptar) un roll contra un `damage_spec` degenerado/no parseable (`N<1` o `M<2`), con log `⚠️ Unparseable damage_spec`. Cierra el agujero por el que un 1d20 entraba como daño de un "1d1". Distinción clave: *sin* spec → lenient (no rompe spell_attack); spec presente pero malo → fail-closed.
+- **Tests `test_sam045_046.py`:** 19 checks (1d20 ok, 2d20 ok, 3d20/4d20 rechazados, unarmed 1d4+4 prompt+resolución, 1d20 contra 1d4 rechazado, fail-closed con "1d1"/garbage, regresión Greataxe). Todos pasan; `test_sam039_042.py` sigue 28/28 (sin regresión).
+
+**Lección de clase:** validar fail-closed, no fail-open — ante un dato esperado mal formado, rechazar la entrada en vez de aceptarla; y normalizar los casos especiales (daño fijo del unarmed) a la forma canónica (NdM+mod) en lugar de tratarlos como excepción aguas abajo.
+
 ---
 
 ## 4. Estado Actual — Abril 2026

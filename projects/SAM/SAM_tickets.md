@@ -60,6 +60,8 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P1 | DONE |
 | SAM-043 | Monster lookup no matchea nombres en español ("lobo" ≠ "Wolf") → fallback genérico infla XP/loot | BUG | P3 | OPEN |
 | SAM-044 | `state_updates` múltiples al mismo personaje se pisan entre sí (read-modify-write no consolidado en server.py) | BUG | P1 | DONE |
+| SAM-045 | Attack rolls aceptan cualquier cantidad de d20 (3d20/4d20) — falta validar cantidad | BUG | P2 | DONE |
+| SAM-046 | Unarmed Strike con daño fijo ("5"/"1d1") rompe prompt y validación — tratar como 1d4+STR | BUG | P2 | DONE |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -363,13 +365,25 @@ Junto con SAM-044. El loop de `state_updates` resuelve el personaje con `_find_c
 
 **Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 231
 
-Raíz: dos fuentes de prompt contradictorias — `_resolve_weapon_attack` duplicaba bien los dados pero `_get_roll_prompt` los recomputaba desde `weapon["damage"]` (sin duplicar), ignorando `critical`. **Fix (fuente única):** el pending de damage lleva `damage_spec` ya resuelto (duplicado en crit vía `_double_dice`, sin sufijo de tipo); `_get_roll_prompt` lo lee y NUNCA recalcula. Stampeado en los 4 orígenes de damage pending (weapon/spell/sneak + freeform del dice tray). El lado jugador del crit lo cierra la validación estricta (ver SAM-039). Tests `test_sam039_042.py` S1.
+Raíz: dos fuentes de prompt contradictorias — `_resolve_weapon_attack` duplicaba bien los dados pero `_get_roll_prompt` los recomputaba desde `weapon["damage"]` (sin duplicar), ignorando `critical`. **Fix (fuente única):** el pending de damage lleva `damage_spec` ya resuelto (duplicado en crit vía `_double_dice`, sin sufijo de tipo); `_get_roll_prompt` lo lee y NUNCA recalcula. Stampeado en los 4 orígenes de damage pending (weapon/spell/sneak + freeform del dice tray). El lado jugador del crit lo cierra la validación estricta (ver SAM-039). Tests `test_sam039_042.py` S1. **Validado en prod (playtest 2026-06-11):** la validación central de dados funcionó; los únicos bordes pendientes (attack-count, unarmed fijo) se cerraron en SAM-045/046.
 
 ### SAM-039 — Weapon mismatch + validación estricta de dados
 
 **Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 231
 
-Dos partes. **(a) Arma declarada:** `_find_weapon` reescrito — normaliza acentos/case/espacios (`_normalize_weapon`) y matchea substring en ambas direcciones, así "great axe"/"GreatAxe"/"Greataxe" resuelven al mismo ataque; el fallback a `attacks[0]` deja de ser silencioso (loguea `⚠️ Weapon ... not matched`). `_display_dice` garantiza que el prompt sea siempre `NdM[+X]` — nunca un número plano ("tira 5"). **(b) Validación estricta (raíz compartida con SAM-042):** `process_player_roll` valida el dado tirado contra el esperado del pending (`_check_dice`): attack roll → d20 (solo caras, advantage/disadvantage permite 2 d20); damage → N y M de `damage_spec`. Si no coincide → rechaza sin tocar HP/acción/turno, **preserva el pending** (persiste entre requests) y emite fact `INVALID DICE: expected … got … — Wrong die type/number of dice`. Narrator RULE 16: ante INVALID DICE pide el dado correcto sin narrar resultado. Anti-deadlock: `end_turn` (SAM-034) sigue siendo la salida (limpia el pending). Tests `test_sam039_042.py`: 28 checks (S1–S9 + advantage + `_display_dice`), todos pasan.
+Dos partes. **(a) Arma declarada:** `_find_weapon` reescrito — normaliza acentos/case/espacios (`_normalize_weapon`) y matchea substring en ambas direcciones, así "great axe"/"GreatAxe"/"Greataxe" resuelven al mismo ataque; el fallback a `attacks[0]` deja de ser silencioso (loguea `⚠️ Weapon ... not matched`). `_display_dice` garantiza que el prompt sea siempre `NdM[+X]` — nunca un número plano ("tira 5"). **(b) Validación estricta (raíz compartida con SAM-042):** `process_player_roll` valida el dado tirado contra el esperado del pending (`_check_dice`): attack roll → d20 (solo caras, advantage/disadvantage permite 2 d20); damage → N y M de `damage_spec`. Si no coincide → rechaza sin tocar HP/acción/turno, **preserva el pending** (persiste entre requests) y emite fact `INVALID DICE: expected … got … — Wrong die type/number of dice`. Narrator RULE 16: ante INVALID DICE pide el dado correcto sin narrar resultado. Anti-deadlock: `end_turn` (SAM-034) sigue siendo la salida (limpia el pending). Tests `test_sam039_042.py`: 28 checks (S1–S9 + advantage + `_display_dice`), todos pasan. **Validado en prod (playtest 2026-06-11):** el caso central funcionó; los dos bordes restantes (cantidad en attack rolls, unarmed con daño fijo) se cerraron en SAM-045/046.
+
+### SAM-045 — Attack rolls no validan cantidad de d20 (3d20/4d20 aceptados)
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** DONE · Instrucción 232
+
+Playtest 2026-06-11: el jugador tiró 4d20 y 2d20 en attack rolls y el sistema los aceptó — `_check_dice` validaba las caras (d20) pero no la cantidad. Fix: para attack rolls, la cantidad debe ser **1 (normal) o 2 (ventaja/desventaja)**; 0 o 3+ se rechaza con fact `INVALID DICE: an attack roll uses 1d20 (or 2d20 with advantage/disadvantage)...`, preservando el pending. Con 2d20 el resolver toma hoy el PRIMER d20 (`rolls[0]`); ventaja/desventaja real (mayor/menor) es un feature aparte — acá solo se valida que no entren 3+. Tests `test_sam045_046.py` S1–S4.
+
+### SAM-046 — Unarmed Strike daño fijo rompe prompt y validación → 1d4+STR
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** DONE · Instrucción 232
+
+Playtest 2026-06-11: Unarmed Strike generaba prompt "1d1+4" (feo) y la validación dejaba pasar un 1d20 como daño del puñetazo (19 aplicado) — el daño fijo no encajaba en el flujo de tiradas. Decisión del director: tratar Unarmed Strike como **1d4+STR**. Fix runtime (no toca el dato del PDF — eso es SAM-005): nuevo `_effective_damage(weapon, character)` en `mechanic.py` normaliza Unarmed Strike (o cualquier daño fijo/no parseable) a `1d4+{str_mod}` (str top-level, SAM-018) al armar el pending de `weapon_damage`; el `weapon` del pending lleva el daño normalizado para que el parse del modificador y el prompt coincidan. `_get_roll_prompt` emite "Tira 1d4+4 de daño". **Sanity / fail-closed (Change 3):** `_check_dice` ahora rechaza (en vez de aceptar) un roll contra un `damage_spec` degenerado/no parseable (`N<1` o `M<2`) con log `⚠️ Unparseable damage_spec` — evita que un 1d20 se cuele como daño de un "1d1" futuro. Tests `test_sam045_046.py` S5–S8 + regresión Greataxe.
 
 ### SAM-041 — Declaraciones de acción producen facts vacíos (deadlock narrativo)
 

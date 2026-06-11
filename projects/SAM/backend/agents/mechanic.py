@@ -310,15 +310,23 @@ class MechanicEngine:
           not 1d12).
         """
         ptype = pending.get("type", "")
-        if ptype in ("weapon_attack", "spell_attack"):
-            exp_count, exp_sides, exp_display, check_count = 1, 20, "1d20", False
+        is_attack = ptype in ("weapon_attack", "spell_attack")
+        if is_attack:
+            # SAM-045: a d20; count 1 (normal) or 2 (advantage/disadvantage) only.
+            exp_count, exp_sides, exp_display = None, 20, "1d20"
         elif ptype in ("weapon_damage", "spell_damage", "sneak_damage"):
             spec = pending.get("damage_spec") or pending.get("dice") or ""
+            if not spec:
+                return None  # no expected spec at all — stay lenient
             exp_count, exp_sides = parse_dice_notation(spec)
-            if exp_count is None:
-                return None  # no parseable spec to validate against — don't block
-            exp_display = clean_dice_spec(spec) or f"{exp_count}d{exp_sides}"
-            check_count = True
+            exp_display = clean_dice_spec(spec) or str(spec)
+            # SAM-046/Change 3: fail-closed — a degenerate/unparseable spec must
+            # NEVER let a roll through (the old fail-open dropped a 1d20 onto a
+            # fixed-damage "1d1" pending).
+            if exp_count is None or exp_count < 1 or (exp_sides or 0) < 2:
+                print(f"⚠️ Unparseable damage_spec: {spec!r} — rejecting roll (fail-closed)")
+                return {"reason": "unparseable", "expected": exp_display or "?",
+                        "rolled": str(roll_data.get("dice", "")).strip() or "?"}
         else:
             return None  # skill_check / healing / self_damage: no strict check
 
@@ -331,9 +339,15 @@ class MechanicEngine:
             rolled_count, rolled_sides = len(rolls), None
         rolled_display = dice_str or f"{rolled_count}d{rolled_sides or '?'}"
 
+        # Faces (both attack and damage must match the die type).
         if rolled_sides is not None and rolled_sides != exp_sides:
-            return {"reason": "faces", "expected": exp_display, "rolled": rolled_display}
-        if check_count and rolled_count != exp_count:
+            return {"reason": ("attack" if is_attack else "faces"),
+                    "expected": exp_display, "rolled": rolled_display}
+        # Count.
+        if is_attack:
+            if rolled_count not in (1, 2):  # SAM-045: 1d20 or 2d20; reject 0 / 3+
+                return {"reason": "attack", "expected": exp_display, "rolled": rolled_display}
+        elif rolled_count != exp_count:
             return {"reason": "count", "expected": exp_display, "rolled": rolled_display}
         return None
 
@@ -396,16 +410,18 @@ class MechanicEngine:
         }
 
         if hit_result["hit"]:
-            # Need damage roll from player
-            damage_dice = weapon.get("damage", "1d6")
-            if hit_result["critical"]:
-                damage_dice = self._double_dice(damage_dice)
+            # Need damage roll from player. SAM-046: normalize Unarmed Strike (and
+            # any fixed/unparseable damage) to 1d4+STR so it rolls like any weapon.
+            eff_damage = self._effective_damage(weapon, character)
+            damage_dice = self._double_dice(eff_damage) if hit_result["critical"] else eff_damage
             result["needs_player_roll"] = True
             result["damage_dice"] = damage_dice
             result["prompt_player"] = f"{'¡CRÍTICO! ' if hit_result['critical'] else ''}¡Impacto! Tira {damage_dice} de daño."
             self.pending_player_roll = {
                 "type": "weapon_damage",
-                "weapon": weapon,
+                # Carry the NORMALIZED damage so the modifier parse in
+                # _resolve_weapon_damage and the prompt agree.
+                "weapon": {**weapon, "damage": eff_damage},
                 "target": target["name"],
                 "target_data": target,
                 "critical": hit_result["critical"],
@@ -847,6 +863,26 @@ class MechanicEngine:
         # Leveled spells — TODO: spell slot scaling
         return "1d8"  # Safe default
 
+    def _effective_damage(self, weapon: dict, character: dict) -> str:
+        """
+        SAM-046: return a rollable NdM[+X] damage string for a weapon. Unarmed
+        Strike — or any fixed/unparseable damage value ("5", "1") — normalizes to
+        1d4+STR so it flows through the normal roll + validation path instead of
+        producing an ugly "1d1+4" prompt that let any die slip through.
+        """
+        raw = weapon.get("damage", "")
+        name_norm = re.sub(r"[^a-z0-9]", "", str(weapon.get("name", "")).lower())
+        count, sides = parse_dice_notation(raw)
+        if "unarmedstrike" in name_norm or count is None or (sides or 0) < 2:
+            stats = character.get("stats") or {}  # top-level column (SAM-018)
+            try:
+                str_mod = (int(stats.get("str", 10) or 10) - 10) // 2
+            except (TypeError, ValueError):
+                str_mod = 0
+            mod = f"+{str_mod}" if str_mod > 0 else (str(str_mod) if str_mod < 0 else "")
+            return f"1d4{mod}"
+        return clean_dice_spec(raw) or raw
+
     def _double_dice(self, damage_notation: str) -> str:
         """Double dice for critical hits. '1d8+2' -> '2d8+2'. '2d10 fire' -> '4d10 fire'."""
         # Strip damage type suffix first (e.g., "2d10 fire", "1d6+2 slashing")
@@ -1002,12 +1038,23 @@ class MechanicEngine:
 
             elif action == "invalid_dice":
                 reason = r.get("reason", "")
-                detail = ("Wrong die type" if reason == "faces"
-                          else "Wrong number of dice" if reason == "count"
-                          else "Wrong dice")
-                lines.append(
-                    f"INVALID DICE: expected {r.get('expected')}, got {r.get('rolled')}. "
-                    f"{detail} — roll {r.get('expected')}."
-                )
+                if reason == "attack":
+                    lines.append(
+                        f"INVALID DICE: an attack roll uses 1d20 (or 2d20 with "
+                        f"advantage/disadvantage). Got {r.get('rolled')}. Roll 1d20."
+                    )
+                elif reason == "unparseable":
+                    lines.append(
+                        f"INVALID DICE: the requested dice are misconfigured "
+                        f"({r.get('expected')}). Roll the dice S.A.M. asked for."
+                    )
+                else:
+                    detail = ("Wrong die type" if reason == "faces"
+                              else "Wrong number of dice" if reason == "count"
+                              else "Wrong dice")
+                    lines.append(
+                        f"INVALID DICE: expected {r.get('expected')}, got {r.get('rolled')}. "
+                        f"{detail} — roll {r.get('expected')}."
+                    )
 
         return "\n".join(lines)
