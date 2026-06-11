@@ -54,10 +54,10 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-036 | Daño de PC delegado a NPC se emite como `player_hp` → nunca baja el HP del NPC | BUG | P0 | DONE |
 | SAM-037 | Combate inactivo persiste `{"active": False}` descartando `initiative_order` → NPC revive a HP completo | BUG | P1 | DONE |
 | SAM-038 | Instrumentación: logging de HP de NPC, transiciones de combate y descarte de estado | CHORE | P1 | DONE |
-| SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P1 | OPEN |
+| SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P1 | DONE |
 | SAM-040 | Estado de delegación invisible para el jugador | UX | P2 | OPEN |
 | SAM-041 | Declaraciones de acción producen facts vacíos → narrator de roleplay niega el ataque (deadlock) | BUG | P0 | DONE |
-| SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P1 | OPEN |
+| SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P1 | DONE |
 | SAM-043 | Monster lookup no matchea nombres en español ("lobo" ≠ "Wolf") → fallback genérico infla XP/loot | BUG | P3 | OPEN |
 | SAM-044 | `state_updates` múltiples al mismo personaje se pisan entre sí (read-modify-write no consolidado en server.py) | BUG | P1 | DONE |
 
@@ -173,40 +173,6 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 
 ---
 
-### SAM-042 — Crítico no duplica dados de daño
-
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (subido de P2 → P1 en instrucción 229)
-
-Playtest 2026-06-11: natural 20 detectado y narrado, pero el damage prompt y el cálculo usaron los dados normales (1d12+4 en vez de 2d12+4).
-
-**Causa trazada (2026-06-11):** hay DOS fuentes de prompt contradictorias. `_resolve_weapon_attack` (`mechanic.py:315-332`) hace todo bien: detecta el nat 20, duplica los dados con `_double_dice` para su `prompt_player` ("¡CRÍTICO! ... Tira 2d12+4") y stampea `critical: True` en el pending de `weapon_damage`. Pero `_get_roll_prompt` (orchestrator) construye la línea "→ PROMPT PLAYER:" desde `weapon["damage"]` — los dados SIN duplicar — **ignorando `pending["critical"]`**. Ambas líneas conviven en los facts y el narrator obedece la última (la normal). Después, `_resolve_weapon_damage` no usa el flag `critical` para calcular (el doubling es por dados pedidos, by design) y no hay validación dado-esperado vs dado-tirado (cruza con SAM-039 hipótesis c) → el 1d12 se acepta en silencio. Nota: `_setup_combat_freeform_pending` hardcodea `critical: False` para daño freeform del dice tray (irrelevante para este caso, pero mismo síntoma si se tira daño sin d20 previo).
-
-**Fix sugerido:** una sola fuente de verdad — stampear `damage_dice` (ya duplicado) en el pending de `weapon_damage` en `_resolve_weapon_attack`, y que `_get_roll_prompt` lo lea con fallback a `weapon["damage"]`. Opcional: validación dado-esperado vs tirado (compartida con SAM-039).
-
-**Evidencia adicional (playtest 2026-06-11, instrucción 229) — sube a P1:** en el mismo incidente del nat 1 de SAM-039, SAM pidió "tira 5 de daño" y aceptó un 1d12 sin validación (7 aplicados). La falta de validación dado-esperado vs dado-tirado (hipótesis compartida con SAM-039 c) es co-causa visible. El par SAM-039 + SAM-042 sube de prioridad funcional.
-
-**Criterio de done:** nat 20 → el prompt pide los dados duplicados (2d12+4) y el daño aplicado refleja la tirada duplicada.
-
----
-
-### SAM-039 — Weapon mismatch en el flow de ataque
-
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (subido de P2 → P1 en instrucción 229)
-
-En el playtest 2026-06-11, Björn declaró "Greataxe" en el chat. El intent del interpreter registró `{"weapon": "Handaxe"}`, SAM pidió "1d6+4" (daño de Handaxe) en vez de 1d12+4, y al tirar el d12 el narrator improvisó "parece que cambiar de arma era la clave" cuando el jugador nunca cambió de arma. Además el d12 tirado contra un prompt de 1d6 se aceptó sin validación.
-
-**Hipótesis a investigar:** (a) el interpreter resuelve mal el arma declarada en mensajes coloquiales ("uso me hacha", "otra vez 🪓") y elige otra del attack list; (b) `_setup_combat_freeform_pending` o `_find_weapon` hace fallback a `attacks[0]` cuando el match falla; (c) no hay validación dice-esperado vs dice-tirado en `process_player_roll`.
-
-**Evidencia adicional (diagnóstico 227, estado vivo en BD):** el pending persistido del combate colgado tenía `weapon: Handaxe (+7, 1d6+4)` cuando el playtest declaró Greataxe. El bono +7 coincidió con el de Greataxe por casualidad — cuando difiera, el to-hit y el daño serán incorrectos en silencio.
-
-**Evidencia adicional (playtest 2026-06-11, instrucción 229) — sube a P1:** tras un nat 1 con Greataxe, el reintento de ataque asignó `Unarmed Strike +7` (fallback a `attacks[0]`/unarmed cuando el match falla — hipótesis b), SAM pidió "tira 5 de daño", el jugador tiró 1d12 y se aceptó sin validación (7 de daño aplicado — hipótesis c). El par **SAM-039 + SAM-042** es el bug más visible que le queda a un jugador nuevo.
-
-**Archivos sospechosos:** `interpreter.py` (prompt de attack), `orchestrator.py` (`_find_weapon`, `_setup_combat_freeform_pending`), `mechanic.py` (`process_player_roll`).
-
-**Criterio de done:** el arma declarada en el chat es la que usa el pending; si el jugador tira un dado distinto al esperado, el sistema lo señala (warning en facts) en vez de aceptarlo en silencio.
-
----
-
 ### SAM-040 — Estado de delegación invisible para el jugador
 
 **Tipo:** UX · **Prio:** P2 · **Estado:** OPEN
@@ -247,7 +213,7 @@ Decisión revisada por el director tras playtests: el auto-roll de iniciativa se
 
 ### SAM-021 — Orchestrator no implementa loot/XP/level-up/imágenes
 
-**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** IN_PROGRESS — **fase 1/3 DONE** (XP/level-up, commit `d7aa6fb`, instrucción 225, validada en prod) · **fase 2/3 código DONE** (loot híbrido, commit `31b29f1`, instrucción 226) — **SAM-044 resuelto** (instrucción 230, el oro/XP/ítem ya conviven); validación final del loot pendiente del playtest post-deploy. Pendiente: fase 3 imágenes (SAM-009).
+**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** IN_PROGRESS — **fase 1/3 DONE** (XP/level-up, commit `d7aa6fb`, instrucción 225, validada en prod) · **fase 2/3 DONE — VALIDADA COMPLETA** (loot híbrido, commit `31b29f1`; SAM-044 resuelto en instrucción 230). Playtest 2026-06-11: oro+XP+ítem persisten juntos (💾 Status flushed único por PC), y **killer tracking confirmado** — Vex dio el golpe final → Vex recibió el ítem (atribución por killer real, no por default). Pendiente: **solo fase 3 imágenes (SAM-009)**.
 
 Hallazgo principal de la auditoría SAM-020. El pipeline nuevo no portaba features del legacy: `mechanic.award_xp` existía pero nunca se llamaba; `give_loot` solo está en tools legacy; el narrator tiene prohibido emitir `<LOOT>/<XP_GAIN>/<EVENT>/<IMAGE>` (`narrator.py:39`). Esas features solo viven en `ai.py`, alcanzado solo por excepción. **Subsume SAM-009** (servicio de imágenes).
 
@@ -266,6 +232,8 @@ Hallazgo principal de la auditoría SAM-020. El pipeline nuevo no portaba featur
 **Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
 
 El overlay de HP de jugador en el bloque `COMBAT STATUS` (`orchestrator.py:856-868` y `:319-329`) lee `party_characters[].status.hp_current` = snapshot del inicio del request (`server.py:247`), ANTES de que el `state_update` de este turno se persista (`server.py:293` corre después de `process_message`). Resultado: el narrador ve HP viejo en COMBAT STATUS pero HP nuevo en el fact `damage_applied`; RULE 16 lo manda a citar COMBAT STATUS → narra el viejo. Tras F5, el sidebar lee BD = nuevo → mismatch narrativo↔sidebar. Residual de SAM-014, independiente de SAM-017.
+
+**Evidencia adicional (playtest 2026-06-11):** SAM narró "su HP bajando a 35/50" tras el hit, ANTES del damage roll (el HP real baja recién en el damage). Drift cosmético, sigue P2.
 
 **Criterio de done:** el bloque COMBAT STATUS refleja el HP post-daño (leído de los resultados del engine / `state_updates`, no de `party_characters` stale). Detalle en `SAM_audit_2026-06-05.md` §4.
 
@@ -369,9 +337,11 @@ Playtest 2026-06-11: el target "lobo" no encontró "Wolf" en el compendio → `_
 
 **Hipótesis:** el embedding semántico (`match_compendium`, threshold 0.5) debería cruzar idiomas pero no lo hizo para "lobo"→"Wolf". Verificar el threshold, o traducir/normalizar el target al inglés antes del lookup.
 
+**Actualización (playtest 2026-06-11):** el caso común **FUNCIONA** — el intent tradujo "lobo"→"wolf" y el lookup matcheó (stats reales en los chips de iniciativa). El ticket permanece OPEN solo para el caso borde donde la traducción del intent no ocurra. Prioridad confirmada P3.
+
 **Archivos:** `backend/agents/orchestrator.py` (`_lookup_monster`).
 
-**Criterio de done:** "lobo" (y nombres comunes en español) resuelven al monstruo correcto del compendio; XP y loot reflejan el CR real, no el fallback.
+**Criterio de done:** "lobo" (y nombres comunes en español) resuelven al monstruo correcto del compendio incluso si el intent no traduce; XP y loot reflejan el CR real, no el fallback.
 
 ---
 
@@ -381,13 +351,25 @@ Playtest 2026-06-11: el target "lobo" no encontró "Wolf" en el compendio → `_
 
 **Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 230
 
-Confirmado en diagnóstico 229: cada handler de `state_update` en `server.py` hacía su propio read-modify-write del `status` completo leyendo del `party_characters` en memoria (snapshot del inicio del request, nunca refrescado) → múltiples updates al mismo personaje se pisaban (last-write-wins: Björn perdió oro y XP, conservó el ítem por ser el último handler). **Fix:** la lógica se extrajo a `apply_state_updates(supabase, party_characters, state_updates)` (función de módulo en `server.py`) que **acumula** todos los cambios de `status` por personaje en memoria (`pending_status[char_id]`) y **flushea UN solo write por personaje** — status + columnas top-level (level/class del level-up) en el mismo `.update()`. El orden de los updates dejó de importar. Harness `test_sam044.py`: 6 escenarios / 15 checks, todos pasan (caso Björn xp+oro+ítem en un write, dos personajes sin cruce, hp+oro, level-up con columnas top-level, find_char por id/nombre, flush con fallo aislado por personaje). Validación final end-to-end pendiente del playtest post-deploy + reparación de datos (xp=0 heredado del bug). Lección: handlers que hacen read-modify-write del documento completo NO componen — acumular y flushear una vez.
+Confirmado en diagnóstico 229: cada handler de `state_update` en `server.py` hacía su propio read-modify-write del `status` completo leyendo del `party_characters` en memoria (snapshot del inicio del request, nunca refrescado) → múltiples updates al mismo personaje se pisaban (last-write-wins: Björn perdió oro y XP, conservó el ítem por ser el último handler). **Fix:** la lógica se extrajo a `apply_state_updates(supabase, party_characters, state_updates)` (función de módulo en `server.py`) que **acumula** todos los cambios de `status` por personaje en memoria (`pending_status[char_id]`) y **flushea UN solo write por personaje** — status + columnas top-level (level/class del level-up) en el mismo `.update()`. El orden de los updates dejó de importar. Harness `test_sam044.py`: 6 escenarios / 15 checks, todos pasan (caso Björn xp+oro+ítem en un write, dos personajes sin cruce, hp+oro, level-up con columnas top-level, find_char por id/nombre, flush con fallo aislado por personaje). **Validado en prod (playtest 2026-06-11):** caso Björn xp+oro+HP en un mismo request → `💾 Status flushed` único por personaje, wallet (17 gp) y ficha (XP 350) correctos en el frontend. Lección: handlers que hacen read-modify-write del documento completo NO componen — acumular y flushear una vez.
 
 ### SAM-029 — Aplicar `state_updates` por `character_id` en vez de por `name`
 
 **Tipo:** REFACTOR · **Prio:** P2 (subido de P3) · **Estado:** DONE · Instrucción 230
 
-Junto con SAM-044. El loop de `state_updates` resuelve el personaje con `_find_char`: prefiere `character_id` si el update lo trae, fallback a match por nombre case/space-insensitive. Los 8 sitios de emisión estampan `character_id` (None-safe — el fallback por nombre cubre cualquier ausencia): `mechanic.py` (player_hp de healing/self_damage/npc-turn, xp_update de award_xp) y `orchestrator.py` (spell_slot_consume, inventory_remove, money_award, item_award — este último capturando el `killer_pc` dict). Homónimos y renames dejan de romper el update.
+Junto con SAM-044. El loop de `state_updates` resuelve el personaje con `_find_char`: prefiere `character_id` si el update lo trae, fallback a match por nombre case/space-insensitive. Los 8 sitios de emisión estampan `character_id` (None-safe — el fallback por nombre cubre cualquier ausencia): `mechanic.py` (player_hp de healing/self_damage/npc-turn, xp_update de award_xp) y `orchestrator.py` (spell_slot_consume, inventory_remove, money_award, item_award — este último capturando el `killer_pc` dict). Homónimos y renames dejan de romper el update. Validado junto a SAM-044 en el playtest 2026-06-11 (id matching activo en los 8 emisores de state_updates).
+
+### SAM-042 — Crítico no duplica dados de daño
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 231
+
+Raíz: dos fuentes de prompt contradictorias — `_resolve_weapon_attack` duplicaba bien los dados pero `_get_roll_prompt` los recomputaba desde `weapon["damage"]` (sin duplicar), ignorando `critical`. **Fix (fuente única):** el pending de damage lleva `damage_spec` ya resuelto (duplicado en crit vía `_double_dice`, sin sufijo de tipo); `_get_roll_prompt` lo lee y NUNCA recalcula. Stampeado en los 4 orígenes de damage pending (weapon/spell/sneak + freeform del dice tray). El lado jugador del crit lo cierra la validación estricta (ver SAM-039). Tests `test_sam039_042.py` S1.
+
+### SAM-039 — Weapon mismatch + validación estricta de dados
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 231
+
+Dos partes. **(a) Arma declarada:** `_find_weapon` reescrito — normaliza acentos/case/espacios (`_normalize_weapon`) y matchea substring en ambas direcciones, así "great axe"/"GreatAxe"/"Greataxe" resuelven al mismo ataque; el fallback a `attacks[0]` deja de ser silencioso (loguea `⚠️ Weapon ... not matched`). `_display_dice` garantiza que el prompt sea siempre `NdM[+X]` — nunca un número plano ("tira 5"). **(b) Validación estricta (raíz compartida con SAM-042):** `process_player_roll` valida el dado tirado contra el esperado del pending (`_check_dice`): attack roll → d20 (solo caras, advantage/disadvantage permite 2 d20); damage → N y M de `damage_spec`. Si no coincide → rechaza sin tocar HP/acción/turno, **preserva el pending** (persiste entre requests) y emite fact `INVALID DICE: expected … got … — Wrong die type/number of dice`. Narrator RULE 16: ante INVALID DICE pide el dado correcto sin narrar resultado. Anti-deadlock: `end_turn` (SAM-034) sigue siendo la salida (limpia el pending). Tests `test_sam039_042.py`: 28 checks (S1–S9 + advantage + `_display_dice`), todos pasan.
 
 ### SAM-041 — Declaraciones de acción producen facts vacíos (deadlock narrativo)
 

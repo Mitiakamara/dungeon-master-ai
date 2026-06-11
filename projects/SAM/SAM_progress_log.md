@@ -949,6 +949,25 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Lección de clase:** handlers que hacen read-modify-write del documento completo NO componen — acumular en memoria y flushear una vez por entidad.
 
+### Sesión 11 Jun 2026 (cont.) — Game loop validado end-to-end + SAM-039/042 validación estricta de dados (instrucción 231)
+
+**Parte A — cierres post-playtest 2026-06-11 (game loop validado end-to-end):** combate → XP → oro → ítems → persistencia atómica, todo confirmado en prod.
+- **SAM-044** DONE definitivo: caso Björn xp+oro+HP en un mismo request, `💾 Status flushed` único por personaje, wallet (17 gp) y ficha (XP 350) correctos en el frontend.
+- **SAM-029** DONE: id matching activo en los 8 emisores de state_updates.
+- **SAM-021 fase 2** VALIDADA COMPLETA: killer tracking confirmado — Vex dio el golpe final → Vex recibió el ítem (atribución por killer real, no por default). Queda solo fase 3 (imágenes, SAM-009).
+- **SAM-043**: el caso común FUNCIONA (intent tradujo "lobo"→"wolf", lookup matcheó, stats reales en los chips); permanece OPEN P3 solo para el borde sin traducción.
+- **SAM-022**: evidencia leve nueva (SAM narró HP bajando antes del damage roll); drift cosmético, sigue P2.
+
+**Parte B — SAM-039 + SAM-042 (validación estricta de dados, raíz compartida):**
+- **SAM-042 (fuente única del damage prompt):** el pending de damage lleva `damage_spec` ya resuelto (duplicado en crit, sin sufijo de tipo); `_get_roll_prompt` lo lee y nunca recalcula desde `weapon["damage"]`. Stampeado en los 4 orígenes (weapon/spell/sneak + freeform). Fin de las dos líneas de prompt contradictorias.
+- **SAM-039 (a) arma declarada:** `_find_weapon` reescrito con `_normalize_weapon` (acentos/case/espacios) + substring bidireccional → "great axe"/"GreatAxe"/"Greataxe" matchean; el fallback a `attacks[0]` ahora loguea warning (no silencioso). `_display_dice` impide prompts con número plano ("tira 5").
+- **SAM-039 (b) / SAM-042 validación estricta (raíz común):** `_check_dice` en `process_player_roll` compara el dado tirado vs el esperado del pending — attack→d20 (solo caras; advantage/disadvantage permite 2 d20), damage→N y M de `damage_spec`. Mismatch → rechaza sin tocar HP/acción/turno, **preserva el pending** (sobrevive entre requests) y emite `INVALID DICE` fact. El crit que pide 2d12 y recibe 1d12 se rechaza por cantidad; un d6 cuando se pide d12 por caras.
+- **narrator.py RULE 16:** ante INVALID DICE, pedir el dado correcto in-character sin narrar resultado (smoke test `.format()` OK). **Anti-deadlock:** `end_turn` (SAM-034) limpia el pending → el jugador que insiste en el dado equivocado puede "pasar" sin colgarse.
+- **Tests `test_sam039_042.py`:** 28 checks (los 9 escenarios de la instrucción + advantage no-rechazada + `_display_dice`), todos pasan. (Windows: importa agents y usa emoji en logs → correr con `PYTHONUTF8=1`.)
+- **Limpieza:** removidos los archivos temporales `*.tmp.*` (artefactos de sync de Dropbox) de la carpeta local.
+
+**Lección de clase:** una sola fuente de verdad por dato derivado (el `damage_spec` resuelto), y validar las entradas del jugador contra lo que el motor pidió en vez de aceptar cualquier tirada — el pending preservado convierte un "rechazo" en un re-prompt sin perder estado.
+
 ---
 
 ## 4. Estado Actual — Abril 2026

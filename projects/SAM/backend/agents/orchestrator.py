@@ -16,7 +16,7 @@ import re
 from typing import Optional
 
 from .interpreter import IntentInterpreter
-from .mechanic import MechanicEngine
+from .mechanic import MechanicEngine, clean_dice_spec
 from .narrator import Narrator
 from .combat_state import CombatState
 from .dice import DiceRoller
@@ -562,6 +562,9 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                 "target": target_npc["name"],
                 "target_data": target_npc,
                 "critical": False,
+                # Dice-tray freeform: the player already rolled, so the rolled die
+                # IS the expected spec — validation passes by construction (SAM-039).
+                "damage_spec": dice_str,
                 "character_name": character_name,
             }
 
@@ -964,9 +967,12 @@ Respond ONLY with a JSON array, no markdown, no backticks:
 
         weapon = self._find_weapon(character_context, weapon_name)
         if not weapon:
-            # Default to first available weapon
+            # SAM-039: no fuzzy match — do NOT silently grab attacks[0]. Log it so
+            # a real mismatch is visible; fall back to the first attack only as a
+            # last resort (the interpreter already resolved the weapon name).
             attacks = character_context.get("status", {}).get("attacks", [])
             weapon = attacks[0] if attacks else {"name": "Unarmed Strike", "bonus": "+0", "damage": "1"}
+            print(f"⚠️ Weapon '{weapon_name}' not matched in attacks; falling back to '{weapon.get('name')}'")
 
         target = self._find_target(target_name, combat)
         if not target:
@@ -1145,15 +1151,30 @@ Respond ONLY with a JSON array, no markdown, no backticks:
 
         return None
 
+    @staticmethod
+    def _normalize_weapon(name: str) -> str:
+        """lower + strip accents + drop spaces/punctuation for fuzzy matching."""
+        import unicodedata
+        s = unicodedata.normalize("NFKD", str(name or "").lower())
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        return re.sub(r"[^a-z0-9]", "", s)
+
     def _find_weapon(self, character_context: dict, weapon_name: str) -> Optional[dict]:
-        """Find a weapon in the character's attack list."""
+        """Find a weapon in the character's attack list (SAM-039). Normalizes
+        accents/case/spaces and matches substrings in BOTH directions, so
+        'great axe', 'GreatAxe' and 'Greataxe' all resolve to the same attack."""
         attacks = character_context.get("status", {}).get("attacks", [])
-        weapon_name_lower = weapon_name.lower()
-
+        q = self._normalize_weapon(weapon_name)
+        if not q:
+            return None
+        # Exact normalized match first, then bidirectional substring.
         for a in attacks:
-            if weapon_name_lower in a.get("name", "").lower():
+            if self._normalize_weapon(a.get("name", "")) == q:
                 return a
-
+        for a in attacks:
+            an = self._normalize_weapon(a.get("name", ""))
+            if an and (q in an or an in q):
+                return a
         return None
 
     def _find_party_member(self, name: str, party: list[dict]) -> dict:
@@ -1195,17 +1216,37 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             weapon = pending.get("weapon", {})
             return f"Tira 1d20 para tu ataque con {weapon.get('name', 'arma')}."
         elif ptype == "weapon_damage":
-            weapon = pending.get("weapon", {})
-            return f"Tira {weapon.get('damage', '1d6')} de daño."
+            # SAM-042: single source of truth — read the resolved damage_spec
+            # (already doubled on a crit), never recompute from weapon["damage"].
+            spec = pending.get("damage_spec") or pending.get("weapon", {}).get("damage", "1d6")
+            return f"Tira {self._display_dice(spec)} de daño."
         elif ptype == "spell_damage":
-            return f"Tira el daño de {pending.get('spell', 'tu hechizo')}."
+            spell = pending.get("spell", "tu hechizo")
+            spec = pending.get("damage_spec")
+            return (f"Tira {self._display_dice(spec)} de daño de {spell}." if spec
+                    else f"Tira el daño de {spell}.")
         elif ptype == "sneak_damage":
-            return f"Tira {pending.get('dice', '1d6')} de daño de Sneak Attack."
+            spec = pending.get("damage_spec") or pending.get("dice", "1d6")
+            return f"Tira {self._display_dice(spec)} de daño de Sneak Attack."
         elif ptype == "skill_check":
             return f"Tira 1d20 para {pending.get('skill', 'tu check')}."
         elif ptype == "self_damage":
             return "Tira el daño correspondiente."
         return "Tira los dados."
+
+    def _display_dice(self, spec) -> str:
+        """Always render a NdM[+X] dice spec — never a bare number (SAM-039).
+        A fixed-damage weapon (e.g. Unarmed '1') becomes 1d1[+X]."""
+        spec = clean_dice_spec(spec)
+        if not spec:
+            return "1d4"
+        if "d" not in spec.lower():
+            try:
+                k = int(re.split(r"[+\-]", spec)[0])
+                return "1d1" if k <= 1 else f"1d1+{k - 1}"
+            except ValueError:
+                return "1d4"
+        return spec
 
     def _format_character_context(self, ctx: dict) -> str:
         """Format character context for the narrator."""

@@ -13,6 +13,31 @@ from .rules import (
 from .combat_state import CombatState
 from typing import Optional
 import json
+import re
+
+
+def parse_dice_notation(notation):
+    """Parse 'NdM[+X]' (optional damage-type suffix) → (count, sides).
+    Returns (None, None) when there's no dice expression (e.g. a bare number)."""
+    if not notation:
+        return None, None
+    tokens = str(notation).strip().split()
+    token = tokens[0] if tokens else ""
+    token = re.split(r"[+\-]", token)[0]  # drop the modifier
+    m = re.match(r"(\d*)d(\d+)$", token.lower())
+    if not m:
+        return None, None
+    count = int(m.group(1)) if m.group(1) else 1
+    return count, int(m.group(2))
+
+
+def clean_dice_spec(notation):
+    """Return just the dice expression 'NdM[+X]' (strip any damage-type suffix)."""
+    if not notation:
+        return ""
+    tokens = str(notation).strip().split()
+    return tokens[0] if tokens else ""
+
 
 # D&D 5e skill → ability mapping
 SKILL_ABILITY_MAP = {
@@ -89,7 +114,8 @@ class MechanicEngine:
                         "type": "spell_damage",
                         "spell": spell["name"],
                         "target": target["name"],
-                        "target_data": target
+                        "target_data": target,
+                        "damage_spec": clean_dice_spec(result["damage_dice"]),  # SAM-042
                     }
                 else:
                     result["needs_player_roll"] = False
@@ -171,6 +197,16 @@ class MechanicEngine:
         if not pending:
             # No pending action — this might be initiative or a freeform roll
             return {"action": "freeform_roll", "roll": roll_data, "character": character.get("name", "Unknown")}
+
+        # SAM-039/042: strict dice validation. If the rolled dice don't match
+        # what the pending action requires, reject WITHOUT touching state and
+        # keep the pending intact so the correct die can be rolled next request.
+        invalid = self._check_dice(pending, roll_data)
+        if invalid:
+            result = {"action": "invalid_dice", **invalid}
+            self.results.append(result)
+            print(f"⛔ Invalid dice: expected {invalid['expected']}, got {invalid['rolled']} — pending preserved")
+            return result
 
         self.pending_player_roll = None  # Clear pending
 
@@ -261,6 +297,46 @@ class MechanicEngine:
 
         return {"action": "unknown_roll", "roll": roll_data}
 
+    def _check_dice(self, pending: dict, roll_data: dict) -> Optional[dict]:
+        """
+        SAM-039/042: validate that the player rolled the dice the pending action
+        requires. Returns a rejection dict {reason, expected, rolled} or None when
+        the roll is valid (or there's nothing to validate against).
+
+        - attack rolls (weapon/spell) → must be a d20 (faces only; advantage /
+          disadvantage legitimately send two d20s, so the count is not checked).
+        - damage rolls (weapon/spell/sneak) → must match BOTH the number of dice
+          and the faces of pending["damage_spec"] (e.g. a nat-20 crit needs 2d12,
+          not 1d12).
+        """
+        ptype = pending.get("type", "")
+        if ptype in ("weapon_attack", "spell_attack"):
+            exp_count, exp_sides, exp_display, check_count = 1, 20, "1d20", False
+        elif ptype in ("weapon_damage", "spell_damage", "sneak_damage"):
+            spec = pending.get("damage_spec") or pending.get("dice") or ""
+            exp_count, exp_sides = parse_dice_notation(spec)
+            if exp_count is None:
+                return None  # no parseable spec to validate against — don't block
+            exp_display = clean_dice_spec(spec) or f"{exp_count}d{exp_sides}"
+            check_count = True
+        else:
+            return None  # skill_check / healing / self_damage: no strict check
+
+        dice_str = str(roll_data.get("dice", "")).strip()
+        rolled_count, rolled_sides = parse_dice_notation(dice_str)
+        if rolled_count is None:
+            rolls = roll_data.get("rolls") or []
+            if not rolls:
+                return None  # nothing to compare — accept
+            rolled_count, rolled_sides = len(rolls), None
+        rolled_display = dice_str or f"{rolled_count}d{rolled_sides or '?'}"
+
+        if rolled_sides is not None and rolled_sides != exp_sides:
+            return {"reason": "faces", "expected": exp_display, "rolled": rolled_display}
+        if check_count and rolled_count != exp_count:
+            return {"reason": "count", "expected": exp_display, "rolled": rolled_display}
+        return None
+
     def _resolve_spell_damage(self, character: dict, roll_data: dict, pending: dict) -> dict:
         """Player rolled damage for a spell."""
         damage = roll_data["result"]
@@ -333,6 +409,9 @@ class MechanicEngine:
                 "target": target["name"],
                 "target_data": target,
                 "critical": hit_result["critical"],
+                # SAM-042: single source of truth for the damage prompt + validation
+                # (already doubled by _double_dice when critical).
+                "damage_spec": clean_dice_spec(damage_dice),
                 # SAM-003: carry the Sneak Attack chain hint to the damage roll
                 "sneak_dice": pending.get("sneak_dice"),
                 "character_name": pending.get("character_name"),
@@ -392,6 +471,7 @@ class MechanicEngine:
                 self.pending_player_roll = {
                     "type": "sneak_damage",
                     "dice": sneak_dice,
+                    "damage_spec": clean_dice_spec(sneak_dice),  # SAM-042
                     "target": target["name"],
                     "target_data": {**target, "hp": hp_result["new_hp"]},
                     "character_name": pending.get("character_name"),
@@ -918,6 +998,16 @@ class MechanicEngine:
                     f"{r['character']} takes {r['damage']} self-inflicted damage. "
                     f"HP: {r['new_hp']}/{r['hp_max']}."
                     f"{' UNCONSCIOUS!' if r.get('is_unconscious') else ''}"
+                )
+
+            elif action == "invalid_dice":
+                reason = r.get("reason", "")
+                detail = ("Wrong die type" if reason == "faces"
+                          else "Wrong number of dice" if reason == "count"
+                          else "Wrong dice")
+                lines.append(
+                    f"INVALID DICE: expected {r.get('expected')}, got {r.get('rolled')}. "
+                    f"{detail} — roll {r.get('expected')}."
                 )
 
         return "\n".join(lines)
