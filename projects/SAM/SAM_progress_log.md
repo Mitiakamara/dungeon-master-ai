@@ -979,6 +979,20 @@ Dos bordes de la validación de dados (SAM-039/042) que el playtest 2026-06-11 e
 
 **Lección de clase:** validar fail-closed, no fail-open — ante un dato esperado mal formado, rechazar la entrada en vez de aceptarla; y normalizar los casos especiales (daño fijo del unarmed) a la forma canónica (NdM+mod) en lugar de tratarlos como excepción aguas abajo.
 
+### Sesión 11 Jun 2026 (cont.) — SAM-047: auditoría de multiplayer pre-Fekas (instrucción 233)
+
+Auditoría read-only (`SAM_audit_multiplayer_2026-06-11.md`) de preparación para el primer playtest con **dos humanos concurrentes** — todo el testing previo fue single-player (humano + Vex delegada). 10 áreas auditadas en código, sin fixes.
+
+**Veredicto: SÍ-CON-RIESGOS.** Lo sólido: el lock por campaña serializa los requests (party fetch + process + flush + combat persist, todo dentro del lock); turn guard server-side simétrico entre humanos; el turno se empuja al otro cliente vía Realtime de `campaigns` (sin refresh); atribución server-side por `user_id` (inmune a manipulación del texto); `state_updates` por `character_id` (el HP de Fekas no puede caer en la fila de Björn); XP ceil al party completo y loot al killer real; gaps del assessment original (filtro por campaña, selector, presence, invitaciones) resueltos.
+
+**Hallazgos que importan:**
+1. 🔴 **SAM-049 (bloqueante pre-playtest):** la validación de dueño del `pending_player_roll` vive solo en el turn guard → **solo corre en combate**. Fuera de combate (exploración: skill checks, pociones, hechizos), cualquier dado de cualquier jugador consume el pending ajeno, resuelto con los stats del que tiró. Con dos humanos pasa en los primeros minutos. Fix corto: owner check en `process_player_roll` siempre; mismatch → freeform del que tiró, pending intacto. Los pendings de spell además no estampan `character_name`.
+2. 🔴 **SAM-048 (riesgo operativo):** comandos admin sin verificación de rol **server-side** (el gate de `/reset|/checkpoint|/load|/list` es solo frontend). Un `/reset` de no-GM vía API saltea el pass por campaña y dispara el pass 3 "nuclear" que borra TODOS los mensajes; la curación de `/reset` ni siquiera filtra por campaña (resetea money/XP de todos los personajes de la BD). Mitigación pre-playtest: brief a Fekas (no usar `/`); fix server-side ASAP.
+3. 🟠 **SAM-050:** INSERT del mensaje pre-lock + lock sin timeout + retry del cliente a 30s = mensajes/respuestas duplicados bajo carga. 🟠 **SAM-051:** atribución por primer personaje (`limit 1`) — rompe con usuarios multi-personaje. 🟠 **SAM-052:** el roster del party hace UN fetch al montar → HP del compañero congelado (la suscripción global de characters descarta los updates ajenos); subscripciones sin filtro de campaña.
+4. Notas: `<UPDATE>` legacy client-side pega doble con 2 clientes (agravante de SAM-024); desconexión a mitad de turno → `/delegate` del GM es el escape diseñado; SAM-019 (iniciativa manual) no bloquea — el auto-roll simplifica la primera sesión.
+
+**Protocolo recomendado:** fix SAM-049 antes de invitar a Fekas; brief operativo (sin comandos `/`, no spamear Reintentar, el roster puede mostrar HP viejo); monitorear `🔒/OUT_OF_TURN/⛔/💾/⚠️` en logs durante la sesión; retro post-playtest contra la tabla de hallazgos.
+
 ---
 
 ## 4. Estado Actual — Abril 2026

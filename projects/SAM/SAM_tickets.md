@@ -62,6 +62,12 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-044 | `state_updates` múltiples al mismo personaje se pisan entre sí (read-modify-write no consolidado en server.py) | BUG | P1 | DONE |
 | SAM-045 | Attack rolls aceptan cualquier cantidad de d20 (3d20/4d20) — falta validar cantidad | BUG | P2 | DONE |
 | SAM-046 | Unarmed Strike con daño fijo ("5"/"1d1") rompe prompt y validación — tratar como 1d4+STR | BUG | P2 | DONE |
+| SAM-047 | Auditoría de multiplayer pre-playtest grupal (`SAM_audit_multiplayer_2026-06-11.md`) | CHORE | P1 | DONE |
+| SAM-048 | Comandos admin sin verificación de rol server-side; `/reset` no-GM = nuclear wipe sin scope de campaña | BUG | P1 | OPEN |
+| SAM-049 | Pendings sin validación de dueño fuera de combate → cualquier jugador consume el pending ajeno | BUG | P1 | OPEN |
+| SAM-050 | Doble envío: INSERT de mensaje pre-lock + lock sin timeout + retry del cliente a 30s | BUG | P2 | OPEN |
+| SAM-051 | Atribución por primer personaje del usuario (`limit 1`) — `/api/chat` sin `character_id` explícito | REFACTOR | P2 | OPEN |
+| SAM-052 | Roster del party con HP congelado (fetch único, sin Realtime) + subscripciones sin filtro de campaña | UX | P2 | OPEN |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -331,6 +337,58 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 
 ---
 
+### SAM-048 — Comandos admin sin verificación de rol server-side
+
+**Tipo:** BUG/SEC · **Prio:** P1 · **Estado:** OPEN
+
+Auditoría SAM-047 §7. El frontend bloquea `/reset|/checkpoint|/load|/list` para no-GM (`chat-interface.tsx:593-599`) pero es **client-side only**: ni el interceptor (`server.py:149-182`) ni `AdminService.handle_command` verifican rol. Un `/reset` de un no-GM vía API saltea el pass 1 (resuelve por `gm_id` → vacío) y dispara el pass 3 "nuclear" que **borra TODOS los mensajes** (`admin.py:209-215`). Además la curación de `/reset` recorre **todos los personajes de la BD sin filtro de campaña** (`admin.py:181-191`, resetea money/XP de todos) — incluso para el GM legítimo. `/checkpoint` snapshotea sin filtro; `/load` borra/restaura por `user_id`.
+
+**Criterio de done:** verificación de GM server-side en el interceptor; `/reset`/`/checkpoint`/`/load` scoped a la campaña del GM; eliminar (o scoping estricto de) el pass 3 nuclear. **Mitigación pre-playtest:** brief a Fekas — no usar comandos `/`.
+
+---
+
+### SAM-049 — Pendings sin validación de dueño fuera de combate
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN — **bloqueante pre-playtest con Fekas**
+
+Auditoría SAM-047 §6 (hallazgo principal). `pending_player_roll` es uno por campaña; la validación de propiedad vive solo en el turn guard, que corre **solo si `combat.active`** (`orchestrator.py:83`). Fuera de combate (skill checks de exploración, hechizos, pociones), **cualquier dado de cualquier jugador consume el pending ajeno**: Björn pide Perception → Fekas tira un d20 → el check de Björn se resuelve con los modificadores de Fekas. Con dos humanos explorando esto ocurre en los primeros minutos. Además los pendings de spell (`process_spell`, `_resolve_spell_attack`) no estampan `character_name` (sin dueño).
+
+**Fix propuesto:** `process_player_roll` valida `pending.character_name` contra el personaje que tira, SIEMPRE; mismatch → el dado se procesa como `freeform_roll` del que tiró y el pending ajeno queda intacto. Estampar `character_name` en los pendings de spell.
+
+**Criterio de done:** con un pending de Björn activo (en o fuera de combate), un dado de Fekas NO lo consume; el pending sobrevive y Björn puede resolverlo después.
+
+---
+
+### SAM-050 — Doble envío: INSERT pre-lock + lock sin timeout + retry a 30s
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+
+Auditoría SAM-047 §1. El INSERT del mensaje de usuario ocurre antes del lock (`server.py:133-146`) sin idempotencia; el lock espera sin tope; el cliente aborta a 30s y ofrece "Reintentar" → el retry inserta el mensaje de nuevo y SAM responde dos veces. Con dos jugadores encolando tras un request lento del LLM, la ventana es real. **Nota:** el lock es in-process (`asyncio.Lock`, `server.py:82-88`) — correcto con 1 instancia; si Render escala a 2+ instancias/workers se necesita lock distribuido (advisory lock de Postgres).
+
+**Criterio de done:** un retry del cliente no duplica el mensaje ni la respuesta (idempotencia o INSERT dentro del lock con dedup), o el lock responde "SAM está ocupado" antes del timeout del cliente.
+
+---
+
+### SAM-051 — Atribución por primer personaje del usuario (`limit 1`)
+
+**Tipo:** REFACTOR · **Prio:** P2 · **Estado:** OPEN
+
+Auditoría SAM-047 §5. `/api/chat` no recibe `character_id`/`campaign_id`; el backend toma el **primer** personaje del usuario (`server.py:117`, `limit(1)`) para derivar campaña y sender_name. Con un usuario multi-personaje (p.ej. dos campañas), la atribución puede salir del personaje equivocado. Inocuo para el playtest (1 personaje por humano).
+
+**Criterio de done:** el frontend manda `character_id` (ya lo tiene en `selectedCharacter`); el backend valida pertenencia y atribuye por ese personaje, con fallback al comportamiento actual.
+
+---
+
+### SAM-052 — Roster del party con HP congelado + subscripciones sin filtro
+
+**Tipo:** UX · **Prio:** P2 · **Estado:** OPEN
+
+Auditoría SAM-047 §4/§9. El party roster hace UN solo fetch al montar (`party-roster.tsx:34-52`) — sin Realtime ni re-fetch → el HP del compañero queda congelado al cargar (Björn no ve bajar el HP de Fekas sin F5). La suscripción global de `characters` en `game-layout.tsx:136-164` recibe esos updates pero los descarta (solo mira el selectedCharacter). Además las subscripciones de `characters` y `campaigns` no tienen `filter` → cada browser recibe eventos de todas las campañas (ruido + payloads ajenos).
+
+**Criterio de done:** el roster refleja el HP del compañero en vivo (reusar la suscripción de characters con filtro por campaña, o re-fetch on SAM message); subscripciones filtradas por campaña. La presencia (punto verde) ya es live — no tocar.
+
+---
+
 ### SAM-043 — Monster lookup no matchea nombres en español
 
 **Tipo:** BUG · **Prio:** P3 · **Estado:** OPEN
@@ -348,6 +406,12 @@ Playtest 2026-06-11: el target "lobo" no encontró "Wolf" en el compendio → `_
 ---
 
 ## Tickets cerrados
+
+### SAM-047 — Auditoría de multiplayer pre-playtest grupal
+
+**Tipo:** CHORE · **Prio:** P1 · **Estado:** DONE · Instrucción 233
+
+Auditoría read-only de preparación para el primer playtest con dos humanos concurrentes (Fekas). Entregable: `SAM_audit_multiplayer_2026-06-11.md` — 10 áreas (concurrencia/lock, turnos, iniciativa, Realtime/sync, atribución, pendings, admin, XP/loot/HP, presence/roster, gaps del assessment original). **Veredicto: SÍ-CON-RIESGOS.** Un bloqueante técnico (SAM-049: pendings sin dueño fuera de combate) y un riesgo operativo (SAM-048: admin sin verificación server-side, `/reset` no-GM = nuclear wipe). Infraestructura core sólida: lock serializa, turn guard simétrico server-side, atribución por user_id, state_updates por character_id, killer tracking, Realtime de mensajes/combate a ambos clientes. 5 tickets nuevos (SAM-048–052) + protocolo de playtest (brief a Fekas, fixes mínimos). Sin cambios de código.
 
 ### SAM-044 — `state_updates` múltiples al mismo personaje se pisan entre sí
 
