@@ -833,6 +833,29 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Pendiente post-deploy (logs de Render como criterio):** (1) ataque de Björn → `💢 NPC HP` baja; (2) turno de Vex delegada → `💢 NPC HP` baja de nuevo (antes se perdía); (3) HP del lobo monotónicamente decreciente, sin rebotes; (4) si el lobo muere: `☠️` + `🏁` y NO revive al siguiente mensaje; (5) si aparece `💾 ... LIVE NPCs`, ahí está la causa real de SAM-037 → reportar logs antes de tocar la persistencia. SAM-014 se cierra cuando 1–4 pasen.
 
+### Sesión 10-11 Jun 2026 — Cierre del ciclo combate core (instrucciones 219–224)
+
+**Resumen del ciclo:** seis instrucciones que llevaron el combate del orchestrator de "funciona a veces" a core sólido. Tres commits de código (`89cda66` end_turn/skill-check, `2c08fcb` anti-alucinación/sneak, `d0faa4c` NPC HP routing/instrumentación) + docs. Validación final en playtests 2026-06-10/11.
+
+**Tickets cerrados en el ciclo (validados en playtest):**
+- **SAM-034/035** (`89cda66`): intent `end_turn` ("Paso" cierra el turno y dispara NPCs) + skill checks en combate consumen la acción al resolverse el d20.
+- **SAM-033** (`2c08fcb`): narrator sin mechanical facts ya no inventa combates — regla 9b + bloque NO-COMBAT-MECHANICS en roleplay + sanitización del history legacy.
+- **SAM-003** (`2c08fcb`): Sneak Attack como chain de pendings (d20 → weapon damage → sneak damage, una acción, once per turn). *Validación parcial: testeado con FakeLLM, falta playtest manual con Vex no-delegada.*
+- **SAM-036** (`d0faa4c`, P0): el daño de PCs delegados a NPCs se emitía como `player_hp` contra un nombre inexistente — ahora rutea por `target.is_npc` a `update_npc_hp`.
+- **SAM-038** (`d0faa4c`): instrumentación `💢`/`☠️`/`⚔️`/`🏁`/`💾` — fue la evidencia de los cierres de playtest.
+- **SAM-014** (resuelto por SAM-036): HP del lobo 27→17→2→0 monotónico, cero rebotes. Causa raíz real era SAM-036, NO SAM-017 como se cerró prematuramente la primera vez.
+- **SAM-037** (cerrado sin código adicional): `💾 Persisting INACTIVE combat` apareció solo tras muerte legítima (`☠️`+`🏁`), nunca con NPCs vivos — el rebote era consecuencia del daño perdido de SAM-036. La persistencia no necesitaba cambio; la instrumentación queda de centinela.
+- **SAM-016/017** (sesiones previas, validados ahora): Extra Attack con class normalizado; cero fallbacks al legacy en todos los playtests del ciclo.
+
+**Learning clave del ciclo — las DOS rutas de daño:** el engine tiene caminos distintos según el target. Daño a **jugador** → `state_update player_hp` → `server.py` lo persiste en `characters.status.hp_current` (BD). Daño a **NPC** → `combat.update_npc_hp` → muta `initiative_order` → se persiste con `settings.combat`. `resolve_npc_turn` usaba SOLO la ruta player_hp para todo (el parámetro se llamaba `players` aunque recibía NPCs cuando actuaba un delegado), así que el daño de delegados a NPCs se evaporaba: el lobo no moría cuando debía, "moría" cuando no debía (contabilidad fantasma) y al re-iniciar combate revivía a HP completo. Un solo bug de ruteo produjo tres síntomas que parecían independientes (SAM-014/036/037). Moraleja: ante un síntoma de persistencia, identificar PRIMERO por cuál de las dos rutas viaja el dato.
+
+**Tickets nuevos del playtest 2026-06-11:**
+- **SAM-039** (BUG P2): weapon mismatch — Björn declaró Greataxe, el intent registró Handaxe, SAM pidió 1d6+4, y el d12 tirado contra un prompt de 1d6 se aceptó sin validación.
+- **SAM-040** (UX P2): la delegación persiste en BD y sobrevive `/reset` pero es invisible — Vex actuó delegada de una sesión anterior sin que el jugador pudiera saberlo.
+- **SAM-019** (DESIGN P2, reabierto): iniciativa manual para jugadores no delegados — el auto-roll se siente mal en la mesa; requiere estado intermedio "esperando iniciativas" en `CombatState`. Estimar antes de implementar.
+
+**Estado al cierre del ciclo: combate core sólido** — daño real (ambas rutas), turnos reales (enforcement + end_turn + action economy), HP persistente entre requests, sin fallback legacy, sin alucinación del narrator. Los pendientes de combate son ergonomía (SAM-039/040/019) y los gaps de features del orchestrator (SAM-021 loot/XP/level-up).
+
 ---
 
 ## 4. Estado Actual — Abril 2026

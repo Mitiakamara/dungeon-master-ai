@@ -29,11 +29,12 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-011 | Commlink Realtime + auto-mark-as-read | FEAT | P2 | OPEN |
 | SAM-012 | Quitar console.logs de debug (presence tracking) | CHORE | P3 | OPEN |
 | SAM-013 | Narrator inventa números en iniciativa (no respeta DM_ROLL tag) | BUG | P1 | DONE |
-| SAM-014 | NPC damage no persiste a `characters.status.hp_current` | BUG | P1 | OPEN |
+| SAM-014 | NPC damage no persiste a `characters.status.hp_current` | BUG | P1 | DONE |
 | SAM-015 | DM_ROLL chips de turnos NPC llegan como "Invalid Roll Data" | BUG | P1 | BLOCKED |
 | SAM-016 | Extra Attack roto: `has_extra_attack` no matchea `class` con sufijo de nivel ("Barbarian 7") | BUG | P1 | DONE |
-| SAM-017 | Narrator SYSTEM_PROMPT explota con KeyError por JSON literal (regresión SAM-013) | BUG | P0 | IN_PROGRESS |
+| SAM-017 | Narrator SYSTEM_PROMPT explota con KeyError por JSON literal (regresión SAM-013) | BUG | P0 | DONE |
 | SAM-018 | Initiative/ataque-delegado modifiers +0 — orchestrator lee `status.stats` en vez de `stats` top-level | BUG | P1 | DONE |
+| SAM-019 | Iniciativa manual para jugadores no delegados | DESIGN | P2 | OPEN |
 | SAM-020 | Auditoría arquitectónica del sistema (`SAM_audit_2026-06-05.md`) | CHORE | P1 | DONE |
 | SAM-021 | Orchestrator no implementa loot/XP/level-up/imágenes (solo en legacy `ai.py`) | REFACTOR | P1 | OPEN |
 | SAM-022 | COMBAT STATUS muestra HP de jugador stale → drift narrador vs BD/sidebar | BUG | P2 | OPEN |
@@ -51,10 +52,12 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-034 | No existe forma de terminar el turno voluntariamente | BUG | P1 | DONE |
 | SAM-035 | skill_check en combate no consume acción → acciones infinitas | BUG | P2 | DONE |
 | SAM-036 | Daño de PC delegado a NPC se emite como `player_hp` → nunca baja el HP del NPC | BUG | P0 | DONE |
-| SAM-037 | Combate inactivo persiste `{"active": False}` descartando `initiative_order` → NPC revive a HP completo | BUG | P1 | OPEN |
+| SAM-037 | Combate inactivo persiste `{"active": False}` descartando `initiative_order` → NPC revive a HP completo | BUG | P1 | DONE |
 | SAM-038 | Instrumentación: logging de HP de NPC, transiciones de combate y descarte de estado | CHORE | P1 | DONE |
+| SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P2 | OPEN |
+| SAM-040 | Estado de delegación invisible para el jugador | UX | P2 | OPEN |
 
-> Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 reservado/sin asignar.
+> Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
 ---
 
@@ -166,49 +169,45 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 
 ---
 
-### SAM-017 — Narrator SYSTEM_PROMPT explota con KeyError por JSON literal
+### SAM-039 — Weapon mismatch en el flow de ataque
 
-**Tipo:** BUG · **Prio:** P0 · **Estado:** IN_PROGRESS
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
 
-Regresión introducida en SAM-013 (commit `738f85f`). El bullet "INITIATIVE GROUND TRUTH" de RULE 16 agregó un ejemplo JSON literal `{"result": 5, "reason": "enemy Initiative"}` dentro del `SYSTEM_PROMPT`. `narrator.py:122` hace `SYSTEM_PROMPT.format(...)`, y `str.format()` interpreta `{"result"...}` como placeholder → `KeyError: '"result"'`.
+En el playtest 2026-06-11, Björn declaró "Greataxe" en el chat. El intent del interpreter registró `{"weapon": "Handaxe"}`, SAM pidió "1d6+4" (daño de Handaxe) en vez de 1d12+4, y al tirar el d12 el narrator improvisó "parece que cambiar de arma era la clave" cuando el jugador nunca cambió de arma. Además el d12 tirado contra un prompt de 1d6 se aceptó sin validación.
 
-**Impacto:** TODOS los mensajes de combate caían al legacy `SAMBrain` (`ai.py`), perdiendo turn enforcement, persistencia consistente de HP, y validez de DM_ROLLs. Causa raíz de SAM-014, SAM-015, SAM-016 (BLOCKED hasta validar).
+**Hipótesis a investigar:** (a) el interpreter resuelve mal el arma declarada en mensajes coloquiales ("uso me hacha", "otra vez 🪓") y elige otra del attack list; (b) `_setup_combat_freeform_pending` o `_find_weapon` hace fallback a `attacks[0]` cuando el match falla; (c) no hay validación dice-esperado vs dice-tirado en `process_player_roll`.
 
-Log (Render, 2026-06-05T20:54:21): `KeyError: '"result"'` en `narrate_mechanics` → `⚠️ Orchestrator failed, falling back to legacy SAMBrain`.
+**Archivos sospechosos:** `interpreter.py` (prompt de attack), `orchestrator.py` (`_find_weapon`, `_setup_combat_freeform_pending`), `mechanic.py` (`process_player_roll`).
 
-**Archivos afectados:** `backend/agents/narrator.py`.
-
-**Fix aplicado:** llaves del JSON de ejemplo escapadas a `{{...}}` en RULE 16. Auditoría completa del archivo: era la única llave literal sin escapar. Smoke test local `SYSTEM_PROMPT.format()` pasa sin KeyError (6596 chars).
-
-**Criterio de done:** smoke test local OK ✅ · en prod ningún chat de combate cae al legacy · logs muestran `💚 HP updated:` consistente · sidebar HP coincide con HP narrativo tras F5. Pendiente: validación post-deploy.
+**Criterio de done:** el arma declarada en el chat es la que usa el pending; si el jugador tira un dado distinto al esperado, el sistema lo señala (warning en facts) en vez de aceptarlo en silencio.
 
 ---
 
-### SAM-014 — NPC damage no persiste a `characters.status.hp_current`
+### SAM-040 — Estado de delegación invisible para el jugador
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (reabierto, instrucción 223)
+**Tipo:** UX · **Prio:** P2 · **Estado:** OPEN
 
-**Nota de reapertura:** cerrado prematuramente como "resuelto por SAM-017" sin validar el caso daño-a-NPC; el daño a NPC nunca persistió. Subsumido por SAM-036/037.
+La delegación (`/delegate`) persiste en DB (`controlled_by`) y sobrevive a `/reset`. En el playtest 2026-06-11 Vex actuó como delegada de una sesión anterior sin que el jugador lo supiera ni pudiera verlo en ningún lado.
 
-**Reconciliación previa (auditoría 5 Jun):** en el pipeline NUEVO el HP del **jugador** sí persiste server-side (`server.py:293-299` aplica el `state_update` tipo `player_hp`). Pero el HP de los **NPCs** vive solo en `settings.combat.initiative_order`, y ese camino tiene dos fugas: el daño de PCs delegados nunca llega (SAM-036) y el estado se descarta al quedar inactivo (SAM-037).
+**Propuesta (a decidir al implementar):** (a) badge "🤖 SAM" junto al personaje delegado en el roster del party; (b) el mensaje de inicio de combate menciona qué PCs están delegados; (c) opcional: `/reset` reporta las delegaciones activas al final de su respuesta.
 
-**Residual independiente:** el bloque `COMBAT STATUS` que ve el narrador lee HP de jugador desactualizado (`party_characters` stale) → drift narrativo. Trackeado por separado en **SAM-022**.
+**Archivos:** frontend (party roster), `admin.py` (`/reset` response), `orchestrator.py` (`_handle_start_combat` facts).
 
-**Criterio de done:** HP de NPC persiste correctamente entre requests (se cierra junto con SAM-036/037 validados en playtest).
+**Criterio de done:** un jugador puede saber en <5 segundos qué personajes están bajo control de SAM.
 
 ---
 
-### SAM-037 — Combate inactivo descarta `initiative_order` (NPC revive a HP completo)
+### SAM-019 — Iniciativa manual para jugadores no delegados
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+**Tipo:** DESIGN · **Prio:** P2 · **Estado:** OPEN (reabierto en instrucción 224; ID estaba reservado)
 
-`orchestrator.py:393`: al quedar `active=False` se persiste `{"active": False}`, borrando `initiative_order` y con él el HP de los NPCs. La próxima agresión re-dispara `start_combat` con lookup fresco del monstruo → vuelve a HP completo (rebote hacia arriba). Si el combate terminó legítimamente (NPC muerto) el descarte es correcto; el rebote ocurre cuando `active` pasa a False **sin** que el NPC haya muerto de verdad (hipótesis: muerte espuria por daño mal contabilizado — ver SAM-036).
+Decisión revisada por el director tras playtests: el auto-roll de iniciativa se aprobó en teoría pero en la mesa se siente mal — el jugador quiere tirar su propia iniciativa.
 
-**Estado actual (commit `d0faa4c`):** instrumentación desplegada — el descarte se loguea distinguiendo fin legítimo de anómalo (`LIVE NPCs: [...]`). La lógica de persistencia NO se tocó todavía.
+**Diseño objetivo:** al iniciar combate, SAM rolea iniciativa SOLO de NPCs y PCs delegados; a los jugadores reales les pide su tirada (d20, el dex mod lo suma el sistema). El combate arranca cuando todas las iniciativas están registradas.
 
-**Plan:** confirmar con los logs del playtest cuándo exactamente `active` pasa a False ANTES de cambiar la persistencia. Puede que el fix de SAM-036 elimine las muertes espurias y haga innecesario tocar la persistencia.
+**Complejidad a evaluar:** requiere un estado intermedio de combate ("esperando iniciativas") en `CombatState`, con pending de iniciativa por jugador. No trivial — estimar antes de implementar.
 
-**Criterio de done:** el HP del NPC no rebota hacia arriba en playtest.
+**Archivos:** `combat_state.py`, `orchestrator.py` (`_handle_start_combat`), prompts de interpreter/narrator.
 
 ---
 
@@ -350,6 +349,24 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 
 ## Tickets cerrados
 
+### SAM-014 — NPC damage no persiste a `characters.status.hp_current`
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Resuelto por:** SAM-036 (`d0faa4c`)
+
+Validado en playtest 2026-06-11: HP del lobo monotónicamente decreciente (27→17→2→0), cero rebotes, logs `💢 NPC HP` confirmando cada cambio. **Causa raíz real: SAM-036** (el daño de PCs delegados se emitía como `player_hp` contra un nombre inexistente), no SAM-017 como se cerró prematuramente la primera vez. Historial: abierto en playtest de abril → BLOCKED por SAM-017 → cerrado prematuramente → reabierto en instrucción 223 → cerrado con evidencia en instrucción 224. El residual de COMBAT STATUS stale sigue en SAM-022.
+
+### SAM-037 — Combate inactivo descarta `initiative_order` (NPC revive a HP completo)
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Cerrado sin cambios de código adicionales** (instrumentación en `d0faa4c`)
+
+Validado en playtest 2026-06-11: el log `💾 Persisting INACTIVE combat` apareció ÚNICAMENTE tras muerte legítima del NPC (2→0, `☠️`, `🏁`), nunca con NPCs vivos. El rebote de HP era consecuencia del daño perdido (SAM-036): el lobo "moría" espuriamente y el siguiente ataque lo recreaba a HP completo. Con SAM-036 cerrado, el rebote desapareció. La lógica de persistencia NO se cambió — descartar `initiative_order` en fin legítimo es el comportamiento correcto (no revivir muertos). La instrumentación queda en su lugar como centinela: si `💾 ... LIVE NPCs: [...]` aparece alguna vez, hay una desactivación anómala nueva.
+
+### SAM-017 — Narrator SYSTEM_PROMPT explota con KeyError por JSON literal
+
+**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · **Commit:** `12909eb`
+
+Regresión de SAM-013 (commit `738f85f`): el bullet "INITIATIVE GROUND TRUTH" de RULE 16 metió un JSON literal sin escapar en el `SYSTEM_PROMPT` → `str.format()` lo interpretaba como placeholder → `KeyError: '"result"'` → TODOS los mensajes de combate caían al legacy `SAMBrain`, perdiendo turn enforcement, persistencia de HP y validez de DM_ROLLs. Fue causa raíz de SAM-015/016 y co-causa de SAM-014. Fix: llaves escapadas `{{...}}` (única llave literal sin escapar del archivo). Validado en playtests 2026-06-09/10/11: cero fallbacks al legacy en los logs de Render. Lección operativa permanente: todo cambio a prompts que pasan por `.format()` corre smoke test local antes de pushear.
+
 ### SAM-036 — Daño de PC delegado a NPC se emite como `player_hp`
 
 **Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · **Commit:** `d0faa4c`
@@ -360,7 +377,7 @@ Instrucción 223 (evidencia del diagnóstico 222: el HP del lobo no bajaba tras 
 
 **Tipo:** CHORE · **Prio:** P1 · **Estado:** DONE · **Commit:** `d0faa4c`
 
-Instrucción 223, base de validación para SAM-036/037. `update_npc_hp` ahora matchea case/space-insensitive, loguea cada cambio (`💢 NPC HP: name old → new`), avisa con la initiative order completa si el nombre no matchea (antes fallaba en silencio), y loguea la muerte (`☠️ NPC down`). `start_combat`/`end_combat` loguean las transiciones (`⚔️`/`🏁`). El orchestrator loguea el descarte de combate inactivo distinguiendo fin legítimo de anómalo con NPCs vivos (`💾 ... LIVE NPCs: [...]` — la firma del rebote de SAM-037).
+Instrucción 223, base de validación para SAM-036/037. `update_npc_hp` ahora matchea case/space-insensitive, loguea cada cambio (`💢 NPC HP: name old → new`), avisa con la initiative order completa si el nombre no matchea (antes fallaba en silencio), y loguea la muerte (`☠️ NPC down`). `start_combat`/`end_combat` loguean las transiciones (`⚔️`/`🏁`). El orchestrator loguea el descarte de combate inactivo distinguiendo fin legítimo de anómalo con NPCs vivos (`💾 ... LIVE NPCs: [...]` — la firma del rebote de SAM-037). **Validado en playtest 2026-06-11:** logs `💢`/`☠️`/`🏁`/`💾` funcionando en prod; fueron la evidencia con la que se cerraron SAM-014 y SAM-037.
 
 ### SAM-033 — Narrator alucina combate completo sin mechanical facts
 
@@ -372,7 +389,7 @@ Instrucción 220. Con intent `roleplay` y combate inexistente, el narrator inven
 
 **Tipo:** FEAT · **Prio:** P1 · **Estado:** DONE · **Commit:** `2c08fcb`
 
-Instrucción 221. El 4d6 de Sneak Attack llegaba como `dice_roll` huérfano y quedaba narrativo. Fix: chain de pending rolls — `_get_sneak_dice` detecta Rogue (tolera sufijo de nivel) y calcula `ceil(level/2)d6`; el pending `weapon_attack` (declarado o freeform d20 del dice tray) lleva `sneak_dice` si `combat.sneak_available()`; en HIT se propaga al pending `weapon_damage`; al aplicarse el daño del arma (target vivo) se encadena un pending `sneak_damage` contra el mismo target con HP actualizado; `_resolve_sneak_damage` aplica el daño, marca `sneak_used` (once per turn, persiste en `CombatState.to_dict`, resetea por turno). La acción se consume UNA vez al final del chain (`sneak_damage` agregado al tuple de consumo). El warning de rolls narrative-only ahora solo dispara para rolls realmente huérfanos. Interpreter: "sneak attack" mencionado con ataque de arma → type `attack`, no `ability`. Narrator RULE 16: narrar el sneak como parte del MISMO ataque. Verificado con harness local de 8 escenarios. Detalle en `SAM_progress_log.md`.
+Instrucción 221. El 4d6 de Sneak Attack llegaba como `dice_roll` huérfano y quedaba narrativo. Fix: chain de pending rolls — `_get_sneak_dice` detecta Rogue (tolera sufijo de nivel) y calcula `ceil(level/2)d6`; el pending `weapon_attack` (declarado o freeform d20 del dice tray) lleva `sneak_dice` si `combat.sneak_available()`; en HIT se propaga al pending `weapon_damage`; al aplicarse el daño del arma (target vivo) se encadena un pending `sneak_damage` contra el mismo target con HP actualizado; `_resolve_sneak_damage` aplica el daño, marca `sneak_used` (once per turn, persiste en `CombatState.to_dict`, resetea por turno). La acción se consume UNA vez al final del chain (`sneak_damage` agregado al tuple de consumo). El warning de rolls narrative-only ahora solo dispara para rolls realmente huérfanos. Interpreter: "sneak attack" mencionado con ataque de arma → type `attack`, no `ability`. Narrator RULE 16: narrar el sneak como parte del MISMO ataque. Verificado con harness local de 8 escenarios. **Validación parcial: código testeado con FakeLLM, falta playtest manual** con Vex no-delegada (d20 → 1d8+5 → 4d6, HP del NPC baja dos veces, una acción). Detalle en `SAM_progress_log.md`.
 
 ### SAM-034 — No existe forma de terminar el turno voluntariamente
 
