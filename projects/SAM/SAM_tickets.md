@@ -36,7 +36,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-018 | Initiative/ataque-delegado modifiers +0 — orchestrator lee `status.stats` en vez de `stats` top-level | BUG | P1 | DONE |
 | SAM-019 | Iniciativa manual para jugadores no delegados | DESIGN | P2 | OPEN |
 | SAM-020 | Auditoría arquitectónica del sistema (`SAM_audit_2026-06-05.md`) | CHORE | P1 | DONE |
-| SAM-021 | Orchestrator no implementa loot/XP/level-up/imágenes (solo en legacy `ai.py`) | REFACTOR | P1 | OPEN |
+| SAM-021 | Orchestrator no implementa loot/XP/level-up/imágenes (solo en legacy `ai.py`) | REFACTOR | P1 | IN_PROGRESS |
 | SAM-022 | COMBAT STATUS muestra HP de jugador stale → drift narrador vs BD/sidebar | BUG | P2 | OPEN |
 | SAM-023 | Respuestas de comandos admin duplicadas para el emisor (optimista + Realtime) | BUG | P2 | OPEN |
 | SAM-024 | Legacy `<UPDATE>` HP solo client-side + ambigüedad de atribución multiplayer | BUG | P2 | OPEN |
@@ -223,13 +223,13 @@ Decisión revisada por el director tras playtests: el auto-roll de iniciativa se
 
 ### SAM-021 — Orchestrator no implementa loot/XP/level-up/imágenes
 
-**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** OPEN
+**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** IN_PROGRESS — **fase 1/3 DONE** (XP/level-up, commit `d7aa6fb`, instrucción 225). Pendiente: fase 2 loot, fase 3 imágenes (SAM-009).
 
-Hallazgo principal de la auditoría SAM-020. El pipeline nuevo no porta features del legacy: `mechanic.award_xp` (`:614`) existe pero **nunca se llama**; `give_loot` solo está en tools legacy; el narrator tiene prohibido emitir `<LOOT>/<XP_GAIN>/<EVENT>/<IMAGE>` (`narrator.py:39`). Esas features solo viven en `ai.py`, alcanzado solo por excepción (`server.py:398-406`). En operación normal (orchestrator OK) se descartan en silencio. **Subsume SAM-009** (servicio de imágenes).
+Hallazgo principal de la auditoría SAM-020. El pipeline nuevo no portaba features del legacy: `mechanic.award_xp` existía pero nunca se llamaba; `give_loot` solo está en tools legacy; el narrator tiene prohibido emitir `<LOOT>/<XP_GAIN>/<EVENT>/<IMAGE>` (`narrator.py:39`). Esas features solo viven en `ai.py`, alcanzado solo por excepción. **Subsume SAM-009** (servicio de imágenes).
 
-**Enfoque:** agregar intents/handlers de loot y XP al orchestrator (o delegación explícita al legacy, no por excepción) + conectar generación de imagen.
+**Fase 1 implementada (XP/level-up):** muerte de NPC → `combat.defeated_this_request` (snapshot en `update_npc_hp`, transiente) → el orchestrator otorga XP ANTES de narrar (`award_xp` arreglado: lee `status.xp`, divide con ceil, calcula HP de level-up por clase+CON) → server.py solo persiste valores precalculados (XP a `status.xp`, `level`, HP, sufijo del class string). Logs `⭐ XP` / `🎉 LEVEL UP`. `xp_value` estampado en combatants desde `_lookup_monster` con fallback por CR (`get_xp_for_cr` acepta '1/2'). Verificación pendiente de playtest: logs ⭐ y persistencia en Supabase.
 
-**Criterio de done:** matar un enemigo otorga XP + dispara level-up; encontrar tesoro persiste loot en inventario; SAM puede generar imágenes — todo sin depender del fallback legacy. Detalle en `SAM_audit_2026-06-05.md` §1, §5.
+**Criterio de done (fases restantes):** encontrar tesoro persiste loot en inventario (fase 2); SAM puede generar imágenes (fase 3) — todo sin depender del fallback legacy. Detalle en `SAM_audit_2026-06-05.md` §1, §5.
 
 ---
 

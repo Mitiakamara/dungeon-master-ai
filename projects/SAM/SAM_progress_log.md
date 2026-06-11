@@ -856,6 +856,29 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Estado al cierre del ciclo: combate core sólido** — daño real (ambas rutas), turnos reales (enforcement + end_turn + action economy), HP persistente entre requests, sin fallback legacy, sin alucinación del narrator. Los pendientes de combate son ergonomía (SAM-039/040/019) y los gaps de features del orchestrator (SAM-021 loot/XP/level-up).
 
+### Sesión 11 Jun 2026 — SAM-021 fase 1: XP y level-up en el orchestrator
+
+**Instrucción 225, commit `d7aa6fb`.** Primera de tres fases para portar las features del legacy al orchestrator (fase 2: loot; fase 3: imágenes/SAM-009).
+
+**Paso 0 — hallazgos de verificación previa (ninguno contradijo el diseño):**
+- **XP vive en `characters.status.xp`** (JSONB): server.py:304 lo mergea, `/reset` lo pone en 0, el PDF import lo seedea. El legacy `<XP_GAIN>` era client-side puro (chat-interface.tsx:413 mutaba `localStatus.xp` del espectador — mismo defecto de atribución que SAM-024); el server legacy lo ignoraba.
+- **server.py YA tenía un handler `xp_update`** (xp + level) — se reusó y extendió en vez de crear el `xp_award` literal de la instrucción, siguiendo el diseño preferido del Paso 3 (orchestrator calcula, server persiste).
+- **`award_xp` existía sin call-site** y con dos bugs latentes: leía `char.get("xp")` top-level (los rows de BD lo tienen en `status.xp` → siempre 0) y dividía con floor en vez de ceil.
+- **`CR_XP_VALUES` ya estaba en rules.py** con los valores exactos (CR 1=200 … 5=1800, fraccionarios incluidos).
+- **`level` es columna top-level int** (fuente de verdad, confirmado por SAM-016/018). El class string lleva sufijo de nivel del PDF import ("Barbarian 7"); nada mecánico lo lee (has_extra_attack toma la primera palabra). Decisión: el server lo sincroniza en level-up SOLO si termina en dígitos (cosmético, mantiene coherencia de display).
+
+**Implementación:**
+- `combat_state.py`: `defeated_this_request` (lista transiente, NO persiste) — `update_npc_hp` snapshotea el combatant al matarlo. Centraliza la detección de muerte para las dos rutas (PC real vía `_resolve_weapon_damage`/`sneak_damage`, delegado vía `resolve_npc_turn`).
+- `orchestrator.py`: tras las mecánicas y ANTES de narrar, drena `defeated_this_request` → `xp_total = xp_value` del combatant (estampado en `_lookup_monster`, compendium y fallback) o `get_xp_for_cr(cr)` para combates persistidos pre-cambio → `engine.award_xp(party, xp_total)` → facts "XP AWARDED: ..." / "LEVEL UP! ...". Así SAM anuncia el XP en el MISMO mensaje del golpe final (evita la trampa de timing de SAM-022).
+- `mechanic.award_xp` (primer call-site real): lee `status.xp` con fallback top-level, ceil split, level-up via `get_level_for_xp`, HP por clase (`HP_AVG_PER_LEVEL` + CON mod por nivel ganado, mínimo 1; `hp_current` se expande igual, no cura). Emite `xp_update` con todo precalculado (`xp_gained`, `new_xp`, `new_level`, `new_hp_max`, `new_hp_current`).
+- `server.py`: handler `xp_update` extendido — persiste XP/level/HP, sincroniza sufijo del class, logs `⭐ XP: name +amount → total` y `🎉 LEVEL UP: name → level N`.
+- `rules.py`: `get_xp_for_cr` (acepta int/float/'1/2') + tabla `HP_AVG_PER_LEVEL` (barbarian 7; fighter/paladin/ranger 6; rogue/cleric/bard/monk/druid/warlock 5; wizard/sorcerer 4).
+- `narrator.py` RULE 16: anunciar XP/LEVEL UP al FINAL de la narración. Smoke test `.format()` OK.
+
+**Verificación local (FakeLLM, 6 escenarios):** `get_xp_for_cr` con formatos mixtos · kill con party de 2 → 100 c/u (ceil), acumula sobre XP previo, sin level-up espurio · cruce de threshold 33950+100=34050 → level 8, +10 HP (barbarian 7 + CON 3), 68→78 en max y current · fallback por CR '1/2' → 50 c/u y skip limpio sin CR (warning, sin crash) · party de 1 → 200 completos · facts "XP AWARDED"/"LEVEL UP!" presentes en el mensaje que recibe el narrator. Todos pasan.
+
+**Pendiente post-deploy:** `/reset` → combate → matar al lobo → logs `⭐ XP` para Björn y Vex, SAM anuncia el XP en la narrativa del golpe final, XP persistido en Supabase (`status.xp`). El level-up real se validó con el harness (requeriría XP acumulado en prod).
+
 ---
 
 ## 4. Estado Actual — Abril 2026
