@@ -879,6 +879,22 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Pendiente post-deploy:** `/reset` → combate → matar al lobo → logs `⭐ XP` para Björn y Vex, SAM anuncia el XP en la narrativa del golpe final, XP persistido en Supabase (`status.xp`). El level-up real se validó con el harness (requeriría XP acumulado en prod).
 
+### Sesión 11 Jun 2026 (cont.) — SAM-041: deadlock narrativo de declaraciones (instrucciones 227-228)
+
+**Diagnóstico (instrucción 227, sin código):** playtest ~02:12 — en round 2, SAM negaba el ataque de Björn ("ya usaste tus dos tajos") sin avanzar el turno. La query al estado vivo en Supabase **refutó la hipótesis** del reset de `actions_remaining`: el estado persistido tenía `actions_remaining=2` (el reseed de `advance_turn → _set_actions_for_current_turn` funciona), round 2, y un `pending_player_roll` armado esperando el d20. El motor estaba sano; el deadlock era narrativo.
+
+**Causa raíz:** los intents declarativos (attack / spell con attack roll / skill_check) arman el pending pero `get_results_summary` no tenía caso para `action == "attack"`, `"spell"` sin save ni `"skill_check"` (solo los `*_result`/`*_applied` post-roll) → `mechanical_facts` vacío → el orchestrator cae a `narrate_roleplay` → ese template prohíbe mecánica de combate **desde SAM-033** → el narrator, sin facts y con un history que decía "no actions remaining", negaba el ataque. Cada reintento re-creaba el pending en silencio. Pre-033 el path se rescataba solo: el narrator de roleplay improvisaba el pedido de tirada. Lección: **endurecer un prompt puede convertir un gap latente en deadlock — los facts son el contrato entre motor y narrator, y toda declaración que arme pending debe renderizarlos.**
+
+**Fix (instrucción 228, commit `4f4443b`):**
+- `get_results_summary`: tres casos nuevos — "declares an attack with X against Y (AC Z). Awaiting attack roll." (AC agregado al result en origen), "casts X at Y. Awaiting spell attack roll.", "attempts a X check. Awaiting d20 roll." — todos con su línea de prompt.
+- Red de seguridad en el orchestrator: si un path futuro arma pending sin facts, se sintetiza un fact mínimo + `prompt_player_roll` y se loguea `⚠️ Pending roll without facts` — nunca más roleplay con pending vivo.
+- RULE 16: ante "Awaiting ... roll" / PROMPT PLAYER, el narrator solo construye tensión y pide los dados; prohibido negar la acción o citar acciones restantes salvo que los facts lo digan.
+- Gate UX (punto 4 del diagnóstico): declarar attack/spell con 0 acciones en el propio turno no arma pending; los facts sugieren "paso" (`_out_of_actions`).
+
+**Verificación local (FakeLLM, 6 escenarios):** attack/skill_check/spell declarados → facts presentes y template de mechanics (no roleplay) · reproducción completa del deadlock: hit + miss en round 1 → NPCs → round 2 → declarar ataque → facts + pending, sin negación · 0 acciones → sin pending + sugerencia de paso · red de seguridad dispara warning + fact sintético + prompt · smoke `.format()`. Todos pasan.
+
+**Lateral (diagnóstico 227):** el pending vivo tenía `Handaxe (1d6+4)` cuando se declaró Greataxe — evidencia registrada en SAM-039 (el +7 coincidió por casualidad; cuando difiera, el daño será incorrecto en silencio). El combate colgado en prod se destraba tirando 1d20 del dice tray (el pending viejo resuelve) o con `/reset`.
+
 ---
 
 ## 4. Estado Actual — Abril 2026

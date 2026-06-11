@@ -56,6 +56,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-038 | Instrumentación: logging de HP de NPC, transiciones de combate y descarte de estado | CHORE | P1 | DONE |
 | SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P2 | OPEN |
 | SAM-040 | Estado de delegación invisible para el jugador | UX | P2 | OPEN |
+| SAM-041 | Declaraciones de acción producen facts vacíos → narrator de roleplay niega el ataque (deadlock) | BUG | P0 | DONE |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -176,6 +177,8 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 En el playtest 2026-06-11, Björn declaró "Greataxe" en el chat. El intent del interpreter registró `{"weapon": "Handaxe"}`, SAM pidió "1d6+4" (daño de Handaxe) en vez de 1d12+4, y al tirar el d12 el narrator improvisó "parece que cambiar de arma era la clave" cuando el jugador nunca cambió de arma. Además el d12 tirado contra un prompt de 1d6 se aceptó sin validación.
 
 **Hipótesis a investigar:** (a) el interpreter resuelve mal el arma declarada en mensajes coloquiales ("uso me hacha", "otra vez 🪓") y elige otra del attack list; (b) `_setup_combat_freeform_pending` o `_find_weapon` hace fallback a `attacks[0]` cuando el match falla; (c) no hay validación dice-esperado vs dice-tirado en `process_player_roll`.
+
+**Evidencia adicional (diagnóstico 227, estado vivo en BD):** el pending persistido del combate colgado tenía `weapon: Handaxe (+7, 1d6+4)` cuando el playtest declaró Greataxe. El bono +7 coincidió con el de Greataxe por casualidad — cuando difiera, el to-hit y el daño serán incorrectos en silencio.
 
 **Archivos sospechosos:** `interpreter.py` (prompt de attack), `orchestrator.py` (`_find_weapon`, `_setup_combat_freeform_pending`), `mechanic.py` (`process_player_roll`).
 
@@ -348,6 +351,14 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 ---
 
 ## Tickets cerrados
+
+### SAM-041 — Declaraciones de acción producen facts vacíos (deadlock narrativo)
+
+**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · **Commit:** `4f4443b`
+
+Instrucción 228 (causa raíz del diagnóstico 227, playtest 2026-06-11 ~02:12). Los intents declarativos (attack, spell con attack roll, skill_check) armaban el pending pero `get_results_summary` no tenía caso para renderizarlos → `mechanical_facts` vacío → `narrate_roleplay`, cuyo template prohíbe mecánica de combate desde SAM-033 → el narrator negaba el ataque ("ya usaste tus dos tajos") en vez de pedir el d20. Deadlock narrativo con motor sano (el estado vivo tenía `actions_remaining=2` y un pending armado que nadie anunciaba). Antes de SAM-033 el path se rescataba solo porque el narrator de roleplay improvisaba el pedido de tirada.
+
+**Fix (principio: si hay pending, hay facts; si hay facts, narra `narrate_mechanics`):** (1) casos nuevos en `get_results_summary` para las tres declaraciones (`attack` con AC del target agregado en origen, `spell` esperando tirada, `skill_check`); (2) red de seguridad en el orchestrator — cualquier path futuro que arme pending sin facts sintetiza un fact mínimo + prompt y loguea warning; (3) bullet RULE 16 — ante "Awaiting ... roll" el narrator solo construye tensión y pide los dados, nunca niega la acción; (4) gate UX — declarar con 0 acciones no arma pending silencioso, los facts sugieren "paso". Verificado con harness de 6 escenarios incluyendo la reproducción completa del deadlock de round 2. Detalle en `SAM_progress_log.md`.
 
 ### SAM-014 — NPC damage no persiste a `characters.status.hp_current`
 
