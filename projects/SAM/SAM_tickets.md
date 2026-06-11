@@ -57,6 +57,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P2 | OPEN |
 | SAM-040 | Estado de delegación invisible para el jugador | UX | P2 | OPEN |
 | SAM-041 | Declaraciones de acción producen facts vacíos → narrator de roleplay niega el ataque (deadlock) | BUG | P0 | DONE |
+| SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P2 | OPEN |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -167,6 +168,20 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 **Archivos afectados:** `frontend/components/party-roster.tsx`, `frontend/components/game-layout.tsx` u otros.
 
 **Criterio de done:** consola del browser en producción limpia de logs manuales de debug.
+
+---
+
+### SAM-042 — Crítico no duplica dados de daño
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+
+Playtest 2026-06-11: natural 20 detectado y narrado, pero el damage prompt y el cálculo usaron los dados normales (1d12+4 en vez de 2d12+4).
+
+**Causa trazada (2026-06-11):** hay DOS fuentes de prompt contradictorias. `_resolve_weapon_attack` (`mechanic.py:315-332`) hace todo bien: detecta el nat 20, duplica los dados con `_double_dice` para su `prompt_player` ("¡CRÍTICO! ... Tira 2d12+4") y stampea `critical: True` en el pending de `weapon_damage`. Pero `_get_roll_prompt` (orchestrator) construye la línea "→ PROMPT PLAYER:" desde `weapon["damage"]` — los dados SIN duplicar — **ignorando `pending["critical"]`**. Ambas líneas conviven en los facts y el narrator obedece la última (la normal). Después, `_resolve_weapon_damage` no usa el flag `critical` para calcular (el doubling es por dados pedidos, by design) y no hay validación dado-esperado vs dado-tirado (cruza con SAM-039 hipótesis c) → el 1d12 se acepta en silencio. Nota: `_setup_combat_freeform_pending` hardcodea `critical: False` para daño freeform del dice tray (irrelevante para este caso, pero mismo síntoma si se tira daño sin d20 previo).
+
+**Fix sugerido:** una sola fuente de verdad — stampear `damage_dice` (ya duplicado) en el pending de `weapon_damage` en `_resolve_weapon_attack`, y que `_get_roll_prompt` lo lea con fallback a `weapon["damage"]`. Opcional: validación dado-esperado vs tirado (compartida con SAM-039).
+
+**Criterio de done:** nat 20 → el prompt pide los dados duplicados (2d12+4) y el daño aplicado refleja la tirada duplicada.
 
 ---
 
@@ -359,6 +374,8 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 Instrucción 228 (causa raíz del diagnóstico 227, playtest 2026-06-11 ~02:12). Los intents declarativos (attack, spell con attack roll, skill_check) armaban el pending pero `get_results_summary` no tenía caso para renderizarlos → `mechanical_facts` vacío → `narrate_roleplay`, cuyo template prohíbe mecánica de combate desde SAM-033 → el narrator negaba el ataque ("ya usaste tus dos tajos") en vez de pedir el d20. Deadlock narrativo con motor sano (el estado vivo tenía `actions_remaining=2` y un pending armado que nadie anunciaba). Antes de SAM-033 el path se rescataba solo porque el narrator de roleplay improvisaba el pedido de tirada.
 
 **Fix (principio: si hay pending, hay facts; si hay facts, narra `narrate_mechanics`):** (1) casos nuevos en `get_results_summary` para las tres declaraciones (`attack` con AC del target agregado en origen, `spell` esperando tirada, `skill_check`); (2) red de seguridad en el orchestrator — cualquier path futuro que arme pending sin facts sintetiza un fact mínimo + prompt y loguea warning; (3) bullet RULE 16 — ante "Awaiting ... roll" el narrator solo construye tensión y pide los dados, nunca niega la acción; (4) gate UX — declarar con 0 acciones no arma pending silencioso, los facts sugieren "paso". Verificado con harness de 6 escenarios incluyendo la reproducción completa del deadlock de round 2. Detalle en `SAM_progress_log.md`.
+
+**Validado en prod (playtest 2026-06-11):** el combate colgado se destrabó tirando el d20 del pending viejo; la declaración de ataque en round 2 pide el d20 correctamente, cero negaciones falsas. De paso se validó la fase 1 de XP end-to-end: `⭐ XP` en logs, anuncio en narración y persistencia confirmada por query (`status.xp=350` en Björn y Vex).
 
 ### SAM-014 — NPC damage no persiste a `characters.status.hp_current`
 

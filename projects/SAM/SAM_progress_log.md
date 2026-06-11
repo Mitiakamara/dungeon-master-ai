@@ -895,6 +895,12 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 **Lateral (diagnóstico 227):** el pending vivo tenía `Handaxe (1d6+4)` cuando se declaró Greataxe — evidencia registrada en SAM-039 (el +7 coincidió por casualidad; cuando difiera, el daño será incorrecto en silencio). El combate colgado en prod se destraba tirando 1d20 del dice tray (el pending viejo resuelve) o con `/reset`.
 
+**Validación en prod (playtest 2026-06-11, post-deploy):**
+- **SAM-041 validado:** el combate colgado se destrabó tirando el d20 del pending viejo; en round 2 la declaración de ataque pide el d20 siempre, cero negaciones falsas.
+- **SAM-021 fase 1 validada end-to-end:** `⭐ XP` en logs de Render, anuncio en la narración del golpe final, y persistencia confirmada por query a Supabase: `status.xp=350` tanto en Björn como en Vex (lobo CR 3 → 700 XP → 350 c/u).
+- **SAM-042 abierto (BUG P2):** natural 20 detectado y narrado pero el damage prompt pidió 1d12+4 en vez de 2d12+4. Causa trazada el mismo día: `_resolve_weapon_attack` duplica los dados en su `prompt_player` y stampea `critical: True` en el pending, pero `_get_roll_prompt` (orchestrator) arma el "→ PROMPT PLAYER:" desde `weapon["damage"]` ignorando el flag — dos prompts contradictorios en los facts y el narrator obedece el último. Sin validación dado-esperado vs tirado (cruza con SAM-039 c), el 1d12 se aceptó en silencio. Fix sugerido en el ticket: una sola fuente de verdad (`damage_dice` duplicado stampeado en el pending).
+- **Observación SIN ticket (vigilar):** posible sobre-otorgamiento de acciones en round 2 post-deadlock. Validar en el próximo combate limpio si el conteo de acciones es estricto; si reaparece, abrir ticket.
+
 ---
 
 ## 4. Estado Actual — Abril 2026
