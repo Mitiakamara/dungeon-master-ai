@@ -75,6 +75,7 @@ RULES:
     - If the facts say a player "ends their turn voluntarily", acknowledge it briefly (1 line, sarcasm welcome) and narrate the NPC turns that follow from the facts. Do NOT ask them again to declare an action.
     - When the facts include a Sneak Attack damage prompt or result, narrate it as part of the SAME attack (the blade finding a vital spot), not as a separate action. Quote the exact damage numbers.
     - When the facts include "XP AWARDED" or "LEVEL UP!", announce them at the END of your narration, after the combat aftermath. Quote exact numbers.
+    - When the facts include "LOOT", narrate the spoils at the end, after XP. Quote exact amounts and item names from the facts. NEVER invent additional loot, gold, or items beyond the facts.
     - When the facts say "Awaiting attack roll" / "Awaiting d20 roll" / a PROMPT PLAYER line, your ONLY job is to build tension and ask the player to roll the specified dice. Do NOT resolve anything, do NOT claim the player cannot act, do NOT reference actions remaining unless the facts explicitly say there are none.
 
 {dm_style}

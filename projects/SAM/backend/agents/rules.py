@@ -1,3 +1,5 @@
+from .dice import DiceRoller
+
 # D&D 5e XP thresholds for leveling
 XP_THRESHOLDS = {
     1: 0, 2: 300, 3: 900, 4: 2700, 5: 6500,
@@ -89,22 +91,58 @@ HP_AVG_PER_LEVEL = {
 }
 
 
-def get_xp_for_cr(cr) -> int:
-    """XP value for a CR. Accepts int, float, or str ('3', '0.5', '1/2')."""
+def _normalize_cr(cr):
+    """CR as float, or None if unparseable. Accepts int, float, '3', '0.5', '1/2'."""
     try:
         if isinstance(cr, str):
             cr = cr.strip()
             if "/" in cr:
                 num, den = cr.split("/", 1)
-                value = float(num) / float(den)
-            else:
-                value = float(cr)
-        else:
-            value = float(cr)
+                return float(num) / float(den)
+        return float(cr)
     except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def get_xp_for_cr(cr) -> int:
+    """XP value for a CR. Accepts int, float, or str ('3', '0.5', '1/2')."""
+    value = _normalize_cr(cr)
+    if value is None:
         return 0
     # float(1) == 1 hashes equal to the int key, so .get(1.0) finds CR 1
     return CR_XP_VALUES.get(value, 0)
+
+
+# Loot budget per CR band (5e-ish individual treasure, simplified — SAM-021 f2).
+# Python decides gold and item slots; the LLM only NAMES flavor items.
+# Bands: (max_cr inclusive | None = open end, dice_count, dice_sides,
+#         multiplier, item_slots, item_rarity)
+LOOT_BUDGET = [
+    (0.25, 2, 6, 1, 0, None),
+    (1,    3, 6, 1, 1, "trinket"),
+    (4,    4, 6, 2, 1, "common"),
+    (8,    6, 6, 5, 1, "uncommon"),
+    (None, 8, 6, 10, 2, "uncommon"),  # CR 9+
+]
+
+
+def get_loot_budget(cr) -> dict:
+    """
+    Loot budget for a slain creature: gold (already rolled) + item slots and
+    rarity. Unknown/unparseable CR falls to the CR 0 band (some gold, no items).
+    """
+    value = _normalize_cr(cr)
+    if value is None:
+        value = 0
+    for max_cr, count, sides, mult, slots, rarity in LOOT_BUDGET:
+        if max_cr is None or value <= max_cr:
+            rolled = DiceRoller.roll_with_modifier(count, sides, 0)["total"] * mult
+            return {
+                "gold": rolled,
+                "gold_spec": f"{count}d{sides}" + (f"x{mult}" if mult > 1 else ""),
+                "item_slots": slots,
+                "item_rarity": rarity,
+            }
 
 
 # [Easy, Medium, Hard, Deadly]

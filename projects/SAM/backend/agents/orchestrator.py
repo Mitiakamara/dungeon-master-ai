@@ -20,11 +20,24 @@ from .mechanic import MechanicEngine
 from .narrator import Narrator
 from .combat_state import CombatState
 from .dice import DiceRoller
-from .rules import get_level_for_xp, get_recommended_cr_range, get_xp_for_cr
+from .rules import get_level_for_xp, get_recommended_cr_range, get_xp_for_cr, get_loot_budget
 
 
 class SAMOrchestrator:
     """Main game loop coordinator."""
+
+    # SAM-021 f2: the LLM only NAMES flavor loot — Python already decided
+    # the budget (gold, slot count, rarity). No stats, no values, ever.
+    LOOT_ITEM_PROMPT = """You are a D&D 5e loot generator. A {monster_name} was just slain.
+Generate EXACTLY {count} flavor item(s) of rarity "{rarity}" found on or near the corpse.
+
+Rules:
+- "trinket" = flavor object with NO mechanical value (a tooth, a torn map corner, a strange coin).
+- "common"/"uncommon" = minor consumable or curiosity. NO weapons, NO armor, NO stats, NO mechanical effects, NO gold or gems with stated value.
+- Each description under 20 words.
+
+Respond ONLY with a JSON array, no markdown, no backticks:
+[{{"name": "...", "description": "..."}}]"""
 
     def __init__(self, interpreter_llm, narrator_llm, knowledge_service=None):
         """
@@ -314,28 +327,31 @@ class SAMOrchestrator:
             else:
                 mechanical_facts = ""
 
-        # ─── XP AWARD on NPC death (SAM-021 fase 1) ───
+        # ─── XP + LOOT on NPC death (SAM-021 fases 1-2) ───
         # update_npc_hp collected any NPCs killed this request (by real PCs or
-        # delegated ones). Award XP BEFORE narrating so SAM announces it in the
-        # same message; server.py only persists the precomputed values.
+        # delegated ones). Award everything BEFORE narrating so SAM announces it
+        # in the same message; server.py only persists the precomputed values.
         if combat.defeated_this_request and party_characters:
-            xp_facts_lines = []
+            reward_lines = []
             for npc in combat.defeated_this_request:
+                # Fase 1: XP
                 xp_total = int(npc.get("xp_value") or get_xp_for_cr(npc.get("cr", 0)) or 0)
-                if xp_total <= 0:
-                    print(f"⚠️ No XP value for defeated NPC '{npc.get('name')}' (cr={npc.get('cr')})")
-                    continue
-                for r in engine.award_xp(party_characters, xp_total):
-                    xp_facts_lines.append(
-                        f"XP AWARDED: {r['character']} gains {r['xp_gained']} XP (total: {r['total_xp']})."
-                    )
-                    if r["leveled_up"]:
-                        xp_facts_lines.append(
-                            f"LEVEL UP! {r['character']} reaches level {r['new_level']}. Announce dramatically."
+                if xp_total > 0:
+                    for r in engine.award_xp(party_characters, xp_total):
+                        reward_lines.append(
+                            f"XP AWARDED: {r['character']} gains {r['xp_gained']} XP (total: {r['total_xp']})."
                         )
+                        if r["leveled_up"]:
+                            reward_lines.append(
+                                f"LEVEL UP! {r['character']} reaches level {r['new_level']}. Announce dramatically."
+                            )
+                else:
+                    print(f"⚠️ No XP value for defeated NPC '{npc.get('name')}' (cr={npc.get('cr')})")
+                # Fase 2: loot (gold for the party, flavor items for the killer)
+                reward_lines.extend(self._award_loot(engine, npc, party_characters))
             combat.defeated_this_request = []
-            if xp_facts_lines:
-                mechanical_facts = (mechanical_facts + "\n\n" + "\n".join(xp_facts_lines)).strip()
+            if reward_lines:
+                mechanical_facts = (mechanical_facts + "\n\n" + "\n".join(reward_lines)).strip()
 
         # Warning for ORPHAN dice rolls: nothing resolved (no engine results),
         # nothing pending, no state updates. Resolved rolls against NPCs update
@@ -824,6 +840,87 @@ class SAMOrchestrator:
         except Exception as e:
             print(f"⚠️ Monster lookup failed for '{target_name}': {e}")
             return fallback
+
+    def _award_loot(self, engine: MechanicEngine, npc: dict,
+                    party_characters: list[dict]) -> list[str]:
+        """
+        SAM-021 f2: Python budgets the loot (gold + item slots by CR); the LLM
+        only names flavor items within that budget. Gold splits among the party
+        (ceil); items go to the PC who landed the killing blow.
+        Returns fact lines for the narrator; emits state_updates.
+        """
+        lines = []
+        budget = get_loot_budget(npc.get("cr"))
+
+        gold = int(budget.get("gold", 0) or 0)
+        if gold > 0:
+            per_pc = -(-gold // len(party_characters))  # ceil
+            for pc in party_characters:
+                engine.state_updates.append({
+                    "type": "money_award",
+                    "character_name": pc.get("name"),
+                    "gp": per_pc,
+                })
+            lines.append(f"LOOT: {gold} gp split among the party ({per_pc} gp each).")
+
+        slots = int(budget.get("item_slots", 0) or 0)
+        if slots > 0:
+            killer = npc.get("_killed_by")
+            if not killer or not any(p.get("name") == killer for p in party_characters):
+                killer = party_characters[0].get("name")  # fallback: first PC
+            items = self._generate_loot_items(
+                npc.get("name", "the creature"), slots, budget.get("item_rarity"))
+            for item in items:
+                engine.state_updates.append({
+                    "type": "item_award",
+                    "character_name": killer,
+                    # status.inventory shape: {"item": str, "qty": int} (+ flavor)
+                    "item": {"item": item["name"], "qty": 1,
+                             "description": item.get("description", "")},
+                })
+                lines.append(f"LOOT ITEM: {killer} finds: {item['name']} — {item.get('description', '')}")
+        return lines
+
+    def _generate_loot_items(self, monster_name: str, count: int, rarity) -> list[dict]:
+        """
+        Ask the lightweight LLM for EXACTLY `count` flavor item names/descriptions.
+        Python validates everything: bad JSON or overflow → truncate / generic
+        fallback. Never crashes, never returns more than `count` items.
+        """
+        def generic():
+            return {"name": f"{monster_name} Trophy",
+                    "description": "A grim memento torn from the fallen creature."}
+
+        try:
+            from langchain_core.messages import SystemMessage, HumanMessage
+
+            prompt = self.LOOT_ITEM_PROMPT.format(
+                monster_name=monster_name, count=count, rarity=rarity or "trinket")
+            response = self.interpreter.llm.invoke([
+                SystemMessage(content=prompt),
+                HumanMessage(content="Generate the loot now."),
+            ])
+            text = response.content.strip()
+            text = re.sub(r'```json\s*', '', text)
+            text = re.sub(r'```\s*', '', text)
+            data = json.loads(text.strip())
+            if not isinstance(data, list):
+                raise ValueError("loot reply is not a JSON array")
+
+            items = []
+            for entry in data[:count]:  # never more than the budgeted slots
+                name = str((entry or {}).get("name", "")).strip() if isinstance(entry, dict) else ""
+                if name:
+                    items.append({
+                        "name": name[:80],
+                        "description": str(entry.get("description", "")).strip()[:200],
+                    })
+            while len(items) < count:
+                items.append(generic())
+            return items
+        except Exception as e:
+            print(f"⚠️ Loot item generation failed ({e}) — using generic fallback")
+            return [generic() for _ in range(count)]
 
     def _out_of_actions(self, combat: CombatState, sender_name: str) -> bool:
         """

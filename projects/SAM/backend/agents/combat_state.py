@@ -116,8 +116,12 @@ class CombatState:
         if not npcs_alive:
             self.end_combat()
 
-    def update_npc_hp(self, name: str, new_hp: int):
-        """Update an NPC's HP. Match is case/space-insensitive (SAM-038)."""
+    def update_npc_hp(self, name: str, new_hp: int, killer: str = None):
+        """
+        Update an NPC's HP. Match is case/space-insensitive (SAM-038).
+        killer: name of whoever dealt the blow — stamped on the defeated
+        snapshot so loot items can go to the killing PC (SAM-021 f2).
+        """
         matched = False
         for c in self.initiative_order:
             if c["name"].lower().strip() == name.lower().strip():
@@ -127,7 +131,10 @@ class CombatState:
                 print(f"💢 NPC HP: {c['name']} {old} → {new_hp}")
                 if new_hp <= 0:
                     print(f"☠️ NPC down: {c['name']} (removing from combat)")
-                    self.defeated_this_request.append(dict(c))  # snapshot for XP award (SAM-021)
+                    snapshot = dict(c)  # for XP + loot award (SAM-021)
+                    if killer:
+                        snapshot["_killed_by"] = killer
+                    self.defeated_this_request.append(snapshot)
                     self.remove_combatant(c["name"])
                 break
         if not matched:

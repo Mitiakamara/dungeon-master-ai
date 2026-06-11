@@ -320,6 +320,37 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                                         print(f"⭐ XP: {update['character_name']} +{update.get('xp_gained', '?')} → {update['new_xp']}")
                                         break
 
+                            elif update.get("type") == "money_award":
+                                # SAM-021 f2: gold precomputed by the orchestrator
+                                for char in party_characters:
+                                    if char.get("name") == update.get("character_name"):
+                                        gp = int(update.get("gp", 0) or 0)
+                                        if gp <= 0:
+                                            break
+                                        status = dict(char.get("status") or {})
+                                        money = dict(status.get("money") or {})
+                                        money["gp"] = int(money.get("gp", 0) or 0) + gp
+                                        status["money"] = money
+                                        sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
+                                        print(f"💰 Loot: {update['character_name']} +{gp} gp")
+                                        break
+
+                            elif update.get("type") == "item_award":
+                                # SAM-021 f2: flavor item named by the LLM, validated upstream
+                                for char in party_characters:
+                                    if char.get("name") == update.get("character_name"):
+                                        item = dict(update.get("item") or {})
+                                        if not item.get("item"):
+                                            print(f"⚠️ item_award missing item name for {update.get('character_name')}")
+                                            break
+                                        status = dict(char.get("status") or {})
+                                        inventory = list(status.get("inventory") or [])
+                                        inventory.append(item)
+                                        status["inventory"] = inventory
+                                        sam_brain.supabase.table("characters").update({"status": status}).eq("id", char["id"]).execute()
+                                        print(f"🎁 Loot: {update['character_name']} receives {item['item']}")
+                                        break
+
                             elif update.get("type") == "spell_slot_consume":
                                 target_name = update.get("character_name")
                                 level = update.get("level")

@@ -281,7 +281,8 @@ class MechanicEngine:
             result["target_killed"] = hp_result["is_unconscious"]
 
             # Update combat state
-            self.combat.update_npc_hp(target["name"], hp_result["new_hp"])
+            self.combat.update_npc_hp(target["name"], hp_result["new_hp"],
+                                      killer=character.get("name"))
 
         self.results.append(result)
         return result
@@ -377,7 +378,8 @@ class MechanicEngine:
             result["target_hp"] = hp_result["new_hp"]
             result["target_hp_max"] = target.get("hp_max", old_hp)
             result["target_killed"] = hp_result["is_unconscious"]
-            self.combat.update_npc_hp(target["name"], hp_result["new_hp"])
+            self.combat.update_npc_hp(target["name"], hp_result["new_hp"],
+                                      killer=character.get("name"))
 
             # SAM-003: chain Sneak Attack damage on the same target, same action.
             # Skip if the weapon damage already killed it (no point in overkill).
@@ -416,7 +418,8 @@ class MechanicEngine:
             result["target_hp"] = hp_result["new_hp"]
             result["target_hp_max"] = target.get("hp_max", old_hp)
             result["target_killed"] = hp_result["is_unconscious"]
-            self.combat.update_npc_hp(target["name"], hp_result["new_hp"])
+            self.combat.update_npc_hp(target["name"], hp_result["new_hp"],
+                                      killer=character.get("name"))
 
         # Sneak Attack is once per turn (5e RAW)
         self.combat.mark_sneak_used()
@@ -640,7 +643,8 @@ class MechanicEngine:
                 if target_char.get("is_npc"):
                     # SAM-036: delegated PC hitting an enemy NPC — the NPC's HP
                     # lives in combat state, never in the characters table.
-                    self.combat.update_npc_hp(target_name, hp_result["new_hp"])
+                    self.combat.update_npc_hp(target_name, hp_result["new_hp"],
+                                              killer=npc.get("name"))
                 else:
                     # Real NPC hitting a player — persist via state_update.
                     self.state_updates.append({
