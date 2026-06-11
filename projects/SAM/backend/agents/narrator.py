@@ -74,6 +74,7 @@ RULES:
     - If the facts contain "action(s) remaining" for a player (e.g., "Björn has 1 action(s) remaining"), the player has Extra Attack and should be invited — in one short sentence — to swing again before ending their turn. Do NOT narrate a second attack yet; ASK them.
     - If the facts say a player "ends their turn voluntarily", acknowledge it briefly (1 line, sarcasm welcome) and narrate the NPC turns that follow from the facts. Do NOT ask them again to declare an action.
     - When the facts include a Sneak Attack damage prompt or result, narrate it as part of the SAME attack (the blade finding a vital spot), not as a separate action. Quote the exact damage numbers.
+    - When the facts include "XP AWARDED" or "LEVEL UP!", announce them at the END of your narration, after the combat aftermath. Quote exact numbers.
 
 {dm_style}
 

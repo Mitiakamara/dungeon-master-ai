@@ -37,6 +37,9 @@ class CombatState:
         self.pending_action = data.get("pending_action", None)  # Waiting for player dice
         self.actions_remaining = data.get("actions_remaining", 0)
         self.sneak_used = data.get("sneak_used", False)  # Sneak Attack: once per turn (SAM-003)
+        # NPCs killed during THIS request — transient, never persisted (SAM-021).
+        # The orchestrator drains it to award XP before narrating.
+        self.defeated_this_request = []
 
     def _set_actions_for_current_turn(self):
         """Seed actions_remaining when entering a new player's turn."""
@@ -124,6 +127,7 @@ class CombatState:
                 print(f"💢 NPC HP: {c['name']} {old} → {new_hp}")
                 if new_hp <= 0:
                     print(f"☠️ NPC down: {c['name']} (removing from combat)")
+                    self.defeated_this_request.append(dict(c))  # snapshot for XP award (SAM-021)
                     self.remove_combatant(c["name"])
                 break
         if not matched:

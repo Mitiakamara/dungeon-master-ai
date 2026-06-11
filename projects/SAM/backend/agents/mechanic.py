@@ -7,7 +7,8 @@ Zero LLM calls. Zero XML. Zero guessing.
 from .dice import DiceRoller
 from .rules import (
     calculate_hp_change, check_hit, check_save,
-    get_level_for_xp, xp_to_next_level, XP_THRESHOLDS
+    get_level_for_xp, xp_to_next_level, XP_THRESHOLDS,
+    HP_AVG_PER_LEVEL
 )
 from .combat_state import CombatState
 from typing import Optional
@@ -667,15 +668,27 @@ class MechanicEngine:
     # ─────────────────────────────────────
 
     def award_xp(self, characters: list[dict], xp_amount: int) -> list[dict]:
-        """Award XP to characters and check for level up."""
+        """
+        Award XP split evenly among characters (rounded up) and check level-up.
+        XP lives in status.xp on DB rows (top-level "xp" kept as fallback).
+        On level-up, hp_max grows by class average + CON mod per level gained
+        (5e fixed average); hp_current grows the same amount (expands, not heals).
+        All values are precomputed here — server.py only persists them.
+        """
         results = []
-        xp_each = xp_amount // len(characters) if characters else 0
+        if not characters or xp_amount <= 0:
+            return results
+
+        xp_each = -(-xp_amount // len(characters))  # ceil division
 
         for char in characters:
-            current_xp = char.get("xp", 0)
-            current_level = char.get("level", 1)
+            status = char.get("status") or {}
+            stats = char.get("stats") or {}  # top-level column (SAM-018)
+            current_xp = int(status.get("xp", char.get("xp", 0)) or 0)
+            current_level = int(char.get("level", 1) or 1)
             new_xp = current_xp + xp_each
             new_level = get_level_for_xp(new_xp)
+            leveled_up = new_level > current_level
 
             result = {
                 "character": char["name"],
@@ -683,17 +696,33 @@ class MechanicEngine:
                 "total_xp": new_xp,
                 "old_level": current_level,
                 "new_level": new_level,
-                "leveled_up": new_level > current_level
+                "leveled_up": leveled_up
             }
 
-            self.state_updates.append({
+            update = {
                 "type": "xp_update",
                 "character_name": char["name"],
+                "xp_gained": xp_each,
                 "new_xp": new_xp,
                 "new_level": new_level,
-                "leveled_up": new_level > current_level
-            })
+                "leveled_up": leveled_up
+            }
 
+            if leveled_up:
+                cls_raw = str(char.get("class", "") or "").lower().strip()
+                cls = cls_raw.split()[0] if cls_raw else ""
+                con = int(stats.get("con", 10) or 10)
+                con_mod = (con - 10) // 2
+                per_level = max(1, HP_AVG_PER_LEVEL.get(cls, 5) + con_mod)
+                hp_gain = per_level * (new_level - current_level)
+                hp_max = int(status.get("hp_max", 0) or 0)
+                hp_current = int(status.get("hp_current", hp_max) or 0)
+                update["new_hp_max"] = hp_max + hp_gain
+                update["new_hp_current"] = hp_current + hp_gain
+                result["hp_gain"] = hp_gain
+                result["new_hp_max"] = hp_max + hp_gain
+
+            self.state_updates.append(update)
             results.append(result)
 
         self.results.extend(results)

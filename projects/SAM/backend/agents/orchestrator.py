@@ -20,7 +20,7 @@ from .mechanic import MechanicEngine
 from .narrator import Narrator
 from .combat_state import CombatState
 from .dice import DiceRoller
-from .rules import get_level_for_xp, get_recommended_cr_range
+from .rules import get_level_for_xp, get_recommended_cr_range, get_xp_for_cr
 
 
 class SAMOrchestrator:
@@ -299,6 +299,29 @@ class SAMOrchestrator:
                     mechanical_facts = ""
             else:
                 mechanical_facts = ""
+
+        # ─── XP AWARD on NPC death (SAM-021 fase 1) ───
+        # update_npc_hp collected any NPCs killed this request (by real PCs or
+        # delegated ones). Award XP BEFORE narrating so SAM announces it in the
+        # same message; server.py only persists the precomputed values.
+        if combat.defeated_this_request and party_characters:
+            xp_facts_lines = []
+            for npc in combat.defeated_this_request:
+                xp_total = int(npc.get("xp_value") or get_xp_for_cr(npc.get("cr", 0)) or 0)
+                if xp_total <= 0:
+                    print(f"⚠️ No XP value for defeated NPC '{npc.get('name')}' (cr={npc.get('cr')})")
+                    continue
+                for r in engine.award_xp(party_characters, xp_total):
+                    xp_facts_lines.append(
+                        f"XP AWARDED: {r['character']} gains {r['xp_gained']} XP (total: {r['total_xp']})."
+                    )
+                    if r["leveled_up"]:
+                        xp_facts_lines.append(
+                            f"LEVEL UP! {r['character']} reaches level {r['new_level']}. Announce dramatically."
+                        )
+            combat.defeated_this_request = []
+            if xp_facts_lines:
+                mechanical_facts = (mechanical_facts + "\n\n" + "\n".join(xp_facts_lines)).strip()
 
         # Warning for ORPHAN dice rolls: nothing resolved (no engine results),
         # nothing pending, no state updates. Resolved rolls against NPCs update
@@ -697,6 +720,7 @@ class SAMOrchestrator:
             "ac": 15,
             "attacks": [{"name": "Attack", "bonus": "+5", "damage": "1d8+3"}],
             "cr": 3,
+            "xp_value": get_xp_for_cr(3),
             "initiative_modifier": 0,
         }
 
@@ -770,6 +794,7 @@ class SAMOrchestrator:
                 "ac": int(m.get("ac", 15) or 15),
                 "attacks": attacks,
                 "cr": m.get("cr", 3),
+                "xp_value": get_xp_for_cr(m.get("cr", 3)),
                 "initiative_modifier": init_mod,
             }
         except Exception as e:

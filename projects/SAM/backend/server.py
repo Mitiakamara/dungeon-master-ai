@@ -299,14 +299,25 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                                         break
 
                             elif update.get("type") == "xp_update":
+                                # SAM-021: values arrive precomputed from the orchestrator
+                                # (XP, level, HP) — this handler only persists them.
                                 for char in party_characters:
                                     if char.get("name") == update.get("character_name"):
                                         merged = {**char.get("status", {}), "xp": update["new_xp"]}
                                         update_data = {"status": merged}
                                         if update.get("leveled_up"):
                                             update_data["level"] = update["new_level"]
-                                            print(f"🎉 LEVEL UP! {update['character_name']} → Level {update['new_level']}")
+                                            if update.get("new_hp_max") is not None:
+                                                merged["hp_max"] = update["new_hp_max"]
+                                                merged["hp_current"] = update["new_hp_current"]
+                                            # Keep "Barbarian 7"-style class suffix in sync
+                                            cls = str(char.get("class") or "")
+                                            cls_parts = cls.rsplit(" ", 1)
+                                            if len(cls_parts) == 2 and cls_parts[1].isdigit():
+                                                update_data["class"] = f"{cls_parts[0]} {update['new_level']}"
+                                            print(f"🎉 LEVEL UP: {update['character_name']} → level {update['new_level']}")
                                         sam_brain.supabase.table("characters").update(update_data).eq("id", char["id"]).execute()
+                                        print(f"⭐ XP: {update['character_name']} +{update.get('xp_gained', '?')} → {update['new_xp']}")
                                         break
 
                             elif update.get("type") == "spell_slot_consume":

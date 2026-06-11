@@ -80,6 +80,33 @@ CR_XP_VALUES = {
     26: 90000, 27: 105000, 28: 120000, 29: 135000, 30: 155000,
 }
 
+# Average HP gained per level by class (5e fixed average, before CON mod)
+HP_AVG_PER_LEVEL = {
+    "barbarian": 7,
+    "fighter": 6, "paladin": 6, "ranger": 6,
+    "rogue": 5, "cleric": 5, "bard": 5, "monk": 5, "druid": 5, "warlock": 5,
+    "wizard": 4, "sorcerer": 4,
+}
+
+
+def get_xp_for_cr(cr) -> int:
+    """XP value for a CR. Accepts int, float, or str ('3', '0.5', '1/2')."""
+    try:
+        if isinstance(cr, str):
+            cr = cr.strip()
+            if "/" in cr:
+                num, den = cr.split("/", 1)
+                value = float(num) / float(den)
+            else:
+                value = float(cr)
+        else:
+            value = float(cr)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0
+    # float(1) == 1 hashes equal to the int key, so .get(1.0) finds CR 1
+    return CR_XP_VALUES.get(value, 0)
+
+
 # [Easy, Medium, Hard, Deadly]
 ENCOUNTER_THRESHOLDS = {
     1: [25, 50, 75, 100],
