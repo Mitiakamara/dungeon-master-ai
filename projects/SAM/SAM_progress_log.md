@@ -901,6 +901,23 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 - **SAM-042 abierto (BUG P2):** natural 20 detectado y narrado pero el damage prompt pidió 1d12+4 en vez de 2d12+4. Causa trazada el mismo día: `_resolve_weapon_attack` duplica los dados en su `prompt_player` y stampea `critical: True` en el pending, pero `_get_roll_prompt` (orchestrator) arma el "→ PROMPT PLAYER:" desde `weapon["damage"]` ignorando el flag — dos prompts contradictorios en los facts y el narrator obedece el último. Sin validación dado-esperado vs tirado (cruza con SAM-039 c), el 1d12 se aceptó en silencio. Fix sugerido en el ticket: una sola fuente de verdad (`damage_dice` duplicado stampeado en el pending).
 - **Observación SIN ticket (vigilar):** posible sobre-otorgamiento de acciones en round 2 post-deadlock. Validar en el próximo combate limpio si el conteo de acciones es estricto; si reaparece, abrir ticket.
 
+### Sesión 11 Jun 2026 (cont.) — SAM-021 fase 2: loot híbrido (instrucción 226)
+
+**Commit `31b29f1`.** Principio: **Python presupuesta, Gemini describe** — el LLM jamás decide valores, cantidades ni stats.
+
+**Paso 0 — shapes confirmados (nada contradijo el diseño):** inventario = `status.inventory` lista de `{"item": str, "qty": int}` (contrato del handler `inventory_remove` y del render del frontend; un campo extra `description` es inocuo); dinero = `status.money` `{cp,sp,ep,gp,pp}` (contrato de `/gold` en admin.py). El parser `<LOOT>` del frontend es client-side legacy (defecto SAM-024) → el loot nuevo viaja por `state_updates` server-side; el parser queda intacto para el fallback. No había handlers `money_award`/`item_award` — se crearon.
+
+**Implementación:**
+- `rules.py`: `LOOT_BUDGET` por bandas de CR (0–1/4: 2d6, 0 ítems · 1/2–1: 3d6, 1 trinket · 2–4: 4d6x2, 1 common · 5–8: 6d6x5, 1 uncommon · 9+: 8d6x10, 2 uncommon) + `get_loot_budget(cr)` que rolea el oro con `DiceRoller` y tolera CR fraccionario string (CR desconocido → banda 0: algo de oro, sin ítems). `get_xp_for_cr` refactorizado sobre `_normalize_cr` compartido.
+- **Killer trazable:** `update_npc_hp(name, hp, killer=...)` stampea `_killed_by` en el snapshot de `defeated_this_request`; threaded desde los 4 kill sites (weapon/spell/sneak damage con el character, `resolve_npc_turn` con el PC delegado atacante). Fallback: primer PC del party.
+- `orchestrator._award_loot`: oro dividido ceil entre el party (`money_award` por PC) + ítems al killer (`item_award`, shape `{item, qty: 1, description}`). `_generate_loot_items`: llamada LIGERA al LLM del interpreter pidiendo EXACTAMENTE N ítems de la rareza presupuestada en JSON; validación Python estricta — malformado o excepción → fallback "{Monster} Trophy", overflow → truncado a los slots; nunca crashea, nunca excede el presupuesto. Todo precalculado ANTES de narrar (anti-timing, patrón fase 1); facts "LOOT:"/"LOOT ITEM:".
+- `server.py`: handlers `money_award` (suma a `status.money.gp`, log `💰`) e `item_award` (append a `status.inventory`, log `🎁`).
+- `narrator.py` RULE 16: narrar el botín al final, después del XP, números exactos; PROHIBIDO inventar loot adicional.
+
+**Verificación local (FakeLLM, 6 escenarios):** bandas de `get_loot_budget` con CR int/str/'1/4'/None · CR 1/4 → solo oro ceil a ambos PCs, facts después del XP · CR 2 → ítem al killer (Björn, no el primer PC por default) con shape correcto · JSON malformado → "Wolf Trophy" + warning, sin crash · 5 ítems devueltos con 1 slot → truncado a 1 · party de 1 → oro completo · smoke `.format()` de los 3 prompts. Todos pasan.
+
+**Pendiente post-deploy:** `/reset` → matar lobo (CR 1/4) → logs `💰` para ambos, SAM narra el oro después del XP, `status.money.gp` en Supabase. Para validar ítems: combate contra CR 1+ ("lanzame un oso").
+
 ---
 
 ## 4. Estado Actual — Abril 2026
