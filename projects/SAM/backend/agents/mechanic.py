@@ -124,6 +124,7 @@ class MechanicEngine:
             "attacker": attacker["name"],
             "weapon": weapon["name"],
             "target": target["name"],
+            "target_ac": target.get("ac", 10),
             "needs_player_roll": True,
             "prompt_player": f"Haz tu tirada de ataque con {weapon['name']} (bono {weapon.get('bonus', '+0')})."
         }
@@ -796,6 +797,31 @@ class MechanicEngine:
                     f"{r['target']} {save['ability']} save: "
                     f"rolled {save['roll']}+{save['modifier']}={save['total']} "
                     f"vs DC {save['dc']} → {'SUCCESS' if save['success'] else 'FAIL'}."
+                )
+                if r.get("prompt_player"):
+                    lines.append(f"→ {r['prompt_player']}")
+
+            # SAM-041: declarations that arm a pending MUST render facts —
+            # empty facts drop the request into the roleplay template, which
+            # forbids combat mechanics (SAM-033) and denies the action.
+            elif action == "spell" and r.get("needs_player_roll"):
+                lines.append(
+                    f"{r['caster']} casts {r['spell']} at {r['target']}. Awaiting spell attack roll."
+                )
+                if r.get("prompt_player"):
+                    lines.append(f"→ {r['prompt_player']}")
+
+            elif action == "attack":
+                lines.append(
+                    f"{r['attacker']} declares an attack with {r['weapon']} against {r['target']} "
+                    f"(AC {r.get('target_ac', '?')}). Awaiting attack roll."
+                )
+                if r.get("prompt_player"):
+                    lines.append(f"→ {r['prompt_player']}")
+
+            elif action == "skill_check":
+                lines.append(
+                    f"{r['character']} attempts a {r['skill']} check. Awaiting d20 roll."
                 )
                 if r.get("prompt_player"):
                     lines.append(f"→ {r['prompt_player']}")

@@ -160,40 +160,54 @@ class SAMOrchestrator:
                     )
 
         elif intent["type"] == "spell":
-            self._handle_spell(engine, intent, character_context, combat)
-            mechanical_facts = engine.get_results_summary()
-            if engine.pending_player_roll:
-                prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
+            if self._out_of_actions(combat, sender_name):
+                # SAM-041: no actions left — don't arm a silent pending
+                mechanical_facts = (
+                    f"{sender_name} has no actions remaining this turn. "
+                    f"Suggest they end their turn (e.g. 'paso')."
+                )
+            else:
+                self._handle_spell(engine, intent, character_context, combat)
+                mechanical_facts = engine.get_results_summary()
+                if engine.pending_player_roll:
+                    prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
 
-            # Consume a spell slot (cantrips = level 0 = free)
-            try:
-                spell_level = int(intent.get("spell_level", 0) or 0)
-            except (TypeError, ValueError):
-                spell_level = 0
+                # Consume a spell slot (cantrips = level 0 = free)
+                try:
+                    spell_level = int(intent.get("spell_level", 0) or 0)
+                except (TypeError, ValueError):
+                    spell_level = 0
 
-            if spell_level > 0:
-                slots = (character_context.get("status") or {}).get("spell_slots") or {}
-                level_key = str(spell_level)
-                slot = slots.get(level_key) or {}
-                total = int(slot.get("total", 0) or 0)
-                used = int(slot.get("used", 0) or 0)
+                if spell_level > 0:
+                    slots = (character_context.get("status") or {}).get("spell_slots") or {}
+                    level_key = str(spell_level)
+                    slot = slots.get(level_key) or {}
+                    total = int(slot.get("total", 0) or 0)
+                    used = int(slot.get("used", 0) or 0)
 
-                if total <= 0 or used >= total:
-                    mechanical_facts += f"\nWARNING: No spell slots available for level {spell_level}. The spell fizzles."
-                else:
-                    new_used = used + 1
-                    mechanical_facts += f"\nSpell slot consumed: Level {spell_level} ({new_used}/{total})"
-                    engine.state_updates.append({
-                        "type": "spell_slot_consume",
-                        "character_name": sender_name,
-                        "level": spell_level,
-                    })
+                    if total <= 0 or used >= total:
+                        mechanical_facts += f"\nWARNING: No spell slots available for level {spell_level}. The spell fizzles."
+                    else:
+                        new_used = used + 1
+                        mechanical_facts += f"\nSpell slot consumed: Level {spell_level} ({new_used}/{total})"
+                        engine.state_updates.append({
+                            "type": "spell_slot_consume",
+                            "character_name": sender_name,
+                            "level": spell_level,
+                        })
 
         elif intent["type"] == "attack":
-            self._handle_attack(engine, intent, character_context, combat)
-            mechanical_facts = engine.get_results_summary()
-            if engine.pending_player_roll:
-                prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
+            if self._out_of_actions(combat, sender_name):
+                # SAM-041: no actions left — don't arm a silent pending
+                mechanical_facts = (
+                    f"{sender_name} has no actions remaining this turn. "
+                    f"Suggest they end their turn (e.g. 'paso')."
+                )
+            else:
+                self._handle_attack(engine, intent, character_context, combat)
+                mechanical_facts = engine.get_results_summary()
+                if engine.pending_player_roll:
+                    prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
 
         elif intent["type"] == "skill_check":
             skill = intent.get("skill", "Perception")
@@ -330,6 +344,16 @@ class SAMOrchestrator:
                 and not engine.state_updates and not engine.results
                 and not engine.pending_player_roll):
             print(f"⚠️ Dice roll processed but no state_updates generated — damage may be narrative-only")
+
+        # SAM-041 safety net: a declaration armed a pending without rendering
+        # facts. It must NEVER fall to the roleplay template — that one forbids
+        # combat mechanics (SAM-033) and would deny the action instead of
+        # asking for the roll.
+        if not mechanical_facts and engine.pending_player_roll:
+            print(f"⚠️ Pending roll without facts (intent={intent['type']}) — synthesizing")
+            mechanical_facts = f"{sender_name} declared an action. Awaiting dice roll."
+            if not prompt_player_roll:
+                prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
 
         # ─── STEP 3: RAG lookup if needed ───
         rag_context = ""
@@ -800,6 +824,17 @@ class SAMOrchestrator:
         except Exception as e:
             print(f"⚠️ Monster lookup failed for '{target_name}': {e}")
             return fallback
+
+    def _out_of_actions(self, combat: CombatState, sender_name: str) -> bool:
+        """
+        True when it's the sender's combat turn but they have no actions left.
+        Used to refuse new declarations instead of arming silent pendings (SAM-041).
+        """
+        if not combat.active:
+            return False
+        current = combat.get_current_turn()
+        return bool(current and current.get("name") == sender_name
+                    and combat.actions_remaining <= 0)
 
     def _get_sneak_dice(self, character_context: dict) -> Optional[str]:
         """
