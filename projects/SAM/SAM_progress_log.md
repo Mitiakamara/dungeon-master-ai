@@ -920,6 +920,23 @@ c215cc7  fix(SAM-001): hoist all DM_ROLL chips to the top when 2+ are present
 
 ---
 
+### Sesión 11 Jun 2026 (cont.) — Playtest fase 2: validación parcial del loot + diagnóstico del oro perdido (instrucción 229)
+
+**Parte A — documentación post-playtest 2026-06-11:**
+- **SAM-021 fase 2 — validación PARCIAL.** Logs en orden correcto: muerte → XP → `💰 Loot: Björn +17 gp` / `💰 Loot: Vex +17 gp` → `🎁 ... Smooth River Stone` al killer (Björn, golpe final correcto). Narración completa y ordenada. El ítem llegó al inventario del frontend. **PERO el oro NO aparece en el wallet de Björn.** Fase 2 NO se cierra hasta resolver SAM-044.
+- **Observación "sobre-otorgamiento de acciones en round 2": CERRADA sin ticket.** En el combate limpio del 2026-06-11 el conteo fue estricto (round 1: miss+hit = 2 acciones; round 2: hit+hit = 2, el turno pasó bien). Era artefacto del combate colgado pre-SAM-041.
+- **SAM-043 abierto (P3):** monster lookup no matchea español — "lobo" no encontró "Wolf" en el compendio → fallback genérico (HP 50, AC 15, CR 3), inflando XP (350 en vez de ~50) y loot. Hipótesis: el embedding cross-idioma no cruzó; revisar threshold 0.5 o normalizar el target al inglés antes del lookup.
+- **SAM-039 + SAM-042 subidos a P1.** Tercera evidencia: tras nat 1 con Greataxe, el reintento asignó "Unarmed Strike +7", SAM pidió "tira 5 de daño", el jugador tiró 1d12 y se aceptó sin validación (7 aplicados). El par es el bug más visible para un jugador nuevo (arma fallback incorrecta + sin validación dado-esperado/tirado).
+
+**Parte B — diagnóstico del oro perdido (CONFIRMADO, sin implementar):**
+- **Síntoma:** logs prueban que `money_award` e `item_award` corrieron, pero el wallet de Björn muestra 0. Query a prod: Björn `money.gp=0, xp=0` (con Smooth River Stone en inventory); Vex `money.gp=17, xp=0`.
+- **Causa raíz — read-modify-write pisado (SAM-044, P1).** Cada handler de `state_update` en `server.py` lee `char.get("status")` del `party_characters` en memoria (snapshot del inicio del request, nunca refrescado entre writes), lo modifica y escribe el `status` entero → el último write para un personaje pisa a los anteriores. Björn: `item_award` (último) pisó `money_award` + `xp_update` → ítem presente, oro y XP perdidos. Vex: `money_award` pisó `xp_update` → oro presente, XP perdido. **Doble confirmación vía XP=0 en ambos**, descartando `/reset` (Vex conserva 17 gp).
+- **Alcance:** no es un bug del loot — es de la capa de persistencia. Cualquier combinación de updates al mismo personaje en un request (XP+oro+ítem+HP) está en riesgo.
+- **Fix propuesto (pendiente de aprobación, NO implementado):** consolidar todos los cambios de `status` por personaje en memoria y hacer UN solo read-modify-write por personaje por request (atómico). Alternativa menor: re-leer status fresco antes de cada write. Preferencia: consolidación.
+- **Lección:** múltiples writes parciales al mismo registro desde el mismo snapshot en memoria es last-write-wins encubierto. La pista diagnóstica fue que `item` (append) sobrevivió y `money`/`xp` (overwrite de campo) no — el ítem ganó por ser el último handler, no por ser "más robusto".
+
+---
+
 ## 4. Estado Actual — Abril 2026
 
 ### Lo que funciona

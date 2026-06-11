@@ -54,10 +54,12 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-036 | Daño de PC delegado a NPC se emite como `player_hp` → nunca baja el HP del NPC | BUG | P0 | DONE |
 | SAM-037 | Combate inactivo persiste `{"active": False}` descartando `initiative_order` → NPC revive a HP completo | BUG | P1 | DONE |
 | SAM-038 | Instrumentación: logging de HP de NPC, transiciones de combate y descarte de estado | CHORE | P1 | DONE |
-| SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P2 | OPEN |
+| SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P1 | OPEN |
 | SAM-040 | Estado de delegación invisible para el jugador | UX | P2 | OPEN |
 | SAM-041 | Declaraciones de acción producen facts vacíos → narrator de roleplay niega el ataque (deadlock) | BUG | P0 | DONE |
-| SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P2 | OPEN |
+| SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P1 | OPEN |
+| SAM-043 | Monster lookup no matchea nombres en español ("lobo" ≠ "Wolf") → fallback genérico infla XP/loot | BUG | P3 | OPEN |
+| SAM-044 | `state_updates` múltiples al mismo personaje se pisan entre sí (read-modify-write no consolidado en server.py) | BUG | P1 | OPEN |
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -173,7 +175,7 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 
 ### SAM-042 — Crítico no duplica dados de daño
 
-**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (subido de P2 → P1 en instrucción 229)
 
 Playtest 2026-06-11: natural 20 detectado y narrado, pero el damage prompt y el cálculo usaron los dados normales (1d12+4 en vez de 2d12+4).
 
@@ -181,19 +183,23 @@ Playtest 2026-06-11: natural 20 detectado y narrado, pero el damage prompt y el 
 
 **Fix sugerido:** una sola fuente de verdad — stampear `damage_dice` (ya duplicado) en el pending de `weapon_damage` en `_resolve_weapon_attack`, y que `_get_roll_prompt` lo lea con fallback a `weapon["damage"]`. Opcional: validación dado-esperado vs tirado (compartida con SAM-039).
 
+**Evidencia adicional (playtest 2026-06-11, instrucción 229) — sube a P1:** en el mismo incidente del nat 1 de SAM-039, SAM pidió "tira 5 de daño" y aceptó un 1d12 sin validación (7 aplicados). La falta de validación dado-esperado vs dado-tirado (hipótesis compartida con SAM-039 c) es co-causa visible. El par SAM-039 + SAM-042 sube de prioridad funcional.
+
 **Criterio de done:** nat 20 → el prompt pide los dados duplicados (2d12+4) y el daño aplicado refleja la tirada duplicada.
 
 ---
 
 ### SAM-039 — Weapon mismatch en el flow de ataque
 
-**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN (subido de P2 → P1 en instrucción 229)
 
 En el playtest 2026-06-11, Björn declaró "Greataxe" en el chat. El intent del interpreter registró `{"weapon": "Handaxe"}`, SAM pidió "1d6+4" (daño de Handaxe) en vez de 1d12+4, y al tirar el d12 el narrator improvisó "parece que cambiar de arma era la clave" cuando el jugador nunca cambió de arma. Además el d12 tirado contra un prompt de 1d6 se aceptó sin validación.
 
 **Hipótesis a investigar:** (a) el interpreter resuelve mal el arma declarada en mensajes coloquiales ("uso me hacha", "otra vez 🪓") y elige otra del attack list; (b) `_setup_combat_freeform_pending` o `_find_weapon` hace fallback a `attacks[0]` cuando el match falla; (c) no hay validación dice-esperado vs dice-tirado en `process_player_roll`.
 
 **Evidencia adicional (diagnóstico 227, estado vivo en BD):** el pending persistido del combate colgado tenía `weapon: Handaxe (+7, 1d6+4)` cuando el playtest declaró Greataxe. El bono +7 coincidió con el de Greataxe por casualidad — cuando difiera, el to-hit y el daño serán incorrectos en silencio.
+
+**Evidencia adicional (playtest 2026-06-11, instrucción 229) — sube a P1:** tras un nat 1 con Greataxe, el reintento de ataque asignó `Unarmed Strike +7` (fallback a `attacks[0]`/unarmed cuando el match falla — hipótesis b), SAM pidió "tira 5 de daño", el jugador tiró 1d12 y se aceptó sin validación (7 de daño aplicado — hipótesis c). El par **SAM-039 + SAM-042** es el bug más visible que le queda a un jugador nuevo.
 
 **Archivos sospechosos:** `interpreter.py` (prompt de attack), `orchestrator.py` (`_find_weapon`, `_setup_combat_freeform_pending`), `mechanic.py` (`process_player_roll`).
 
@@ -241,13 +247,15 @@ Decisión revisada por el director tras playtests: el auto-roll de iniciativa se
 
 ### SAM-021 — Orchestrator no implementa loot/XP/level-up/imágenes
 
-**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** IN_PROGRESS — **fase 1/3 DONE** (XP/level-up, commit `d7aa6fb`, instrucción 225, validada en prod) · **fase 2/3 DONE** (loot híbrido, commit `31b29f1`, instrucción 226). Pendiente: fase 3 imágenes (SAM-009).
+**Tipo:** REFACTOR/BUG · **Prio:** P1 · **Estado:** IN_PROGRESS — **fase 1/3 DONE** (XP/level-up, commit `d7aa6fb`, instrucción 225, validada en prod) · **fase 2/3 código DONE** (loot híbrido, commit `31b29f1`, instrucción 226) — **validación PARCIAL, BLOCKED por SAM-044** (el oro no llega al wallet). Pendiente: fase 3 imágenes (SAM-009).
 
 Hallazgo principal de la auditoría SAM-020. El pipeline nuevo no portaba features del legacy: `mechanic.award_xp` existía pero nunca se llamaba; `give_loot` solo está en tools legacy; el narrator tiene prohibido emitir `<LOOT>/<XP_GAIN>/<EVENT>/<IMAGE>` (`narrator.py:39`). Esas features solo viven en `ai.py`, alcanzado solo por excepción. **Subsume SAM-009** (servicio de imágenes).
 
 **Fase 1 implementada (XP/level-up):** muerte de NPC → `combat.defeated_this_request` (snapshot en `update_npc_hp`, transiente) → el orchestrator otorga XP ANTES de narrar (`award_xp` arreglado: lee `status.xp`, divide con ceil, calcula HP de level-up por clase+CON) → server.py solo persiste valores precalculados (XP a `status.xp`, `level`, HP, sufijo del class string). Logs `⭐ XP` / `🎉 LEVEL UP`. `xp_value` estampado en combatants desde `_lookup_monster` con fallback por CR (`get_xp_for_cr` acepta '1/2'). **Validada en prod** (playtest 2026-06-11: logs, narración y `status.xp=350` en ambos PCs).
 
-**Fase 2 implementada (loot híbrido — Python presupuesta, Gemini describe):** mismo hook de `defeated_this_request`. `get_loot_budget(cr)` (rules.py) rolea el oro por banda de CR (2d6 → 8d6x10) y fija slots/rareza de ítems (trinket/common/uncommon — nunca armas/stats). El LLM liviano solo NOMBRA los ítems (`LOOT_ITEM_PROMPT`, JSON validado por Python: malformado → fallback "{Monster} Trophy", overflow → truncado a los slots). Oro al party (ceil, `money_award` → `status.money.gp`); ítems al PC del golpe final (`killer` threaded por `update_npc_hp` desde los 4 kill sites, `item_award` → `status.inventory` shape `{item, qty, description}`). Persistencia server-side (evita el defecto client-side de SAM-024); el parser `<LOOT>` legacy queda para el fallback. Facts "LOOT:"/"LOOT ITEM:" precalculados antes de narrar; RULE 16 prohíbe inventar loot extra. Verificación pendiente de playtest: logs 💰/🎁, narración y persistencia.
+**Fase 2 implementada (loot híbrido — Python presupuesta, Gemini describe):** mismo hook de `defeated_this_request`. `get_loot_budget(cr)` (rules.py) rolea el oro por banda de CR (2d6 → 8d6x10) y fija slots/rareza de ítems (trinket/common/uncommon — nunca armas/stats). El LLM liviano solo NOMBRA los ítems (`LOOT_ITEM_PROMPT`, JSON validado por Python: malformado → fallback "{Monster} Trophy", overflow → truncado a los slots). Oro al party (ceil, `money_award` → `status.money.gp`); ítems al PC del golpe final (`killer` threaded por `update_npc_hp` desde los 4 kill sites, `item_award` → `status.inventory` shape `{item, qty, description}`). Persistencia server-side (evita el defecto client-side de SAM-024); el parser `<LOOT>` legacy queda para el fallback. Facts "LOOT:"/"LOOT ITEM:" precalculados antes de narrar; RULE 16 prohíbe inventar loot extra.
+
+**Validación PARCIAL (playtest 2026-06-11, instrucción 229):** logs `💰 Loot: Björn +17 gp` / `💰 Loot: Vex +17 gp` y `🎁 ... Smooth River Stone` al killer (Björn, golpe final correcto); narración completa en orden muerte → XP → oro → ítem. El ítem **sí** llegó al inventario del frontend. **PERO el oro NO aparece en el wallet de Björn.** Query a prod: Björn `money.gp=0, xp=0` (con el Smooth River Stone en inventory); Vex `money.gp=17, xp=0`. → confirma **SAM-044** (los `state_updates` al mismo personaje se pisan entre sí: para Björn, `item_award` pisó el write de `money_award` y de `xp_update`; doble confirmación vía `xp=0` en ambos, sin que hubiera `/reset` — Vex conserva 17 gp). **No cerrar la fase 2 hasta resolver SAM-044.**
 
 **Criterio de done (fases restantes):** encontrar tesoro persiste loot en inventario (fase 2); SAM puede generar imágenes (fase 3) — todo sin depender del fallback legacy. Detalle en `SAM_audit_2026-06-05.md` §1, §5.
 
@@ -363,7 +371,35 @@ El legacy escribe `settings.combat` con shape distinto al de `CombatState.to_dic
 
 ---
 
+### SAM-043 — Monster lookup no matchea nombres en español
+
+**Tipo:** BUG · **Prio:** P3 · **Estado:** OPEN
+
+Playtest 2026-06-11: el target "lobo" no encontró "Wolf" en el compendio → `_lookup_monster` cayó al fallback genérico (HP 50, AC 15, CR 3). Eso infló el XP (350 en vez de ~50 de un Wolf CR 1/4) y el loot (presupuesto de CR 3 — un ítem que un CR 1/4 no daría).
+
+**Hipótesis:** el embedding semántico (`match_compendium`, threshold 0.5) debería cruzar idiomas pero no lo hizo para "lobo"→"Wolf". Verificar el threshold, o traducir/normalizar el target al inglés antes del lookup.
+
+**Archivos:** `backend/agents/orchestrator.py` (`_lookup_monster`).
+
+**Criterio de done:** "lobo" (y nombres comunes en español) resuelven al monstruo correcto del compendio; XP y loot reflejan el CR real, no el fallback.
+
 ---
+
+### SAM-044 — `state_updates` múltiples al mismo personaje se pisan entre sí
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+**Confirmado (diagnóstico instrucción 229, Parte B).** Cada handler de `state_update` en `server.py` (`player_hp`, `xp_update`, `money_award`, `item_award`, `spell_slot_consume`, `inventory_remove`) hace su propio read-modify-write: lee `char.get("status")` del `party_characters` en memoria (fetch del inicio del request, `server.py:247`), lo modifica y escribe el `status` ENTERO. Pero `party_characters` NUNCA se refresca entre writes → cada handler parte del status original → **el último write para un personaje pisa todos los anteriores**.
+
+**Evidencia (playtest 2026-06-11):** en un solo request (muerte del lobo), Björn recibió `xp_update` + `money_award` (+17 gp) + `item_award` (Smooth River Stone). En BD quedó `money.gp=0, xp=0` con el ítem SÍ presente → el `item_award` (último) pisó al `money_award` y al `xp_update`. Vex (solo `xp_update` + `money_award`): `money.gp=17, xp=0` → el `money_award` pisó al `xp_update`. Sin `/reset` de por medio (Vex conserva 17 gp). Doble confirmación vía XP perdido en ambos.
+
+**Alcance:** NO es un bug del loot — es de la **capa de persistencia**. Cualquier combinación de updates al mismo personaje en un request (XP + oro + ítem + HP) está en riesgo. Bloquea el cierre de SAM-021 fase 2.
+
+**Archivos:** `backend/server.py` (loop de `state_updates`, `:291` en adelante).
+
+**Fix propuesto (NO implementado — pendiente de aprobación):** consolidar todos los cambios de `status` de un mismo personaje en memoria y hacer UN solo read-modify-write por personaje por request (atómico, menos round-trips). Alternativa menor: re-leer status fresco dentro de cada handler justo antes de su write. Preferencia: lo primero.
+
+**Criterio de done:** un request con XP + oro + ítem + HP al mismo personaje persiste TODOS los cambios; query post-combate muestra los cuatro aplicados.
 
 ---
 
