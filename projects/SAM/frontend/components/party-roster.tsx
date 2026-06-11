@@ -12,6 +12,7 @@ interface PartyMember {
     level: number
     image_url?: string
     user_id: string
+    controlled_by?: string | null  // SAM-040: GM/SAM user_id if delegated, else null
     status?: {
         hp?: number
         hp_current?: number
@@ -82,7 +83,17 @@ export function PartyRoster({ campaignId, currentUserId, isOnline }: { campaignI
                                     <AvatarImage src={member.image_url} />
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-xs font-medium truncate">{member.name}</div>
+                                    <div className="text-xs font-medium truncate flex items-center gap-1">
+                                        <span className="truncate">{member.name}</span>
+                                        {member.controlled_by && (
+                                            <span
+                                                title="Controlado por S.A.M. (delegado)"
+                                                className="shrink-0 text-[9px] leading-none px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-normal"
+                                            >
+                                                🤖 SAM
+                                            </span>
+                                        )}
+                                    </div>
                                     <div className="text-[10px] text-muted-foreground truncate">
                                         {member.class} Lvl {member.level}
                                     </div>

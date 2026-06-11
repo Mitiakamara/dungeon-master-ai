@@ -50,7 +50,8 @@ class CharacterResponse(CharacterBase):
     user_id: str
     campaign_id: str
     status: Dict[str, Any] = {}
-    
+    controlled_by: Optional[str] = None  # SAM-040: GM/SAM user_id if delegated, else null
+
     class Config:
         populate_by_name = True
 

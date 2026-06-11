@@ -55,7 +55,7 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-037 | Combate inactivo persiste `{"active": False}` descartando `initiative_order` → NPC revive a HP completo | BUG | P1 | DONE |
 | SAM-038 | Instrumentación: logging de HP de NPC, transiciones de combate y descarte de estado | CHORE | P1 | DONE |
 | SAM-039 | Weapon mismatch en el flow de ataque — pending toma un arma distinta a la declarada | BUG | P1 | DONE |
-| SAM-040 | Estado de delegación invisible para el jugador | UX | P2 | OPEN |
+| SAM-040 | Estado de delegación invisible para el jugador | UX | P2 | DONE |
 | SAM-041 | Declaraciones de acción producen facts vacíos → narrator de roleplay niega el ataque (deadlock) | BUG | P0 | DONE |
 | SAM-042 | Crítico no duplica dados de daño — `_get_roll_prompt` ignora el flag `critical` del pending | BUG | P1 | DONE |
 | SAM-043 | Monster lookup no matchea nombres en español ("lobo" ≠ "Wolf") → fallback genérico infla XP/loot | BUG | P3 | OPEN |
@@ -183,15 +183,13 @@ Quedan `console.log` de debugging especialmente alrededor del presence tracking 
 
 ### SAM-040 — Estado de delegación invisible para el jugador
 
-**Tipo:** UX · **Prio:** P2 · **Estado:** OPEN
+**Tipo:** UX · **Prio:** P2 · **Estado:** DONE · Instrucción 234 (badge en roster)
 
 La delegación (`/delegate`) persiste en DB (`controlled_by`) y sobrevive a `/reset`. En el playtest 2026-06-11 Vex actuó como delegada de una sesión anterior sin que el jugador lo supiera ni pudiera verlo en ningún lado.
 
-**Propuesta (a decidir al implementar):** (a) badge "🤖 SAM" junto al personaje delegado en el roster del party; (b) el mensaje de inicio de combate menciona qué PCs están delegados; (c) opcional: `/reset` reporta las delegaciones activas al final de su respuesta.
+**Resuelto (instrucción 234) — opción (a), badge en el roster:** `party-roster.tsx` muestra un chip "🤖 SAM" (con `title="Controlado por S.A.M. (delegado)"`) junto a cada personaje con `controlled_by` truthy. **Hallazgo de verificación:** el endpoint `/api/characters/campaign/{id}` devolvía `List[CharacterResponse]` que **stripeaba `controlled_by`** (no estaba declarado en el modelo) → se agregó `controlled_by: Optional[str] = None` a `CharacterResponse` (`characters.py`), por lo que SAM-040 necesitó un cambio mínimo de backend además del frontend (dos deploys: Render + Vercel, un commit). **Sync:** el roster hace un fetch al montar — suficiente porque la delegación solo cambia con `/delegate`/`/undelegate` (refresh tras el comando); live updates quedan para SAM-052 (roster Realtime). **Scope:** el badge cubre a los OTROS PCs del roster (el caso del playtest: ver que Vex está delegada); el propio PC del jugador se filtra del roster — su badge en el mini-sheet propio quedaría para una iteración aparte. Las opciones (b) facts de inicio de combate y (c) `/reset` report no se implementaron (el badge cubre el criterio).
 
-**Archivos:** frontend (party roster), `admin.py` (`/reset` response), `orchestrator.py` (`_handle_start_combat` facts).
-
-**Criterio de done:** un jugador puede saber en <5 segundos qué personajes están bajo control de SAM.
+**Criterio de done:** ✅ un jugador ve en <5 segundos qué personajes del party controla SAM.
 
 ---
 
