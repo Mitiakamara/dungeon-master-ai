@@ -42,6 +42,38 @@ For spell intents, "spell_level" indicates the slot level consumed:
 3. Skill check:
 {{"type": "skill_check", "skill": "Perception", "description": "looking for traps"}}
 
+"skill" MUST be one of these EXACT English names — never Spanish, never an invented skill:
+Acrobatics, Animal Handling, Arcana, Athletics, Deception, History, Insight, Intimidation,
+Investigation, Medicine, Nature, Perception, Performance, Persuasion, Religion,
+Sleight of Hand, Stealth, Survival
+
+Spanish → English mapping (the player almost always writes Spanish):
+- percepción/percepcion → Perception      - sigilo → Stealth
+- historia → History                      - persuasión/persuasion → Persuasion
+- intimidación/intimidacion → Intimidation - investigación/investigacion → Investigation
+- engaño/engano → Deception               - atletismo → Athletics
+- acrobacias → Acrobatics                 - perspicacia/intuición → Insight
+- naturaleza → Nature                     - religión/religion → Religion
+- medicina → Medicine                     - supervivencia → Survival
+- interpretación/actuación → Performance  - juego de manos → Sleight of Hand
+- trato con animales → Animal Handling     - conocimiento arcano/arcano → Arcana
+
+Emit "skill_check" whenever the player declares, asks for, or announces an ability check —
+statements AND questions both count. Real examples that MUST produce skill_check:
+- "hago percepción" / "tiro sigilo" / "I roll perception"
+- "quiero lanzar historia" / "quiero lanzar historia a ver si recuerdo algo"
+- "podemos lanzar sigilo para cubrir nuestro rastro?" → Stealth
+- "quiero investigar la sala a ver si hay trampas" → Investigation
+- "puedo hacer una tirada de persuasión?" / "puedo tirar intimidación?"
+- "reviso el cuerpo buscando algo útil" → Investigation
+- "intento convencerlo" → Persuasion      - "intento amenazarlo" → Intimidation
+- "busco huellas" → Survival              - "me escondo" → Stealth
+- "trepo el muro" → Athletics             - "le miento" → Deception
+
+Note: "lanzar" here means "to roll", NOT to cast a spell — "lanzar sigilo" is a Stealth
+check, not a spell. Only treat "lanzar" as a spell when it names a spell from the
+character's spell list above.
+
 4. Movement:
 {{"type": "movement", "description": "I move behind the pillar"}}
 
@@ -103,6 +135,7 @@ RULES:
 - If in_combat=True and the player attacks, use "attack" (combat already active).
 - If in_combat=True and the player passes or declines to act, use "end_turn" (not "free_action").
 - If the player mentions "sneak attack" with a weapon attack, still use type "attack" — the system applies sneak attack automatically for Rogues. Do NOT use type "ability" for sneak attack.
+- If the message declares or requests an ability check (see type 3), ALWAYS use "skill_check" — never "roleplay", "free_action" or "movement". This holds in AND out of combat, and for questions ("¿puedo tirar sigilo?") as much as for statements.
 - If you can't determine the action type, use "roleplay".
 - NEVER add fields that aren't in the templates above.
 - ALWAYS respond with valid JSON only.

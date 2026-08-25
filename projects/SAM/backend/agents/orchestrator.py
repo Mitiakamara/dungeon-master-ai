@@ -356,13 +356,15 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             if reward_lines:
                 mechanical_facts = (mechanical_facts + "\n\n" + "\n".join(reward_lines)).strip()
 
-        # Warning for ORPHAN dice rolls: nothing resolved (no engine results),
-        # nothing pending, no state updates. Resolved rolls against NPCs update
-        # combat state instead of state_updates, so they must not warn.
+        # A dice_roll that produced NOTHING at all. Since SAM-053 the truly
+        # orphan roll (no pending) renders its own ORPHAN ROLL fact, so reaching
+        # here means the roll was swallowed silently — in practice the SAM-049
+        # ownership guard ignoring someone else's die. That case still has no
+        # fact of its own (SAM-063).
         if (intent["type"] == "dice_roll" and not out_of_turn_facts
                 and not engine.state_updates and not engine.results
                 and not engine.pending_player_roll):
-            print(f"⚠️ Dice roll processed but no state_updates generated — damage may be narrative-only")
+            print(f"⚠️ Dice roll swallowed with no facts — likely a SAM-049 ownership reject")
 
         # SAM-041 safety net: a declaration armed a pending without rendering
         # facts. It must NEVER fall to the roleplay template — that one forbids

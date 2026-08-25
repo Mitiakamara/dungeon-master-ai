@@ -68,6 +68,21 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-050 | Doble envío: INSERT de mensaje pre-lock + lock sin timeout + retry del cliente a 30s | BUG | P2 | OPEN |
 | SAM-051 | Atribución por primer personaje del usuario (`limit 1`) — `/api/chat` sin `character_id` explícito | REFACTOR | P2 | OPEN |
 | SAM-052 | Roster del party con HP congelado (fetch único, sin Realtime) + subscripciones sin filtro de campaña | UX | P2 | OPEN |
+| SAM-053 | Tirada sin pending se resuelve en el LLM: `freeform_roll` → facts vacíos → `narrate_roleplay` | BUG | P0 | DONE |
+| SAM-054 | Regla 15 del narrator licencia al LLM a calcular totales de skill check | BUG | P0 | DONE |
+| SAM-055 | `attacks[0]` como default silencioso en 3 sitios; sin marca de "no resuelto" ni log en el freeform | BUG | P1 | OPEN |
+| SAM-056 | `_handle_start_combat` descarta `intent["weapon"]` | BUG | P1 | OPEN |
+| SAM-057 | Pending pegajoso: roleplay no reemplaza, `end_combat` no limpia, sin TTL/round stamp | BUG | P1 | OPEN |
+| SAM-058 | El fact de INVALID DICE no ofrece salida al jugador | FEAT | P1 | OPEN |
+| SAM-059 | Ventaja/desventaja toma `rolls[0]` en vez de max/min | BUG | P1 | DONE |
+| SAM-060 | Interpreter sin glosario ES→EN de armas ("mandoble" → Greataxe) | BUG | P1 | OPEN |
+| SAM-061 | Sin soporte de N instancias del mismo NPC (nombres únicos, targeting, `resolve_npc_turn`) | FEAT | P2 | OPEN |
+| SAM-062 | Healing sin validación de dados ni gate de inventario | BUG | P2 | OPEN |
+| SAM-063 | Observabilidad: `metadata.engine`, log del freeform pending, fact visible para el reject de SAM-049 | CHORE | P2 | OPEN |
+| SAM-064 | El narrator puebla escenas con enemigos que no existen en combat state | BUG | P3 | OPEN |
+| SAM-065 | Trackeo real de ventaja/desventaja (hoy se asume ventaja ante 2d20) | FEAT | P2 | OPEN |
+
+> SAM-053–064 salieron del diagnóstico post-playtest multijugador (instrucción 235). Detalle en `SAM_progress_log.md`.
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -389,6 +404,100 @@ Auditoría SAM-047 §4/§9. El party roster hace UN solo fetch al montar (`party
 
 ---
 
+### SAM-055 — `attacks[0]` como default silencioso en tres sitios
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+Diagnóstico 235, Áreas 2 y 3. Tres caminos arman un pending de ataque con `attacks[0]` cuando no pueden resolver el arma: `_handle_attack` cuando `_find_weapon` falla (`orchestrator.py:975`, con warning), y las dos ramas de `_setup_combat_freeform_pending` (`orchestrator.py:534-546` d20, `547-570` no-d20, **ambas sin log**). Como `attacks[0]` de Björn es Unarmed Strike y el de Vex es Fire Bolt, un fallo de resolución se ve como una acción plausible. `_effective_damage` (`mechanic.py:881-899`) no distingue "el arma ES Unarmed" de "no pude resolver" — no existe marca de fallo en ningún lado, y normaliza el daño fijo `"5"` a `1d4+STR`, cerrando el enmascaramiento.
+
+**Criterio de done:** ningún sitio usa `attacks[0]` como fallback; se reusa la última arma usada por ese personaje y, si no hay, se pregunta. Todo fallback deja log.
+
+---
+
+### SAM-056 — `_handle_start_combat` descarta `intent["weapon"]`
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+Diagnóstico 235, Área 2. `_handle_start_combat` (`orchestrator.py:588-697`) lee solo `intent["target"]` (línea 595) y tira el arma declarada. El jugador escribe "Ataco al primer gigante con mi great sword", arranca el combate y no queda pending — su siguiente d20 cae en el freeform y sale Unarmed Strike (13-ago 15:33→15:34).
+
+**Criterio de done:** `start_combat` arma el pending de ataque con el arma declarada, o deja constancia de por qué no puede.
+
+---
+
+### SAM-057 — Pending pegajoso
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+Diagnóstico 235, Área 3. Un pending vivo solo se reemplaza si el intent siguiente es `attack`/`spell`/`skill_check`/`item`/`self_damage`; `roleplay`/`movement`/`free_action`/`ability` lo dejan intacto (`orchestrator.py:317-331`) y se re-persiste (`472-473`). `end_turn` es la única salida explícita, y solo en combate. `end_combat` (`combat_state.py:144-152`) tampoco lo limpia: el pending vive en el engine y se re-adjunta al `{"active": False}`. Si `_out_of_actions` o el turn guard bloquean la declaración nueva, esta ni llega a `process_attack` y el pending viejo sobrevive. Fekas quedó seis turnos bloqueada (17-ago 14:01→14:06). La campaña quedó con un pending de Unarmed Strike 1d4+4 colgado ocho días.
+
+**Criterio de done:** declarar una acción nueva reemplaza el pending; existe cancelación explícita; `end_combat` limpia; el pending lleva sello de ronda para detectar rancios.
+
+---
+
+### SAM-058 — El fact de INVALID DICE no ofrece salida
+
+**Tipo:** FEAT · **Prio:** P1 · **Estado:** OPEN
+
+Diagnóstico 235, Área 3. Las tres variantes de `mechanic.py:1054-1073` terminan en "roll X", y `narrator.py` refuerza que nada cuenta hasta tirar el dado pedido. El jugador no tiene forma de saber que puede declarar otra acción o pasar el turno.
+
+**Criterio de done:** el fact menciona las salidas ("o declara otra acción / pasa el turno") y el narrator las transmite.
+
+---
+
+### SAM-060 — Interpreter sin glosario ES→EN de armas
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
+
+Diagnóstico 235, Área 2. "Otra vez mandoble" (11-ago 13:25) produjo `weapon: "Greataxe"` — el interpreter tradujo mal; `_find_weapon` matcheó correctamente lo que le pidieron. El prompt (`interpreter.py`) no tiene glosario de armas en español, solo la regla genérica de "closest match". Mismo patrón que ya se resolvió para habilidades en SAM-053.
+
+**Criterio de done:** mandoble→Greatsword, hacha grande→Greataxe, estoque→Rapier, ballesta→Crossbow, etc.; el arma emitida existe en `status.attacks`.
+
+---
+
+### SAM-061 — Sin soporte de N instancias del mismo NPC
+
+**Tipo:** FEAT · **Prio:** P2 · **Estado:** OPEN
+
+Diagnóstico 235, Área 4. `_handle_start_combat` construye exactamente un NPC (`orchestrator.py:632-639`); no hay noción de cantidad en ninguna capa. SAM narró "tres esbirros" y "dos guardias gigantes" y el combate tuvo un único combatiente con el fallback genérico (50/50, AC 15, CR 3). Requiere: `count` en el intent; nombres únicos (`update_npc_hp` matchea por nombre, `combat_state.py:119-142`); `_find_target` con match exacto (hoy substring, `orchestrator.py:1191-1205`); `resolve_npc_turn` sin `targets[0]` fijo (`mechanic.py:660-661`); revisar el presupuesto de loot por kill.
+
+---
+
+### SAM-062 — Healing sin validación de dados ni gate de inventario
+
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+
+Diagnóstico 235, Área 5. `_check_dice` saltea `healing` por completo (`mechanic.py:344-345`): con un pending de curación vivo, cualquier dado lo resuelve — un 1d20 curaría d20+mod. Y la curación no está gateada por el inventario: `orchestrator.py:255-288` arma el heal sin verificar que la poción exista; si no está, `server.py:243-245` solo loguea un warning y el HP ya se restauró.
+
+**Criterio de done:** el pending de healing valida contra `healing_dice`; no se arma si el ítem no está en el inventario.
+
+---
+
+### SAM-063 — Observabilidad del pipeline
+
+**Tipo:** CHORE · **Prio:** P2 · **Estado:** OPEN
+
+Diagnóstico 235, Áreas 1 y 6. Hoy el único discriminador orchestrator/legacy es accidental (`messages.metadata` NULL vs no-NULL, porque solo el path legacy escribe `debug_info`). Estampar `metadata.engine` explícito. Además: el reject de dueño de SAM-049 (`mechanic.py:211-212`) no deja rastro en la transcripción — el dado se vuelve un freeform silencioso; debería producir un fact para que el narrator diga "ese dado no es tuyo". (El dado sin pending ya produce fact desde SAM-053.)
+
+---
+
+### SAM-064 — El narrator puebla escenas con enemigos que no existen
+
+**Tipo:** BUG · **Prio:** P3 · **Estado:** OPEN
+
+Diagnóstico 235, Área 4. `ROLEPLAY_TEMPLATE` prohíbe *resolver* combate pero no prohíbe *poblar* la escena: "tres esbirros del Jarl" (10-ago 17:27:51) sin respaldo mecánico. Cuando el combate arranca, la ficción y el `initiative_order` no coinciden.
+
+---
+
+### SAM-065 — Trackeo real de ventaja/desventaja
+
+**Tipo:** FEAT · **Prio:** P2 · **Estado:** OPEN
+
+Abierto por la instrucción 236. No existe estado de ventaja/desventaja en ninguna capa: ni en el intent, ni en el pending, ni en `CombatState`. `DiceRoller.roll_advantage/roll_disadvantage` (`dice.py:31-40`) existen y nunca se llaman. SAM-059 mitigó lo urgente asumiendo ventaja ante 2d20 y declarándolo en los facts, pero la desventaja real (Blur, armadura pesada, condiciones) es indistinguible.
+
+**Criterio de done:** el interpreter emite el modo cuando el jugador lo declara; el pending lo transporta; `_pick_d20` usa max/min según el modo y solo cae al "ADVANTAGE ASSUMED" cuando no hay modo declarado.
+
+---
+
 ### SAM-043 — Monster lookup no matchea nombres en español
 
 **Tipo:** BUG · **Prio:** P3 · **Estado:** OPEN
@@ -406,6 +515,24 @@ Playtest 2026-06-11: el target "lobo" no encontró "Wolf" en el compendio → `_
 ---
 
 ## Tickets cerrados
+
+### SAM-053 — Tirada sin pending se resuelve en el LLM
+
+**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · Instrucción 236
+
+Causa raíz de los tags legacy del Área 1 y de la "curación doble" del Área 5. Con `pending = None`, `process_player_roll` devolvía `freeform_roll` **sin appendear a `self.results`** → `get_results_summary()` vacío → `mechanical_facts` falsy → `narrate_roleplay`, donde el LLM recibía el texto crudo del SYSTEM EVENT y improvisaba total, éxito/fallo y a veces un `<DM_ROLL formula=.../>`. Tres frentes: el narrator ya no pide tiradas fuera de los facts, el interpreter reconoce skill checks en español, y el dado huérfano produce un fact `ORPHAN ROLL` que lo manda a `narrate_mechanics`. Detalle en `SAM_progress_log.md`.
+
+### SAM-054 — Regla 15 del narrator licencia aritmética al LLM
+
+**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · Instrucción 236
+
+`narrator.py` regla 15 ordenaba literalmente *"For skill checks, calculate the total: d20 result + ability modifier + proficiency bonus. State the total clearly, e.g. 'With your +5 modifier, that's a total of 19.'"* — en el `SYSTEM_PROMPT`, o sea activa también en modo roleplay. Reemplazada por la regla inversa (15a): reportar solo números que aparezcan literalmente en los mechanical facts. Detalle en `SAM_progress_log.md`.
+
+### SAM-059 — Ventaja/desventaja toma `rolls[0]`
+
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 236
+
+SAM-045 acepta 2d20 como ventaja/desventaja pero nada registra cuál era, y los tres resolvers de d20 tomaban `rolls[0]`. El 13-ago Björn tiró `[19, 7]` y acertó por suerte: con `[7, 19]` el mismo golpe fallaba. Nuevo `_pick_d20` toma el mayor y lo declara en los facts (`ADVANTAGE ASSUMED`). Trackeo real → SAM-065. Detalle en `SAM_progress_log.md`.
 
 ### SAM-047 — Auditoría de multiplayer pre-playtest grupal
 

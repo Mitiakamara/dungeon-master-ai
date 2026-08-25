@@ -49,6 +49,30 @@ SKILL_ABILITY_MAP = {
     "sleight_of_hand": "dex", "stealth": "dex", "survival": "wis",
 }
 
+# SAM-053: the interpreter is told to emit canonical English skill names, but it
+# is an LLM — a Spanish name that slips through used to fall silently to the
+# "wis" default with proficiency "none" (a Stealth check resolved as a bare WIS
+# roll). Python normalizes here so the degradation can't happen. Keys are
+# accent-stripped and space→underscore, matching _calculate_skill_modifier.
+SKILL_ALIASES = {
+    "percepcion": "perception", "sigilo": "stealth", "historia": "history",
+    "intimidacion": "intimidation", "investigacion": "investigation",
+    "engano": "deception", "enganio": "deception", "atletismo": "athletics",
+    "acrobacias": "acrobatics", "perspicacia": "insight", "intuicion": "insight",
+    "naturaleza": "nature", "medicina": "medicine", "supervivencia": "survival",
+    "interpretacion": "performance", "actuacion": "performance",
+    "juego_de_manos": "sleight_of_hand", "trato_con_animales": "animal_handling",
+    "arcano": "arcana", "conocimiento_arcano": "arcana",
+    # persuasion / religion / arcana are spelled identically once de-accented.
+}
+
+
+def _strip_accents(text: str) -> str:
+    """lower + drop diacritics, so 'Percepción' and 'percepcion' compare equal."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(text or "").lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
 
 class MechanicEngine:
     """Executes D&D 5e mechanics deterministically."""
@@ -181,7 +205,13 @@ class MechanicEngine:
         self.pending_player_roll = {
             "type": "skill_check",
             "skill": skill,
-            "dc": dc
+            "dc": dc,
+            # SAM-049/SAM-053: the check belongs to whoever declared it. The
+            # orchestrator overrides character_name with the authoritative
+            # sender_name, but stamping here means an ownerless skill pending
+            # can never be created, whatever the call site.
+            "character_name": character.get("name"),
+            "character_id": character.get("id"),
         }
         self.results.append(result)
         return result
@@ -197,8 +227,28 @@ class MechanicEngine:
         """
         pending = self.pending_player_roll
         if not pending:
-            # No pending action — this might be initiative or a freeform roll
-            return {"action": "freeform_roll", "roll": roll_data, "character": character.get("name", "Unknown")}
+            # SAM-053: no pending action. This used to return silently WITHOUT
+            # appending to self.results — empty facts dropped the request into
+            # narrate_roleplay, where the LLM improvised a total (and sometimes
+            # a legacy DM_ROLL tag). Now it renders as an ORPHAN ROLL fact so
+            # the narrator answers honestly through narrate_mechanics.
+            # Informative only: nothing is blocked, no action is consumed.
+            char_name = character.get("name", "Unknown")
+            dice_str = str(roll_data.get("dice", "")).strip() or "dice"
+            rolls = roll_data.get("rolls") or []
+            raw = rolls[0] if len(rolls) == 1 else (
+                roll_data.get("result", 0) if not rolls else ", ".join(str(x) for x in rolls)
+            )
+            result = {
+                "action": "orphan_roll",
+                "character": char_name,
+                "dice": dice_str,
+                "raw": raw,
+                "rolls": rolls,
+            }
+            print(f"🎲 Orphan roll: {char_name} {dice_str}={raw} — no pending")
+            self.results.append(result)
+            return {"action": "freeform_roll", "roll": roll_data, "character": char_name}
 
         # SAM-049: the pending belongs to a specific character. A die from anyone
         # else is THEIR own freeform roll — never consume or resolve someone
@@ -365,6 +415,44 @@ class MechanicEngine:
             return {"reason": "count", "expected": exp_display, "rolled": rolled_display}
         return None
 
+    def _pick_d20(self, roll_data: dict):
+        """
+        SAM-059: pick the authoritative d20 out of a roll.
+
+        NO advantage/disadvantage state exists anywhere in the pipeline — not in
+        the intent, not in the pending, not in CombatState. SAM-045 accepts 2d20
+        as advantage/disadvantage but nothing records WHICH it was, and taking
+        rolls[0] was arbitrary: on 13-ago Björn rolled [19, 7] and got the 19
+        purely by luck. With [7, 19] the same swing would have missed.
+
+        Until SAM-065 tracks it for real: two d20 → take the HIGHEST, and say so
+        in the facts. Never rolls[0] in silence.
+
+        Returns (raw_roll, note_or_None).
+        """
+        rolls = roll_data.get("rolls") or []
+        if not rolls:
+            return int(roll_data.get("result", 0) or 0), None
+        if len(rolls) == 1:
+            return int(rolls[0]), None
+
+        # Only claim advantage when the dice really are d20s. Non-d20 multi-dice
+        # reaching a d20 resolver is a different defect (validation leniency on
+        # skill checks); behave as before rather than mislabel it.
+        _, sides = parse_dice_notation(roll_data.get("dice", ""))
+        if sides is not None and sides != 20:
+            return int(rolls[0]), None
+        if sides is None and any(int(r) > 20 for r in rolls):
+            return int(rolls[0]), None
+
+        picked = max(int(r) for r in rolls)
+        listed = ", ".join(str(int(r)) for r in rolls)
+        count_word = "two" if len(rolls) == 2 else str(len(rolls))
+        note = (f"ADVANTAGE ASSUMED: {count_word} d20 rolled ({listed}); "
+                f"using {picked}.")
+        print(f"🎯 {note}")
+        return picked, note
+
     def _resolve_spell_damage(self, character: dict, roll_data: dict, pending: dict) -> dict:
         """Player rolled damage for a spell."""
         damage = roll_data["result"]
@@ -406,11 +494,12 @@ class MechanicEngine:
         except Exception:
             pass
 
-        raw_roll = roll_data["rolls"][0] if roll_data.get("rolls") else roll_data["result"]
+        raw_roll, roll_note = self._pick_d20(roll_data)  # SAM-059
         hit_result = check_hit(raw_roll, bonus, target.get("ac", 10))
 
         result = {
             "action": "weapon_attack_result",
+            "roll_note": roll_note,
             "attacker": character.get("name", "Unknown"),
             "weapon": weapon["name"],
             "target": target["name"],
@@ -548,11 +637,12 @@ class MechanicEngine:
         except Exception:
             pass
 
-        raw_roll = roll_data["rolls"][0] if roll_data.get("rolls") else roll_data["result"]
+        raw_roll, roll_note = self._pick_d20(roll_data)  # SAM-059
         hit_result = check_hit(raw_roll, bonus, target.get("ac", 10))
 
         result = {
             "action": "spell_attack_result",
+            "roll_note": roll_note,
             "caster": character.get("name", "Unknown"),
             "spell": pending["spell"],
             "target": target["name"],
@@ -586,14 +676,23 @@ class MechanicEngine:
         prof_bonus = int(status.get("proficiency_bonus", 2) or 2)
         skill_profs = status.get("skill_proficiencies") or {}
 
-        # Normalize skill name for lookup
-        skill_key = skill_name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+        # Normalize skill name for lookup (accent-insensitive — SAM-053)
+        skill_key = _strip_accents(skill_name).replace(" ", "_").replace("(", "").replace(")", "")
 
-        # Handle formats like "Wisdom (Perception)" → "perception"
-        for known_skill in SKILL_ABILITY_MAP:
-            if known_skill in skill_key:
-                skill_key = known_skill
-                break
+        # Spanish name → canonical English key, before anything else.
+        if skill_key in SKILL_ALIASES:
+            skill_key = SKILL_ALIASES[skill_key]
+        else:
+            # Handle formats like "Wisdom (Perception)" / "prueba_de_sigilo"
+            for known_skill in SKILL_ABILITY_MAP:
+                if known_skill in skill_key:
+                    skill_key = known_skill
+                    break
+            else:
+                for alias, canonical in SKILL_ALIASES.items():
+                    if alias in skill_key:
+                        skill_key = canonical
+                        break
 
         # Get ability modifier
         ability = SKILL_ABILITY_MAP.get(skill_key, "wis")
@@ -614,7 +713,7 @@ class MechanicEngine:
     def _resolve_skill_check(self, character: dict, roll_data: dict, pending: dict) -> dict:
         """Player rolled a skill check."""
         dc = pending.get("dc", 10)
-        raw_roll = roll_data["rolls"][0] if roll_data.get("rolls") else roll_data["result"]
+        raw_roll, roll_note = self._pick_d20(roll_data)  # SAM-059
 
         modifier, ability_mod, prof_bonus, prof_level, ability = self._calculate_skill_modifier(
             character, pending.get("skill", "")
@@ -624,6 +723,7 @@ class MechanicEngine:
 
         result = {
             "action": "skill_check_result",
+            "roll_note": roll_note,
             "character": character.get("name", "Unknown"),
             "skill": pending["skill"],
             "roll": raw_roll,
@@ -929,6 +1029,11 @@ class MechanicEngine:
         for r in self.results:
             action = r.get("action", "")
 
+            # SAM-059: the advantage disclosure rides above whatever the roll
+            # resolved into, so the narrator can quote it either way.
+            if r.get("roll_note"):
+                lines.append(r["roll_note"])
+
             if action == "spell" and r.get("save"):
                 save = r["save"]
                 lines.append(
@@ -1049,6 +1154,15 @@ class MechanicEngine:
                     f"{r['character']} takes {r['damage']} self-inflicted damage. "
                     f"HP: {r['new_hp']}/{r['hp_max']}."
                     f"{' UNCONSCIOUS!' if r.get('is_unconscious') else ''}"
+                )
+
+            elif action == "orphan_roll":
+                # SAM-053: a die with no pending action behind it. Informative,
+                # not an error — nothing is blocked and no action is consumed.
+                lines.append(
+                    f"ORPHAN ROLL: {r['character']} rolled {r['dice']} = {r['raw']}. "
+                    f"No pending action is registered, so this roll resolves nothing. "
+                    f"Ask them to declare the action first."
                 )
 
             elif action == "invalid_dice":
