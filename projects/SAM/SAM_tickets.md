@@ -518,19 +518,19 @@ Playtest 2026-06-11: el target "lobo" no encontró "Wolf" en el compendio → `_
 
 ### SAM-053 — Tirada sin pending se resuelve en el LLM
 
-**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · Instrucción 236
+**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · **Commit:** `e754dca` · Instrucción 236
 
 Causa raíz de los tags legacy del Área 1 y de la "curación doble" del Área 5. Con `pending = None`, `process_player_roll` devolvía `freeform_roll` **sin appendear a `self.results`** → `get_results_summary()` vacío → `mechanical_facts` falsy → `narrate_roleplay`, donde el LLM recibía el texto crudo del SYSTEM EVENT y improvisaba total, éxito/fallo y a veces un `<DM_ROLL formula=.../>`. Tres frentes: el narrator ya no pide tiradas fuera de los facts, el interpreter reconoce skill checks en español, y el dado huérfano produce un fact `ORPHAN ROLL` que lo manda a `narrate_mechanics`. Detalle en `SAM_progress_log.md`.
 
 ### SAM-054 — Regla 15 del narrator licencia aritmética al LLM
 
-**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · Instrucción 236
+**Tipo:** BUG · **Prio:** P0 · **Estado:** DONE · **Commit:** `e754dca` · Instrucción 236
 
 `narrator.py` regla 15 ordenaba literalmente *"For skill checks, calculate the total: d20 result + ability modifier + proficiency bonus. State the total clearly, e.g. 'With your +5 modifier, that's a total of 19.'"* — en el `SYSTEM_PROMPT`, o sea activa también en modo roleplay. Reemplazada por la regla inversa (15a): reportar solo números que aparezcan literalmente en los mechanical facts. Detalle en `SAM_progress_log.md`.
 
 ### SAM-059 — Ventaja/desventaja toma `rolls[0]`
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 236
+**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · **Commit:** `e754dca` · Instrucción 236
 
 SAM-045 acepta 2d20 como ventaja/desventaja pero nada registra cuál era, y los tres resolvers de d20 tomaban `rolls[0]`. El 13-ago Björn tiró `[19, 7]` y acertó por suerte: con `[7, 19]` el mismo golpe fallaba. Nuevo `_pick_d20` toma el mayor y lo declara en los facts (`ADVANTAGE ASSUMED`). Trackeo real → SAM-065. Detalle en `SAM_progress_log.md`.
 
