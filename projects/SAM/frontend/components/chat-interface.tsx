@@ -645,11 +645,15 @@ export function ChatInterface({
             }
 
             // Call Backend API
+            // Instrucción 240 (SAM-067): the campaign travels explicitly. campaignId
+            // derives from the selected character (game-layout.tsx); with no
+            // character selected it is "" → omitted → the backend infers it.
             const res = await authenticatedFetch("/api/chat", {
                 method: "POST",
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: contentToSend,
+                    campaign_id: campaignId || undefined,
                     character_context: charContext,
                     history: messages.slice(-10).map(m => ({
                         role: m.role,
@@ -658,6 +662,18 @@ export function ChatInterface({
                     }))
                 })
             })
+
+            if (res.status === 403) {
+                // Instrucción 240 (B5): the backend refused this campaign — no
+                // character in it, not its GM, not admin. Not a connectivity
+                // problem, so no retry is offered.
+                const deniedMsg: Message = { role: "system", content: "No tienes acceso a esta campaña", timestamp: new Date() }
+                setMessages(prev => [...prev, deniedMsg])
+                toast.error("No tienes acceso a esta campaña", {
+                    description: "Tu usuario no tiene personaje en esta campaña ni es su GM.",
+                })
+                return
+            }
 
             if (!res.ok) {
                 throw new Error(`Backend returned ${res.status}`)

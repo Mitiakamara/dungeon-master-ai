@@ -335,8 +335,10 @@ export default function AdminPage() {
     const sendCommand = async (cmd: string) => {
         setCommandLoading(cmd)
         try {
-            const res = await authenticatedFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: cmd }) })
+            // Instrucción 240 (SAM-067): scope the command to the active campaign
+            const res = await authenticatedFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: cmd, campaign_id: campaign?.id }) })
             if (res.ok) { const d = await res.json(); toast.success(d.response?.substring(0, 100) || "Done") }
+            else if (res.status === 403) toast.error("No tienes acceso a esta campaña")
             else toast.error("Failed")
         } catch { toast.error("Error") }
         finally { setCommandLoading(null); setConfirmReset(false) }
