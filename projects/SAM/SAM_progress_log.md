@@ -1068,6 +1068,18 @@ Un solo commit, tres partes, un principio: **cada personaje tiene su propio slot
 
 **Lección:** el bug no era la falta de validación de dueño — era el modelo. Un slot por campaña obliga a validar dueño en cada lectura y siempre queda un camino sin validar (el owner vacío, el guard que no cubre `skill_check`). Un slot por personaje hace que el dado ajeno simplemente no encuentre nada.
 
+### Sesión 6 Sep 2026 (cont.) — Frontend envía `campaign_id` + verificaciones (instrucción 240)
+
+**A1 — deploy de `ecb09bf` en Render.** `/api/version` es estático desde febrero (`{"version":"1.0.2","deployed_at":"2026-02-04"}`, `server.py:279-281`): no devuelve hash y nunca lo hizo, así que no sirve para confirmar un deploy. Sin CLI ni API key de Render no hay acceso a logs. Confirmación por otra vía: el `/openapi.json` público de FastAPI expone `ChatRequest` con `campaign_id` — ese campo existe solo desde `ecb09bf` → desplegado. Primer `curl` a los 20s dio timeout (cold start del free tier); el segundo respondió en 1.5s. Propuesta para una instrucción futura: `/api/version` leyendo `RENDER_GIT_COMMIT` (Render la inyecta) para que esta verificación sea directa.
+
+**A2 — `turn_is_over()`.** No es constante (equivale a `actions_remaining <= 0`) y no puede avanzar el turno con un slot vivo del actor: su único caller está dentro del gate `if not engine.get_pending(actor_id)` (`orchestrator.py:161`). Fix mínimo propuesto (sin implementar) anotado en SAM-026: borrar el término muerto y `pending_action` entero.
+
+**A3 — `test_sam044.py`.** `fastapi` instalado en el user-site de `python3.14`; el test sigue sin correr: `server.py` importa `app.core.security` → `supabase` (`ModuleNotFoundError`), y detrás vienen `langchain_google_genai`, `google.genai`, `dotenv`. Correrlo local implica instalar `requirements.txt` completo en el user-site o reparar el venv. Sin tocar test ni código; se evalúa aparte.
+
+**B — frontend (`0f1b912`).** Fuente única de la campaña: `game-layout.tsx:41` `selectedCharacter?.campaign_id`, propagada a `ChatInterface` (`:365`). Callers de `/api/chat`: `chat-interface.tsx` `handleSendMessage` (chat normal, tiradas — `dice-tray.tsx:32` → `SidebarRight` → `game-layout.tsx:337/378` `setRollEvent` → `externalEvent` → `:575` — y comandos `/` tipeados) y `app/admin/page.tsx` `sendCommand` (botones del panel God Mode, campaña activa = `status === "active"` o la primera). Ambos mandan `campaign_id`; ambos manejan el 403 con "No tienes acceso a esta campaña" (en el chat como mensaje de sistema + toast **sin** botón de reintento — no es un problema de conexión). **GM sin personaje:** la UI de juego no tiene selector de campaña; `campaignId` es `""`, el campo se omite y el backend infiere por `gm_id`. No se improvisó UI. `tsc --noEmit` limpio.
+
+**B6/B7.** Deploy de Vercel: verificación por sondeo del bundle de producción buscando el string nuevo del 403 — **confirmado**: marker presente en `/_next/static/chunks/3aa6accddf394588.js` al primer intento (16:59, ~2 min después del push; 16 chunks escaneados). B7 (mensaje desde producción + log de Render sin el WARNING) no es verificable desde esta sesión: sin sesión de usuario ni acceso a logs. Queda para el próximo mensaje real: el WARNING debe desaparecer para cualquier usuario con personaje; si aparece con personaje seleccionado, alguna llamada no manda el campo.
+
 ---
 
 ## 4. Estado Actual — Abril 2026
