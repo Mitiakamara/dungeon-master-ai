@@ -1,5 +1,6 @@
 """SAM-039 + SAM-042 harness — strict dice validation, single-source damage
-spec, weapon matching. Run: PYTHONUTF8=1 ./venv/Scripts/python.exe test_sam039_042.py"""
+spec, weapon matching. Run: PYTHONUTF8=1 python3.14 test_sam039_042.py
+(instrucción 239: pendings viven en engine.pending_rolls por character_id)"""
 import inspect
 from agents.mechanic import MechanicEngine
 from agents.combat_state import CombatState
@@ -16,20 +17,23 @@ def fresh_combat(hp=50):
     return CombatState({"active": True, "current_turn_index": 0, "actions_remaining": 1,
         "initiative_order": [{"name": "Wolf", "is_npc": True, "hp": hp, "hp_max": hp, "ac": 10}]})
 
-CHAR = {"name": "Björn", "status": {"attacks": [
+CHAR = {"id": "b1", "name": "Björn", "status": {"attacks": [
     {"name": "Handaxe", "bonus": "+7", "damage": "1d6+4"},
     {"name": "Greataxe", "bonus": "+7", "damage": "1d12+4 slashing"},
 ]}}
 
+def arm(eng, pending):
+    eng.set_pending("b1", "Björn", pending)
+
 # ── S1 — Nat 20 Greataxe → damage_spec="2d12+4", prompt matches (SAM-042) ──
 print("S1 — nat 20 crit damage_spec + prompt")
 c = fresh_combat(); eng = MechanicEngine(c)
-eng.pending_player_roll = {"type": "weapon_attack",
+arm(eng, {"type": "weapon_attack",
     "weapon": {"name": "Greataxe", "bonus": "+7", "damage": "1d12+4 slashing"},
-    "target": "Wolf", "target_data": c.initiative_order[0], "character_name": "Björn"}
+    "target": "Wolf", "target_data": c.initiative_order[0]})
 res = eng.process_player_roll(CHAR, {"dice": "1d20", "result": 20, "rolls": [20]})
 check("crit detected", res.get("critical") is True)
-pend = eng.pending_player_roll
+pend = eng.get_pending("b1")
 check("damage_spec doubled to 2d12+4", pend.get("damage_spec") == "2d12+4")
 check("prompt says 2d12+4", "2d12+4" in orch._get_roll_prompt(pend))
 
@@ -47,27 +51,27 @@ for q in ["great axe", "GreatAxe", "greataxe", "GREATAXE", "Great Axe"]:
 # ── S4 — expected 1d12, roll 1d6 → REJECT (faces), no state change ──
 print("S4 — wrong faces rejected")
 c = fresh_combat(); eng = MechanicEngine(c)
-eng.pending_player_roll = {"type": "weapon_damage", "weapon": {"name": "Greataxe", "damage": "1d12+4"},
-    "damage_spec": "1d12+4", "target": "Wolf", "target_data": c.initiative_order[0], "character_name": "Björn"}
+arm(eng, {"type": "weapon_damage", "weapon": {"name": "Greataxe", "damage": "1d12+4"},
+    "damage_spec": "1d12+4", "target": "Wolf", "target_data": c.initiative_order[0]})
 res = eng.process_player_roll(CHAR, {"dice": "1d6", "result": 4, "rolls": [4]})
 check("rejected as invalid_dice", res.get("action") == "invalid_dice")
 check("reason = faces", res.get("reason") == "faces")
 check("wolf HP unchanged (50)", c.initiative_order[0]["hp"] == 50)
-check("pending preserved", eng.pending_player_roll is not None)
+check("pending preserved", eng.get_pending("b1") is not None)
 
 # ── S5 — after reject, roll 1d12 → resolves normally ──
 print("S5 — correct die after rejection resolves")
 res = eng.process_player_roll(CHAR, {"dice": "1d12", "result": 10, "rolls": [10]})
 check("resolves weapon_damage_applied", res.get("action") == "weapon_damage_applied")
 check("wolf HP reduced to 36", c.initiative_order[0]["hp"] == 36)  # 50 - (10+4)
-check("pending cleared", eng.pending_player_roll is None)
+check("pending cleared", eng.get_pending("b1") is None)
 
 # ── S6 — crit 2d12, roll 1d12 → REJECT (count); roll 2d12 → resolve ──
 print("S6 — crit needs 2 dice")
 c = fresh_combat(); eng = MechanicEngine(c)
-eng.pending_player_roll = {"type": "weapon_damage", "weapon": {"name": "Greataxe", "damage": "1d12+4"},
+arm(eng, {"type": "weapon_damage", "weapon": {"name": "Greataxe", "damage": "1d12+4"},
     "damage_spec": "2d12+4", "critical": True, "target": "Wolf",
-    "target_data": c.initiative_order[0], "character_name": "Björn"}
+    "target_data": c.initiative_order[0]})
 r1 = eng.process_player_roll(CHAR, {"dice": "1d12", "result": 10, "rolls": [10]})
 check("1d12 rejected (count)", r1.get("action") == "invalid_dice" and r1.get("reason") == "count")
 check("HP unchanged", c.initiative_order[0]["hp"] == 50)
@@ -77,24 +81,24 @@ check("2d12 resolves", r2.get("action") == "weapon_damage_applied")
 # ── S7 — expected 1d12, roll 2d12 → REJECT (count); roll 1d12 → resolve ──
 print("S7 — too many dice rejected")
 c = fresh_combat(); eng = MechanicEngine(c)
-eng.pending_player_roll = {"type": "weapon_damage", "weapon": {"name": "Greataxe", "damage": "1d12+4"},
-    "damage_spec": "1d12+4", "target": "Wolf", "target_data": c.initiative_order[0], "character_name": "Björn"}
+arm(eng, {"type": "weapon_damage", "weapon": {"name": "Greataxe", "damage": "1d12+4"},
+    "damage_spec": "1d12+4", "target": "Wolf", "target_data": c.initiative_order[0]})
 r1 = eng.process_player_roll(CHAR, {"dice": "2d12", "result": 14, "rolls": [7, 7]})
 check("2d12 rejected (count)", r1.get("action") == "invalid_dice" and r1.get("reason") == "count")
 r2 = eng.process_player_roll(CHAR, {"dice": "1d12", "result": 9, "rolls": [9]})
 check("1d12 resolves", r2.get("action") == "weapon_damage_applied")
 
-# ── S8 — anti-deadlock: end_turn handler clears an abandoned pending ──
+# ── S8 — anti-deadlock: end_turn handler clears the actor's abandoned pending ──
 print("S8 — end_turn escape (anti-deadlock)")
 src = inspect.getsource(SAMOrchestrator.process_message)
-check("end_turn handler clears pending_player_roll",
-      "end_turn" in src and "pending_player_roll = None" in src)
+check("end_turn handler clears the actor's pending (239: clear_pending(actor_id))",
+      "end_turn" in src and "engine.clear_pending(actor_id)" in src)
 
 # ── Extra — advantage attack (two d20s) is NOT rejected on count ──
 print("Extra — advantage attack roll accepted")
 c = fresh_combat(); eng = MechanicEngine(c)
-eng.pending_player_roll = {"type": "weapon_attack", "weapon": {"name": "Greataxe", "bonus": "+7", "damage": "1d12+4"},
-    "target": "Wolf", "target_data": c.initiative_order[0], "character_name": "Björn"}
+arm(eng, {"type": "weapon_attack", "weapon": {"name": "Greataxe", "bonus": "+7", "damage": "1d12+4"},
+    "target": "Wolf", "target_data": c.initiative_order[0]})
 res = eng.process_player_roll(CHAR, {"dice": "1d20", "result": 15, "rolls": [5, 15]})
 check("advantage (2 rolls) not rejected", res.get("action") != "invalid_dice")
 

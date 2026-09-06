@@ -4,6 +4,7 @@ import json
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from typing import Optional
+from app.core.access import is_gm_or_admin
 
 load_dotenv()
 
@@ -13,10 +14,12 @@ supabase: Client = create_client(url, key)
 
 class AdminService:
     @staticmethod
-    def handle_command(command_str: str, user_id: str = "gm") -> str:
+    def handle_command(command_str: str, user_id: str = "gm", campaign_id: str = None) -> str:
         """
         Parses and executes admin commands.
         Returns a string response to be shown in the chat.
+        campaign_id: the campaign /api/chat resolved for this message (239);
+        lets /delegate accept a platform admin who is not the GM (SAM-004).
         """
         try:
             import time
@@ -44,11 +47,11 @@ class AdminService:
             elif cmd == "/delegate":
                 if not args:
                     return "Usage: /delegate [character_name]"
-                return AdminService.delegate_character(" ".join(args), user_id)
+                return AdminService.delegate_character(" ".join(args), user_id, campaign_id)
             elif cmd == "/undelegate":
                 if not args:
                     return "Usage: /undelegate [character_name]"
-                return AdminService.undelegate_character(" ".join(args), user_id)
+                return AdminService.undelegate_character(" ".join(args), user_id, campaign_id)
             elif cmd == "/gold":
                 if len(args) < 3:
                     return "Usage: /gold <character_name> <amount> <coin_type>\nExamples: /gold Baol -5 gp, /gold Baol Gortsh +10 sp"
@@ -245,12 +248,20 @@ class AdminService:
             return f"❌ Reset Error: {e}"
 
     @staticmethod
-    def _find_character_in_active_campaign(name: str, gm_user_id: str):
-        """Find a character by name in the GM's active campaign."""
-        camp_res = supabase.table("campaigns").select("id").eq("gm_id", gm_user_id).limit(1).execute()
-        if not camp_res.data:
-            return None, None
-        cid = camp_res.data[0]["id"]
+    def _find_character_in_active_campaign(name: str, user_id: str, campaign_id: str = None):
+        """
+        Find a character by name in the campaign the caller manages.
+        Instrucción 239 / SAM-004: with an explicit campaign_id the caller may
+        be its GM OR a platform admin (core.access.is_gm_or_admin). Without one
+        — or without rights on it — fall back to the first campaign the caller
+        owns as GM (legacy behaviour).
+        """
+        cid = campaign_id if (campaign_id and is_gm_or_admin(user_id, campaign_id)) else None
+        if not cid:
+            camp_res = supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
+            if not camp_res.data:
+                return None, None
+            cid = camp_res.data[0]["id"]
         char_res = supabase.table("characters").select("id, name, user_id").eq("campaign_id", cid).execute()
         target_lower = name.lower()
         for c in (char_res.data or []):
@@ -259,9 +270,9 @@ class AdminService:
         return None, cid
 
     @staticmethod
-    def delegate_character(name: str, user_id: str) -> str:
+    def delegate_character(name: str, user_id: str, campaign_id: str = None) -> str:
         try:
-            target_char, cid = AdminService._find_character_in_active_campaign(name, user_id)
+            target_char, cid = AdminService._find_character_in_active_campaign(name, user_id, campaign_id)
             if not cid:
                 return "No active campaign found for GM."
             if not target_char:
@@ -275,9 +286,9 @@ class AdminService:
             return f"❌ Delegate Error: {e}"
 
     @staticmethod
-    def undelegate_character(name: str, user_id: str) -> str:
+    def undelegate_character(name: str, user_id: str, campaign_id: str = None) -> str:
         try:
-            target_char, cid = AdminService._find_character_in_active_campaign(name, user_id)
+            target_char, cid = AdminService._find_character_in_active_campaign(name, user_id, campaign_id)
             if not cid:
                 return "No active campaign found for GM."
             if not target_char:

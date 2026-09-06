@@ -66,6 +66,7 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             "narrative": str,                # The story text to show players
             "state_updates": list,           # DB updates (HP, XP, inventory)
             "combat_state": dict|None,       # Updated combat state for campaigns.settings
+                                             #   (carries "pending_rolls": {character_id: pending})
             "prompt_player_roll": str|None,  # If we need a dice roll from the player
         }
         """
@@ -74,9 +75,11 @@ Respond ONLY with a JSON array, no markdown, no backticks:
         engine = MechanicEngine(combat)
         engine.reset_turn()
 
-        # Restore pending_player_roll from persisted state (survives across requests)
-        if combat_data and combat_data.get("pending_player_roll"):
-            engine.pending_player_roll = combat_data["pending_player_roll"]
+        # Instrucción 239: the actor is identified by character_id (server-side
+        # char_ctx), never by name. Per-character pending slots are rehydrated
+        # from the persisted combat dict; the legacy single-slot form migrates.
+        actor_id = (character_context or {}).get("id")
+        engine.pending_rolls = self._rehydrate_pending(combat_data, party_characters)
 
         # ─── STEP 1: Parse intent ───
         targets = self._get_target_options(combat)
@@ -98,17 +101,25 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             current_name = current_tc.get("name") if current_tc else None
 
             if current_name and sender_name and sender_name != current_name:
-                action_intents = ("attack", "spell", "ability", "start_combat", "end_turn")
+                # Instrucción 239 (C2): every intent that can arm a pending or
+                # mutate state is gated — not just the attack family. Blocked
+                # intents never reach set_pending (this branch skips STEP 2).
+                # roleplay / movement / free_action still pass through.
+                action_intents = (
+                    "attack", "spell", "ability", "start_combat", "end_turn",
+                    "skill_check", "self_damage", "item",
+                )
                 if intent["type"] in action_intents:
                     out_of_turn_facts = (
                         f"OUT_OF_TURN: It's {current_name}'s turn, not {sender_name}'s. "
                         f"Ignore the attempted action and remind the player to wait."
                     )
                 elif intent["type"] == "dice_roll":
-                    # Allow if pending roll belongs to this sender
-                    pending = engine.pending_player_roll or {}
-                    pending_owner = pending.get("character_name")
-                    if pending_owner != sender_name:
+                    # A die out of turn is allowed ONLY when the roller has a
+                    # slot of their own to resolve (e.g. a check declared before
+                    # combat). No slot → nothing to resolve → wait. This also
+                    # gates the freeform setup below: it only ever runs in turn.
+                    if not engine.get_pending(actor_id):
                         out_of_turn_facts = (
                             f"OUT_OF_TURN: It's {current_name}'s turn, not {sender_name}'s. "
                             f"Ignore the attempted dice roll and remind the player to wait."
@@ -124,26 +135,30 @@ Respond ONLY with a JSON array, no markdown, no backticks:
 
         elif intent["type"] == "dice_roll":
             # During combat, a bare dice roll (via dice tray) needs context:
-            # a d20 is an attack roll, a non-d20 is a damage roll. Wire up
-            # pending_player_roll so process_player_roll routes to the proper
-            # resolver (which already applies damage to NPC HP).
-            if combat.active and not engine.pending_player_roll:
+            # a d20 is an attack roll, a non-d20 is a damage roll. Arm THIS
+            # actor's slot so process_player_roll routes to the proper resolver
+            # (which already applies damage to NPC HP). Only when the actor has
+            # no slot of their own — other players' slots are irrelevant here.
+            if combat.active and not engine.get_pending(actor_id):
                 self._setup_combat_freeform_pending(engine, intent, character_context, combat, sender_name)
 
-            # Snapshot pending before it gets cleared by process_player_roll
-            previous_pending = engine.pending_player_roll or {}
+            # Snapshot THIS actor's pending before process_player_roll clears it
+            previous_pending = engine.get_pending(actor_id) or {}
             previous_pending_type = previous_pending.get("type")
 
             # Player rolled dice — process the result
             self._handle_dice_roll(engine, intent, character_context, combat)
             mechanical_facts = engine.get_results_summary()
 
-            # Check if we need another roll from the player
-            if engine.pending_player_roll:
-                prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
+            # Check if we need another roll from THIS player (chained damage etc.)
+            if engine.get_pending(actor_id):
+                prompt_player_roll = self._get_roll_prompt(engine.get_pending(actor_id))
 
-            # After resolving player action, decide whether to advance or keep turn
-            if not engine.pending_player_roll and combat.active:
+            # After resolving player action, decide whether to advance or keep
+            # turn. Only the ACTOR's chain matters: a slot another player left
+            # outstanding (an exploration check never rolled) must not freeze
+            # the combat turn.
+            if not engine.get_pending(actor_id) and combat.active:
                 # Consume an action when the attack/spell cycle is fully resolved:
                 #   - HIT + damage applied  → previous = weapon_damage / spell_damage
                 #   - MISS (attack roll resolved, no damage follow-up) → previous = weapon_attack / spell_attack
@@ -182,8 +197,8 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             else:
                 self._handle_spell(engine, intent, character_context, combat)
                 mechanical_facts = engine.get_results_summary()
-                if engine.pending_player_roll:
-                    prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
+                if engine.get_pending(actor_id):
+                    prompt_player_roll = self._get_roll_prompt(engine.get_pending(actor_id))
 
                 # Consume a spell slot (cantrips = level 0 = free)
                 try:
@@ -220,8 +235,8 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             else:
                 self._handle_attack(engine, intent, character_context, combat)
                 mechanical_facts = engine.get_results_summary()
-                if engine.pending_player_roll:
-                    prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
+                if engine.get_pending(actor_id):
+                    prompt_player_roll = self._get_roll_prompt(engine.get_pending(actor_id))
 
         elif intent["type"] == "skill_check":
             skill = intent.get("skill", "Perception")
@@ -232,25 +247,29 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             # the pending roll; consumption happens when the roll resolves.
             # Only the active player's check consumes — reactive checks from
             # out-of-turn players must not eat the current player's action.
-            if engine.pending_player_roll:
+            # (Owner stamping lives in set_pending now — nothing to override.)
+            armed = engine.get_pending(actor_id)
+            if armed:
                 current_tc = combat.get_current_turn() if combat.active else None
-                is_senders_turn = bool(current_tc and current_tc.get("name") == sender_name)
-                engine.pending_player_roll["character_name"] = sender_name
-                engine.pending_player_roll["consumes_action"] = is_senders_turn
+                armed["consumes_action"] = bool(current_tc and current_tc.get("name") == sender_name)
+                prompt_player_roll = f"Tira 1d20 para {skill}."
             mechanical_facts = engine.get_results_summary()
-            prompt_player_roll = f"Tira 1d20 para {skill}."
 
         elif intent["type"] == "self_damage":
             # Self-inflicted or environmental damage — ask for damage roll, then apply to self
             damage_dice = intent.get("damage_dice", "1d4")
             description = intent.get("description", "self-inflicted damage")
-            mechanical_facts = f"{sender_name} is taking {description}. Awaiting damage roll: {damage_dice}"
-            prompt_player_roll = f"Tira {damage_dice} de daño."
-            engine.pending_player_roll = {
+            if engine.set_pending(actor_id, sender_name, {
                 "type": "self_damage",
-                "character_name": sender_name,
                 "character_data": character_context,
-            }
+            }):
+                mechanical_facts = f"{sender_name} is taking {description}. Awaiting damage roll: {damage_dice}"
+                prompt_player_roll = f"Tira {damage_dice} de daño."
+            else:
+                mechanical_facts = (
+                    f"NO CHARACTER SHEET: {sender_name} has no character record in this "
+                    f"campaign, so the self-damage cannot be registered. Do NOT ask for dice."
+                )
 
         elif intent["type"] == "item":
             item_name = intent.get("item", "")
@@ -262,17 +281,21 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                 heal_target_name = sender_name if target == "self" else target
                 target_data = character_context if target == "self" else self._find_party_member(heal_target_name, party_characters)
 
-                mechanical_facts = f"{sender_name} uses {item_name} on {heal_target_name}. Roll {healing_dice} for healing."
-                prompt_player_roll = f"Tira {healing_dice} de curación."
-
-                engine.pending_player_roll = {
+                # The player who uses the item rolls — their slot, not the target's.
+                if engine.set_pending(actor_id, sender_name, {
                     "type": "healing",
                     "item": item_name,
                     "healing_dice": healing_dice,
                     "target_name": heal_target_name,
                     "target_data": target_data,
-                    "character_name": sender_name,  # SAM-049: the player who drinks rolls
-                }
+                }):
+                    mechanical_facts = f"{sender_name} uses {item_name} on {heal_target_name}. Roll {healing_dice} for healing."
+                    prompt_player_roll = f"Tira {healing_dice} de curación."
+                else:
+                    mechanical_facts = (
+                        f"NO CHARACTER SHEET: {sender_name} has no character record in this "
+                        f"campaign, so the healing cannot be registered. Do NOT ask for dice."
+                    )
             else:
                 mechanical_facts = ""
 
@@ -301,8 +324,9 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             # SAM-034: player voluntarily yields their turn.
             if combat.active:
                 combat.actions_remaining = 0
-                # Drop any abandoned pending roll (e.g. declared attack never rolled)
-                engine.pending_player_roll = None
+                # Drop THIS player's abandoned pending (e.g. declared attack
+                # never rolled). Other characters' slots stay untouched.
+                engine.clear_pending(actor_id)
                 mechanical_facts = (
                     f"{sender_name} ends their turn voluntarily. "
                     f"No further actions taken."
@@ -356,25 +380,17 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             if reward_lines:
                 mechanical_facts = (mechanical_facts + "\n\n" + "\n".join(reward_lines)).strip()
 
-        # A dice_roll that produced NOTHING at all. Since SAM-053 the truly
-        # orphan roll (no pending) renders its own ORPHAN ROLL fact, so reaching
-        # here means the roll was swallowed silently — in practice the SAM-049
-        # ownership guard ignoring someone else's die. That case still has no
-        # fact of its own (SAM-063).
-        if (intent["type"] == "dice_roll" and not out_of_turn_facts
-                and not engine.state_updates and not engine.results
-                and not engine.pending_player_roll):
-            print(f"⚠️ Dice roll swallowed with no facts — likely a SAM-049 ownership reject")
-
-        # SAM-041 safety net: a declaration armed a pending without rendering
-        # facts. It must NEVER fall to the roleplay template — that one forbids
-        # combat mechanics (SAM-033) and would deny the action instead of
-        # asking for the roll.
-        if not mechanical_facts and engine.pending_player_roll:
+        # SAM-041 safety net: a declaration armed a pending THIS request without
+        # rendering facts. It must NEVER fall to the roleplay template — that
+        # one forbids combat mechanics (SAM-033) and would deny the action
+        # instead of asking for the roll. A slot left over from an EARLIER
+        # request is not a declaration: it goes to the narrator as PENDING
+        # ROLLS context below, not as a re-prompt.
+        if not mechanical_facts and actor_id in engine.armed_this_request and engine.get_pending(actor_id):
             print(f"⚠️ Pending roll without facts (intent={intent['type']}) — synthesizing")
             mechanical_facts = f"{sender_name} declared an action. Awaiting dice roll."
             if not prompt_player_roll:
-                prompt_player_roll = self._get_roll_prompt(engine.pending_player_roll)
+                prompt_player_roll = self._get_roll_prompt(engine.get_pending(actor_id))
 
         # ─── STEP 3: RAG lookup if needed ───
         rag_context = ""
@@ -402,14 +418,32 @@ Respond ONLY with a JSON array, no markdown, no backticks:
         except Exception as e:
             print(f"⚠️ Encounter balance calc failed: {e}")
 
+        # Instrucción 239 (B8): rolls other players still owe from EARLIER
+        # requests — narrator context, NOT an action fact. Slots armed in this
+        # request already carry their own PROMPT PLAYER line and are excluded.
+        outstanding = [p for p in engine.all_pending()
+                       if p.get("character_id") not in engine.armed_this_request]
+        if outstanding:
+            listing = ", ".join(
+                f"{p.get('character_name') or '?'} ({self._pending_dice_label(p)})"
+                for p in outstanding
+            )
+            full_campaign_context = (
+                f"{full_campaign_context}\n\nPENDING ROLLS: {listing}\n"
+                f"(Still awaited from those players. You may mention they are pending. "
+                f"Do NOT ask for them again and do NOT invent their results.)"
+            ).strip()
+
         # ─── STEP 4: Generate narrative ───
         character_context_str = self._format_character_context(character_context)
         party_context_str = self._format_party_context(party_characters)
 
         if mechanical_facts:
-            # Add roll prompt to facts so narrator includes it
+            # Add roll prompt to facts so narrator includes it. Named (B8): with
+            # several slots live the narrator must know WHO it is asking.
             if prompt_player_roll:
-                mechanical_facts += f"\n→ PROMPT PLAYER: {prompt_player_roll}"
+                roll_owner = (engine.get_pending(actor_id) or {}).get("character_name") or sender_name
+                mechanical_facts += f"\n→ PROMPT PLAYER ({roll_owner}): {prompt_player_roll}"
 
             # Add turn advancement info + combat status (HP ground truth for narrator)
             if combat.active:
@@ -471,10 +505,11 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             else:
                 print(f"💾 Persisting INACTIVE combat (initiative_order discarded)")
             combat_dict = {"active": False}
-        if engine.pending_player_roll:
-            combat_dict["pending_player_roll"] = engine.pending_player_roll
-        else:
-            combat_dict.pop("pending_player_roll", None)
+        # Instrucción 239 (B6): per-character slots only. The legacy single
+        # slot is never written again (the reader still migrates it, for
+        # rollback safety).
+        combat_dict["pending_rolls"] = engine.pending_rolls
+        combat_dict.pop("pending_player_roll", None)
 
         return {
             "narrative": narrative,
@@ -508,12 +543,12 @@ Respond ONLY with a JSON array, no markdown, no backticks:
           - non-d20 → weapon_damage, matching the die to one of the character's
                       attacks (fallback: first attack)
 
-        Sets engine.pending_player_roll so the subsequent process_player_roll
-        call routes through the normal _resolve_weapon_attack / _resolve_weapon_damage
-        path, which already updates combat NPC HP.
+        Arms THIS character's slot (engine.set_pending) so the subsequent
+        process_player_roll call routes through the normal _resolve_weapon_attack
+        / _resolve_weapon_damage path, which already updates combat NPC HP.
 
-        sender_name is stamped as character_name on the pending dict so the
-        turn guard can verify the next dice roll belongs to the active player.
+        Only reached in turn: the turn guard rejects an out-of-turn die whose
+        roller has no slot, before this runs (C2).
         """
         dice_str = str(intent.get("dice", "")).strip().lower()
         m = re.match(r"(\d*)d(\d+)", dice_str)
@@ -538,14 +573,13 @@ Respond ONLY with a JSON array, no markdown, no backticks:
             weapon = attacks[0] if attacks else {
                 "name": "Unarmed Strike", "bonus": "+0", "damage": "1",
             }
-            engine.pending_player_roll = {
+            engine.set_pending(character_context.get("id"), character_name, {
                 "type": "weapon_attack",
                 "weapon": weapon,
                 "target": target_npc["name"],
                 "target_data": target_npc,
-                "character_name": character_name,
                 "sneak_dice": self._get_sneak_dice(character_context) if combat.sneak_available() else None,
-            }
+            })
         else:
             # Damage roll — match weapon whose damage starts with "NdX" on same sides
             matching_weapon = None
@@ -559,7 +593,7 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                 matching_weapon = attacks[0] if attacks else {
                     "name": "Unarmed Strike", "bonus": "+0", "damage": dice_str,
                 }
-            engine.pending_player_roll = {
+            engine.set_pending(character_context.get("id"), character_name, {
                 "type": "weapon_damage",
                 "weapon": matching_weapon,
                 "target": target_npc["name"],
@@ -568,8 +602,7 @@ Respond ONLY with a JSON array, no markdown, no backticks:
                 # Dice-tray freeform: the player already rolled, so the rolled die
                 # IS the expected spec — validation passes by construction (SAM-039).
                 "damage_spec": dice_str,
-                "character_name": character_name,
-            }
+            })
 
     def _handle_spell(self, engine: MechanicEngine, intent: dict,
                       character_context: dict, combat: CombatState) -> dict:
@@ -981,14 +1014,10 @@ Respond ONLY with a JSON array, no markdown, no backticks:
         if not target:
             return {"action": "error", "message": f"Target '{target_name}' not found"}
 
-        result = engine.process_attack(character_context, weapon, target)
-        # SAM-003: stamp owner + Sneak Attack chain hint on the pending attack
-        if engine.pending_player_roll and engine.pending_player_roll.get("type") == "weapon_attack":
-            engine.pending_player_roll.setdefault("character_name", character_context.get("name"))
-            engine.pending_player_roll["sneak_dice"] = (
-                self._get_sneak_dice(character_context) if combat.sneak_available() else None
-            )
-        return result
+        # SAM-003: Sneak Attack chain hint travels with the declaration; the
+        # owner is stamped by set_pending inside process_attack (239/B3).
+        sneak_dice = self._get_sneak_dice(character_context) if combat.sneak_available() else None
+        return engine.process_attack(character_context, weapon, target, sneak_dice=sneak_dice)
 
     def _resolve_npc_turns(self, engine: MechanicEngine, combat: CombatState,
                            party_characters: list[dict], advance_first: bool = True) -> str:
@@ -1211,6 +1240,92 @@ Respond ONLY with a JSON array, no markdown, no backticks:
         if not combat.active:
             return []
         return [c["name"] for c in combat.initiative_order if c.get("is_npc") and c.get("hp", 0) > 0]
+
+    # ─────────────────────────────────────
+    # PENDING ROLLS — persistence helpers (instrucción 239)
+    # ─────────────────────────────────────
+
+    @staticmethod
+    def _resolve_character_id(name: str, party_characters: list[dict]) -> Optional[str]:
+        """Exact (case/space-insensitive) name → id in the loaded party. No
+        partial matching: mis-routing a roll is worse than dropping a stale slot."""
+        key = (name or "").strip().lower()
+        if not key:
+            return None
+        for p in party_characters or []:
+            if (p.get("name") or "").strip().lower() == key and p.get("id"):
+                return str(p["id"])
+        return None
+
+    def _rehydrate_pending(self, combat_data: Optional[dict], party_characters: list[dict]) -> dict:
+        """
+        B5: load the per-character pending slots from the persisted combat dict.
+        Three accepted shapes (which one was found is logged at INFO):
+          a) nothing                               → {}
+          b) legacy single slot `pending_player_roll` (one pending dict)
+             → migrated to {character_id: dict}. The id comes from the dict
+               itself, else from the party by character_name; if neither
+               resolves the slot is DISCARDED with a WARNING (better to lose a
+               stale pending than to route a die to the wrong character).
+          c) `pending_rolls` {character_id: dict}   → loaded as is.
+        """
+        data = combat_data or {}
+        new_form = data.get("pending_rolls")
+        old_form = data.get("pending_player_roll")
+
+        if isinstance(new_form, dict) and new_form:
+            slots = {}
+            for key, entry in new_form.items():
+                if not isinstance(entry, dict):
+                    print(f"⚠️ pending_rolls[{key!r}] is not a dict — dropped")
+                    continue
+                cid = str(key).strip()
+                entry = dict(entry)
+                entry["character_id"] = cid
+                slots[cid] = entry
+            print(f"ℹ️ Pending rehydrated (per-character form): {len(slots)} slot(s) — "
+                  f"{[(e.get('character_name'), e.get('type')) for e in slots.values()]}")
+            return slots
+
+        if isinstance(old_form, dict) and old_form:
+            entry = dict(old_form)
+            cid = entry.get("character_id")
+            if not cid:
+                cid = self._resolve_character_id(entry.get("character_name"), party_characters)
+            if not cid:
+                print(f"⚠️ Legacy pending_player_roll for {entry.get('character_name')!r} "
+                      f"({entry.get('type')}) has no resolvable character_id — DISCARDED")
+                return {}
+            cid = str(cid).strip()
+            entry["character_id"] = cid
+            print(f"ℹ️ Pending rehydrated (legacy single-slot form) → migrated to slot {cid} "
+                  f"({entry.get('character_name')}, {entry.get('type')})")
+            return {cid: entry}
+
+        print("ℹ️ Pending rehydrated: none persisted")
+        return {}
+
+    @staticmethod
+    def _pending_dice_label(p: dict) -> str:
+        """Short 'what die, for what' label for the PENDING ROLLS context."""
+        t = p.get("type", "")
+        weapon = (p.get("weapon") or {}).get("name")
+        if t == "skill_check":
+            return f"1d20 {p.get('skill') or 'check'}"
+        if t == "weapon_attack":
+            return f"1d20 attack{f', {weapon}' if weapon else ''}"
+        if t == "spell_attack":
+            return f"1d20 {p.get('spell') or 'spell attack'}"
+        if t in ("weapon_damage", "spell_damage", "sneak_damage"):
+            spec = clean_dice_spec(p.get("damage_spec") or p.get("dice")
+                                   or (p.get("weapon") or {}).get("damage") or "")
+            what = p.get("spell") or weapon or ("Sneak Attack" if t == "sneak_damage" else "")
+            return f"{spec or 'damage'} damage{f', {what}' if what else ''}"
+        if t == "healing":
+            return f"{p.get('healing_dice') or 'healing'} healing"
+        if t == "self_damage":
+            return "damage roll"
+        return t or "roll"
 
     def _get_roll_prompt(self, pending: dict) -> str:
         """Generate a human-readable prompt for the player to roll dice."""

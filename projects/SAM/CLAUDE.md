@@ -77,9 +77,16 @@ Archivos `*.resolved` (`implementation_plan_phase_16_math.md.resolved`, `project
 - Si una nueva feature requiere "que el modelo decida X", primero verificar si X se puede modelar como regla en `mechanic.py`.
 
 **Combat loop — invariantes:**
-- Turn enforcement: `combat.active && sender_name != current_turn.name` bloquea intents `attack/spell/ability/start_combat`. Producir solo recordatorio in-character (<30 palabras).
+- Turn enforcement: `combat.active && sender_name != current_turn.name` bloquea intents `attack/spell/ability/start_combat/end_turn/skill_check/self_damage/item` (todo lo que arma un pending o muta estado). `dice_roll` fuera de turno pasa solo si el roller tiene slot propio. Producir solo recordatorio in-character (<30 palabras).
 - Initiative ground truth: la prosa del narrador debe citar verbatim los `result` exactos de los `<DM_ROLL>` tags. Nunca inventar valores numéricos.
 - Action economy: `actions_remaining` se persiste en `combat_state.to_dict()` y se consume en handlers de `weapon_attack/weapon_damage/spell_attack/spell_damage`.
+
+**Pending rolls — un slot por personaje (instrucción 239):**
+- **Un dado se enruta por `character_id` del que lo tira, nunca por nombre.** `MechanicEngine.pending_rolls: dict[str, dict]` keyed por `character_id`. API: `set_pending(character_id, character_name, pending) -> bool` (estampa dueño; re-declarar reemplaza SOLO el slot propio; sin id → WARNING y `False`, nunca un pending sin dueño), `get_pending(character_id)`, `clear_pending(character_id)`, `all_pending()`.
+- `process_player_roll` resuelve únicamente el slot del roller; sin slot propio → fact `ORPHAN ROLL` (informativo). No existe comparación por nombre (SAM-049 superseded).
+- Persistencia: `campaigns.settings.combat.pending_rolls` (`{character_id: pending}`). La forma legacy `pending_player_roll` (slot único) se lee y migra en `_rehydrate_pending` (id del dict → nombre en la party → descartar con WARNING); nunca se escribe.
+- Facts: `→ PROMPT PLAYER (Nombre): …` nombra a quién se le pide el dado. Los slots ajenos que quedaron de requests anteriores viajan al narrador como contexto `PENDING ROLLS: …` (regla 19: puede mencionarlos, no re-pedirlos, no inventar resultados), nunca como fact de acción.
+- `/api/chat` recibe `campaign_id` explícito: acceso validado en `app/core/access.py` (personaje en la campaña, GM o admin; si no → 403) y `char_ctx` resuelto DENTRO de esa campaña. Sin `campaign_id` → inferencia legacy por primer personaje con WARNING (compatibilidad temporal, ver SAM-067).
 
 **Resource consumption automático:**
 - Spell slots: el interpreter extrae `spell_level`. El orchestrator emite `state_update spell_slot_consume` después de procesar el hechizo.

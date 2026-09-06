@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
 from app.core.security import verify_token
+from app.core.access import can_access_campaign
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Union
 import asyncio
@@ -47,6 +48,10 @@ class ChatRequest(BaseModel):
     message: str
     history: List[Union[str, Dict[str, str]]] = []
     character_context: Optional[str] = "No character selected."
+    # Instrucción 239 (A1): the campaign the message belongs to. None → the
+    # backend infers it from the user's first character (temporary compat,
+    # logged as WARNING; to be removed once the frontend always sends it).
+    campaign_id: Optional[str] = None
 
 class RollRequest(BaseModel):
     expression: str # e.g. "1d20+5"
@@ -291,25 +296,44 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
         msg_clean = request.message.strip()
         print(f"DEBUG CHAT REQUEST: '{msg_clean}' from {user_id}")
 
-        # [PHASE 18] MULTIPLAYER ROUTING
+        # [PHASE 18] MULTIPLAYER ROUTING — instrucción 239 (A2-A4)
         cid = None
         char_name = "Player"
         try:
-            # 1. Player Mode: Check if User has a Character in a Campaign
-            # We take the first character found (MVP). In future, frontend could send specific campaign_id.
-            chars = sam_brain.supabase.table("characters").select("campaign_id, name").eq("user_id", user_id).limit(1).execute()
-            if chars.data and chars.data[0].get('campaign_id'):
-                 cid = chars.data[0]['campaign_id']
-                 char_name = chars.data[0].get('name', 'Player')
-                 print(f"DEBUG: Found Campaign ID: {cid} via Character '{char_name}' (Player Mode)")
-            
-            # 2. GM Mode: Fallback to Campaign Ownership
-            if not cid:
-                camps = sam_brain.supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
-                if camps.data:
-                    cid = camps.data[0]['id']
-                    print(f"DEBUG: Found Campaign ID: {cid} via GM Ownership")
-                    
+            if request.campaign_id:
+                # A2: explicit campaign from the frontend.
+                # A3: the user must belong to it (character / GM / admin) —
+                # checked BEFORE anything is written to that campaign's chat.
+                cid = request.campaign_id
+                if not can_access_campaign(user_id, cid):
+                    print(f"🚫 403: user {user_id} has no access to campaign {cid}")
+                    raise HTTPException(status_code=403, detail="No access to this campaign")
+                # A4: the sender's character INSIDE this campaign — never their
+                # first character somewhere else. None → GM mode ("Player").
+                mine = sam_brain.supabase.table("characters").select("id, name") \
+                    .eq("user_id", user_id).eq("campaign_id", cid).limit(1).execute()
+                if mine.data:
+                    char_name = mine.data[0].get("name") or "Player"
+                print(f"DEBUG: Campaign ID {cid} (explicit) — sender '{char_name}'")
+            else:
+                # Temporary compatibility: infer from the user's first character.
+                # Removed in a future instruction once the frontend sends campaign_id.
+                print("WARNING: campaign_id inferido, frontend desactualizado")
+                chars = sam_brain.supabase.table("characters").select("campaign_id, name").eq("user_id", user_id).limit(1).execute()
+                if chars.data and chars.data[0].get('campaign_id'):
+                    cid = chars.data[0]['campaign_id']
+                    char_name = chars.data[0].get('name', 'Player')
+                    print(f"DEBUG: Found Campaign ID: {cid} via Character '{char_name}' (Player Mode, inferred)")
+
+                # GM Mode: fallback to campaign ownership
+                if not cid:
+                    camps = sam_brain.supabase.table("campaigns").select("id").eq("gm_id", user_id).limit(1).execute()
+                    if camps.data:
+                        cid = camps.data[0]['id']
+                        print(f"DEBUG: Found Campaign ID: {cid} via GM Ownership (inferred)")
+
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"WARNING: Campaign Lookup Failed: {e}")
 
@@ -333,8 +357,9 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
             print(f"DEBUG: Detected Admin Command '{msg_clean}'")
             try:
                 from app.services.admin import AdminService
-                # Pass user_id so admin commands affect THIS user
-                admin_response = AdminService.handle_command(request.message, user_id)
+                # Pass user_id so admin commands affect THIS user; the resolved
+                # campaign lets /delegate accept an admin who is not the GM (SAM-004).
+                admin_response = AdminService.handle_command(request.message, user_id, campaign_id=cid)
                 print(f"DEBUG: Admin Response: {admin_response[:50]}...")
 
                 # Persist admin response to messages so it syncs via Realtime.
@@ -429,13 +454,15 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
                     if cid:
                         party_result = sam_brain.supabase.table("characters").select("*").eq("campaign_id", cid).execute()
                         party_characters = party_result.data if party_result and party_result.data else []
-                        # Find the sender's character
+                        # A4: the sender's character INSIDE this campaign. No match
+                        # → GM mode with an empty ctx. Never borrow a character
+                        # the user owns in another campaign.
                         for pc in party_characters:
                             if pc.get("user_id") == user_id:
                                 char_ctx = pc
                                 break
-                    if not char_ctx:
-                        # Fallback: try to find any character for this user
+                    else:
+                        # No campaign at all (legacy/solo): any character of this user.
                         char_result = sam_brain.supabase.table("characters").select("*").eq("user_id", user_id).limit(1).execute()
                         char_ctx = char_result.data[0] if char_result and char_result.data else {}
 
@@ -567,6 +594,8 @@ async def chat_with_gm(request: ChatRequest, user: dict = Depends(verify_token))
             if lock and lock.locked():
                 lock.release()
                 print(f"🔓 Lock released for campaign {cid}")
+    except HTTPException:
+        raise  # 403 (A3) must reach the client as a real status, not as chat text
     except Exception as e:
         import traceback
         trace = traceback.format_exc()

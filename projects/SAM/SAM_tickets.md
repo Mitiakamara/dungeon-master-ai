@@ -19,10 +19,10 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-001 | DM_ROLL chips apilados verticalmente | BUG | P1 | DONE |
 | SAM-002 | Turn enforcement + Extra Attack | FEAT | P0 | DONE |
 | SAM-003 | Sneak Attack modeling | FEAT | P1 | DONE |
-| SAM-004 | `/delegate` rechaza rol `admin` | BUG | P2 | OPEN |
+| SAM-004 | `/delegate` rechaza rol `admin` | BUG | P2 | DONE |
 | SAM-005 | Vex tiene Unarmed Strike incorrecto | BUG | P3 | OPEN |
 | SAM-006 | MemoryService trunca JSON de Gemini | BUG | P3 | OPEN |
-| SAM-007 | FK violation al crear personaje para usuarios nuevos | BUG | P2 | OPEN? |
+| SAM-007 | FK violation al crear personaje para usuarios nuevos | BUG | P2 | OPEN |
 | SAM-008 | SAM verbosidad ocasional | BUG | P3 | OPEN |
 | SAM-009 | Servicio de generación de imágenes (tag `<IMAGE>`) | FEAT | P2 | OPEN |
 | SAM-010 | Vercel Root Directory config | CHORE | P3 | OPEN |
@@ -64,9 +64,9 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-046 | Unarmed Strike con daño fijo ("5"/"1d1") rompe prompt y validación — tratar como 1d4+STR | BUG | P2 | DONE |
 | SAM-047 | Auditoría de multiplayer pre-playtest grupal (`SAM_audit_multiplayer_2026-06-11.md`) | CHORE | P1 | DONE |
 | SAM-048 | Comandos admin sin verificación de rol server-side; `/reset` no-GM = nuclear wipe sin scope de campaña | BUG | P1 | OPEN |
-| SAM-049 | Pendings sin validación de dueño fuera de combate → cualquier jugador consume el pending ajeno | BUG | P1 | DONE |
+| SAM-049 | Pendings sin validación de dueño fuera de combate → cualquier jugador consume el pending ajeno | BUG | P1 | SUPERSEDED |
 | SAM-050 | Doble envío: INSERT de mensaje pre-lock + lock sin timeout + retry del cliente a 30s | BUG | P2 | OPEN |
-| SAM-051 | Atribución por primer personaje del usuario (`limit 1`) — `/api/chat` sin `character_id` explícito | REFACTOR | P2 | OPEN |
+| SAM-051 | Atribución por primer personaje del usuario (`limit 1`) — `/api/chat` sin `character_id` explícito | REFACTOR | P2 | IN_PROGRESS |
 | SAM-052 | Roster del party con HP congelado (fetch único, sin Realtime) + subscripciones sin filtro de campaña | UX | P2 | OPEN |
 | SAM-053 | Tirada sin pending se resuelve en el LLM: `freeform_roll` → facts vacíos → `narrate_roleplay` | BUG | P0 | DONE |
 | SAM-054 | Regla 15 del narrator licencia al LLM a calcular totales de skill check | BUG | P0 | DONE |
@@ -78,11 +78,13 @@ Sistema de tracking de bugs, features y chores pendientes.
 | SAM-060 | Interpreter sin glosario ES→EN de armas ("mandoble" → Greataxe) | BUG | P1 | OPEN |
 | SAM-061 | Sin soporte de N instancias del mismo NPC (nombres únicos, targeting, `resolve_npc_turn`) | FEAT | P2 | OPEN |
 | SAM-062 | Healing sin validación de dados ni gate de inventario | BUG | P2 | OPEN |
-| SAM-063 | Observabilidad: `metadata.engine`, log del freeform pending, fact visible para el reject de SAM-049 | CHORE | P2 | OPEN |
+| SAM-063 | Observabilidad: `metadata.engine`, log del freeform pending, fact visible para el reject de SAM-049 | CHORE | P2 | DONE |
 | SAM-064 | El narrator puebla escenas con enemigos que no existen en combat state | BUG | P3 | OPEN |
 | SAM-065 | Trackeo real de ventaja/desventaja (hoy se asume ventaja ante 2d20) | FEAT | P2 | OPEN |
+| SAM-066 | Observabilidad: estampar `metadata.engine` (orchestrator/legacy) en los mensajes de SAM | CHORE | P3 | OPEN |
+| SAM-067 | Frontend envía `campaign_id` en `/api/chat`; quitar la inferencia `limit(1)` del backend | FEAT | P1 | OPEN |
 
-> SAM-053–064 salieron del diagnóstico post-playtest multijugador (instrucción 235). Detalle en `SAM_progress_log.md`.
+> SAM-053–064 salieron del diagnóstico post-playtest multijugador (instrucción 235). SAM-066/067 de la instrucción 239. Detalle en `SAM_progress_log.md`.
 
 > Detalle completo de SAM-018, SAM-021–032 en `SAM_audit_2026-06-05.md` (auditoría SAM-020). SAM-019 estuvo reservado hasta la instrucción 224, donde se asignó a iniciativa manual (decisión de diseño revisada post-playtest).
 
@@ -92,13 +94,11 @@ Sistema de tracking de bugs, features y chores pendientes.
 
 ### SAM-004 — `/delegate` rechaza rol `admin`
 
-**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN
+**Tipo:** BUG · **Prio:** P2 · **Estado:** DONE · Instrucción 239 (verificar con cuenta admin en el próximo playtest)
 
 Usuarios con rol `admin` (no GM) reciben "No active campaign found for GM" al intentar `/delegate`. El resolver solo acepta `gm_id` como dueño de campaña.
 
-**Archivos afectados:** handler de `/delegate` en backend (probablemente `backend/routes/admin.py` o `backend/routes/commands.py`).
-
-**Criterio de done:** el resolver acepta tanto `gm_id == user_id` como `user.role == 'admin'`.
+**Resuelto (239 A3):** no existía un helper "es GM o admin" — el único era `verify_admin` en `invitations.py` (solo rol). Nuevo `app/core/access.py` (`is_admin`, `is_gm`, `is_gm_or_admin`, `has_character_in_campaign`, `can_access_campaign`); `verify_admin` delega ahí. `AdminService.handle_command` recibe el `campaign_id` que `/api/chat` resolvió y `_find_character_in_active_campaign(name, user_id, campaign_id)` lo acepta si `is_gm_or_admin`; sin campaña o sin derechos cae al lookup legacy por `gm_id`. Un admin sin personaje ni GM-ship solo queda cubierto cuando el frontend mande `campaign_id` (SAM-067).
 
 ---
 
@@ -130,11 +130,16 @@ Log ejemplo: `MemoryService: failed to parse JSON (Unterminated string starting 
 
 ### SAM-007 — FK violation al crear personaje para usuarios nuevos
 
-**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN?
+**Tipo:** BUG · **Prio:** P2 · **Estado:** OPEN · Instrucción 238
 
-El progress log del 18 Mar 2026 reporta resuelto via trigger `handle_new_user` (migration 006). Las memorias aún lo listan como pendiente. **Verificar en playtest si sigue ocurriendo.**
+El progress log del 18 Mar 2026 reporta resuelto via trigger `handle_new_user` (migration 006). Pre-vuelo de solo lectura del 6 Sep 2026 (instrucción 238) contra la instancia:
 
-**Criterio de done:** un usuario recién registrado puede crear un personaje sin FK violation. Si ya está resuelto, mover a DONE y anotar commit.
+- **Huérfanos (`auth.users` sin `public.profiles`): 1** — `96d231b2-f734-44e5-ad34-ece13ed23544`, `fcorrea@flexflow8.com`, provider `google`, creado 2026-01-21. Es anterior a la migration 006 (Mar 2026), así que no prueba que el trigger falle: prueba que el backfill manual de enero (`INSERT profiles`, progress log) no cubrió esta cuenta. Hoy esa cuenta no puede crear personaje (`app/routers/characters.py:116`, FK `characters.user_id → profiles(id)` en `schema_game_engine.sql:7`) y el INSERT de sus mensajes de chat falla con WARNING (`server.py:318-329`, FK `messages.sender_id → profiles(id)`).
+- **Trigger `on_auth_user_created` / función `handle_new_user`:** existencia y `prosrc` en la instancia **pendientes de verificar** (queries 1 de la instrucción 238, sin resultado aún). El repo los define en `backend/schema_invitations.sql:51-70`; no hay runner de migraciones, así que el código no puede confirmar que estén aplicados.
+- **Key del backend:** `SUPABASE_KEY` es `service_role` (claim del JWT). El comentario "should be the ANON key" en `app/core/security.py:10` está desactualizado. RLS no interviene en los inserts del backend; el fallo es la FK, no la policy.
+- **Superficie:** los dos caminos que crean filas en `auth.users` — `invitations.py:171-176` (signup con código) y Google OAuth en `frontend/components/profile-menu.tsx:85-90` — dependen 100% del trigger; ninguno inserta en `profiles`.
+
+**Criterio de done:** trigger verificado en la instancia con cuerpo idéntico al del repo, huérfanos = 0 (backfill de la cuenta listada), y un usuario recién registrado crea un personaje sin FK violation. Nada se aplica en Supabase sin instrucción explícita.
 
 ---
 
@@ -296,6 +301,8 @@ El orchestrator depende del legacy: `sam_brain.supabase` (cliente Supabase usado
 
 `pending_action`/`set_pending_action`/`clear_pending_action` (`combat_state.py:119-125`) nunca se invocan; siempre vale `None`; `turn_is_over` (`:88-90`) depende de eso. Coexiste con el `pending_player_roll` vivo (confusión de nombres). Además, `/load` emite `<ACTION>RELOAD_CHAT</ACTION>` (`admin.py:172`) que el frontend nunca maneja.
 
+**Nota 239 (B10):** `turn_is_over()` SÍ tiene un caller — `orchestrator.py` en el bloque de `dice_roll` (`if combat.turn_is_over():` antes de `_resolve_npc_turns`) — así que no se tocó nada de `combat_state.py`. Como `pending_action` es siempre `None`, hoy equivale a `actions_remaining <= 0`. Se resuelve aparte.
+
 **Criterio de done:** eliminar `pending_action` y helpers muertos; simplificar `turn_is_over` a `actions_remaining <= 0`; remover/implementar `RELOAD_CHAT`. Detalle en `SAM_audit_2026-06-05.md` §1, §3.
 
 ---
@@ -362,7 +369,9 @@ Auditoría SAM-047 §7. El frontend bloquea `/reset|/checkpoint|/load|/list` par
 
 ### SAM-049 — Pendings sin validación de dueño fuera de combate
 
-**Tipo:** BUG · **Prio:** P1 · **Estado:** DONE · Instrucción 234 (backend → Render)
+**Tipo:** BUG · **Prio:** P1 · **Estado:** SUPERSEDED by per-character pending (instrucción 239) · antes DONE en la 234
+
+**Superseded (239):** la comparación por nombre de `process_player_roll` fue eliminada. Con `pending_rolls` keyed por `character_id`, `process_player_roll` solo ve el slot del roller (`get_pending(character["id"])`): un dado ajeno no encuentra pending y sale como `ORPHAN ROLL`, con fact; el slot del dueño ni se toca. Desaparece también el hueco "owner vacío" (`set_pending` siempre estampa). `test_sam049.py` borrado — sus escenarios viven en `tests/test_pending_rolls.py` (b, c) salvo S5 "ownerless lenient", que ahora es exactamente el comportamiento prohibido.
 
 Auditoría SAM-047 §6 (hallazgo principal). `pending_player_roll` es uno por campaña; la validación de propiedad vive solo en el turn guard, que corre **solo si `combat.active`** (`orchestrator.py:83`). Fuera de combate (skill checks de exploración, hechizos, pociones), **cualquier dado de cualquier jugador consume el pending ajeno**: Björn pide Perception → Fekas tira un d20 → el check de Björn se resuelve con los modificadores de Fekas. Con dos humanos explorando esto ocurre en los primeros minutos. Además los pendings de spell (`process_spell`, `_resolve_spell_attack`) no estampan `character_name` (sin dueño).
 
@@ -380,15 +389,19 @@ Auditoría SAM-047 §6 (hallazgo principal). `pending_player_roll` es uno por ca
 
 Auditoría SAM-047 §1. El INSERT del mensaje de usuario ocurre antes del lock (`server.py:133-146`) sin idempotencia; el lock espera sin tope; el cliente aborta a 30s y ofrece "Reintentar" → el retry inserta el mensaje de nuevo y SAM responde dos veces. Con dos jugadores encolando tras un request lento del LLM, la ventana es real. **Nota:** el lock es in-process (`asyncio.Lock`, `server.py:82-88`) — correcto con 1 instancia; si Render escala a 2+ instancias/workers se necesita lock distribuido (advisory lock de Postgres).
 
+**Nota 239:** sin cambios. El lock sigue siendo in-process, aceptado para 1 worker. Diagnóstico 237 agregó que `process_message` es síncrono y bloquea el event loop durante el LLM (serialización global de facto).
+
 **Criterio de done:** un retry del cliente no duplica el mensaje ni la respuesta (idempotencia o INSERT dentro del lock con dedup), o el lock responde "SAM está ocupado" antes del timeout del cliente.
 
 ---
 
 ### SAM-051 — Atribución por primer personaje del usuario (`limit 1`)
 
-**Tipo:** REFACTOR · **Prio:** P2 · **Estado:** OPEN
+**Tipo:** REFACTOR · **Prio:** P2 · **Estado:** IN_PROGRESS · backend listo en la instrucción 239, falta SAM-067
 
 Auditoría SAM-047 §5. `/api/chat` no recibe `character_id`/`campaign_id`; el backend toma el **primer** personaje del usuario (`server.py:117`, `limit(1)`) para derivar campaña y sender_name. Con un usuario multi-personaje (p.ej. dos campañas), la atribución puede salir del personaje equivocado. Inocuo para el playtest (1 personaje por humano).
+
+**Avance (239 A1-A4):** `ChatRequest.campaign_id` opcional; si viene, acceso validado (`can_access_campaign` → 403) y `char_name`/`char_ctx` resueltos DENTRO de esa campaña (nunca un personaje de otra campaña; sin personaje → GM mode con ctx vacío). Si no viene, inferencia `limit(1)` con `WARNING: campaign_id inferido, frontend desactualizado`. Se cierra cuando el frontend lo mande y se quite la inferencia (SAM-067).
 
 **Criterio de done:** el frontend manda `character_id` (ya lo tiene en `selectedCharacter`); el backend valida pertenencia y atribuye por ese personaje, con fallback al comportamiento actual.
 
@@ -429,6 +442,8 @@ Diagnóstico 235, Área 2. `_handle_start_combat` (`orchestrator.py:588-697`) le
 **Tipo:** BUG · **Prio:** P1 · **Estado:** OPEN
 
 Diagnóstico 235, Área 3. Un pending vivo solo se reemplaza si el intent siguiente es `attack`/`spell`/`skill_check`/`item`/`self_damage`; `roleplay`/`movement`/`free_action`/`ability` lo dejan intacto (`orchestrator.py:317-331`) y se re-persiste (`472-473`). `end_turn` es la única salida explícita, y solo en combate. `end_combat` (`combat_state.py:144-152`) tampoco lo limpia: el pending vive en el engine y se re-adjunta al `{"active": False}`. Si `_out_of_actions` o el turn guard bloquean la declaración nueva, esta ni llega a `process_attack` y el pending viejo sobrevive. Fekas quedó seis turnos bloqueada (17-ago 14:01→14:06). La campaña quedó con un pending de Unarmed Strike 1d4+4 colgado ocho días.
+
+**Nota 239:** con slots por personaje, un pending pegajoso ya no bloquea a los demás (Fekas no pudo haber quedado bloqueada por el slot de Björn) ni congela el avance de turno ajeno. El slot propio sigue siendo pegajoso ante roleplay (ahora aparece como `PENDING ROLLS` en el contexto del narrador en vez de re-pedirse), `end_combat` sigue sin limpiar. Queda el TTL/round stamp.
 
 **Criterio de done:** declarar una acción nueva reemplaza el pending; existe cancelación explícita; `end_combat` limpia; el pending lleva sello de ronda para detectar rancios.
 
@@ -474,9 +489,29 @@ Diagnóstico 235, Área 5. `_check_dice` saltea `healing` por completo (`mechani
 
 ### SAM-063 — Observabilidad del pipeline
 
-**Tipo:** CHORE · **Prio:** P2 · **Estado:** OPEN
+**Tipo:** CHORE · **Prio:** P2 · **Estado:** DONE · Instrucción 239
 
 Diagnóstico 235, Áreas 1 y 6. Hoy el único discriminador orchestrator/legacy es accidental (`messages.metadata` NULL vs no-NULL, porque solo el path legacy escribe `debug_info`). Estampar `metadata.engine` explícito. Además: el reject de dueño de SAM-049 (`mechanic.py:211-212`) no deja rastro en la transcripción — el dado se vuelve un freeform silencioso; debería producir un fact para que el narrator diga "ese dado no es tuyo". (El dado sin pending ya produce fact desde SAM-053.)
+
+**Cerrado (239):** el dado ajeno tragado en silencio ya no puede ocurrir — sin slot propio es `ORPHAN ROLL` con fact; el diagnóstico "Dice roll swallowed" del orchestrator se eliminó por obsoleto. El freeform pending loguea `ℹ️ Pending replaced` / `set_pending refused` según el caso. La parte de `metadata.engine` no entraba en el alcance de la 239 y se movió a **SAM-066**.
+
+---
+
+### SAM-066 — Observabilidad: `metadata.engine`
+
+**Tipo:** CHORE · **Prio:** P3 · **Estado:** OPEN
+
+Heredado de SAM-063 (instrucción 239). Estampar `metadata.engine = "orchestrator" | "legacy"` en el INSERT del mensaje de SAM (`server.py`, payload `ai_payload`) para que el discriminador forense deje de depender de que `debug_info` sea NULL.
+
+---
+
+### SAM-067 — Frontend envía `campaign_id` en `/api/chat`; quitar la inferencia
+
+**Tipo:** FEAT · **Prio:** P1 · **Estado:** OPEN
+
+Instrucción 239 A2 dejó `ChatRequest.campaign_id` opcional con inferencia `limit(1)` como compatibilidad temporal (log `WARNING: campaign_id inferido, frontend desactualizado`). `chat-interface.tsx` ya tiene `campaignId` como prop (`:78`); falta incluirlo en el body del POST (`:648-658`). Con eso: quitar la rama de inferencia en `server.py`, cerrar SAM-051 y cubrir el caso admin-sin-personaje de SAM-004.
+
+**Criterio de done:** el backend rechaza (400) un `/api/chat` sin `campaign_id`; el log de WARNING desaparece de Render.
 
 ---
 

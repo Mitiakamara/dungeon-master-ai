@@ -127,6 +127,15 @@ def sysev(name, dice, result, rolls):
     return f"[SYSTEM EVENT] {name} rolled {dice}. Result: {result} (Rolls: {', '.join(str(r) for r in rolls)})."
 
 
+def pend_of(result, char_id="char-bjorn"):
+    """Instrucción 239: el pending persiste en combat_state.pending_rolls[character_id]."""
+    return ((result["combat_state"] or {}).get("pending_rolls") or {}).get(char_id)
+
+
+def arm(e, pending, char_id="char-bjorn", name="Björn Glacierfist"):
+    e.set_pending(char_id, name, pending)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 print("\nT1 — skill check fuera de combate: Python calcula el total")
 # WIS 16 → +3; proficiency_bonus 3; perception proficient → modificador +6
@@ -138,7 +147,7 @@ r1 = o.process_message(
     party_characters=[BJORN],
     combat_data=None,
 )
-pend = (r1["combat_state"] or {}).get("pending_player_roll")
+pend = pend_of(r1)
 check("declaración arma pending skill_check", bool(pend) and pend["type"] == "skill_check")
 check("pending estampa character_name", (pend or {}).get("character_name") == "Björn Glacierfist")
 check("pending estampa character_id", (pend or {}).get("character_id") == "char-bjorn")
@@ -155,7 +164,7 @@ facts = nllm.last_user
 check("el narrator recibió MECHANICAL FACTS (no roleplay)", "MECHANICAL FACTS" in facts)
 check("Python calculó el total: rolled 10 + 6 = 16", "rolled 10 + 6 = 16" in facts)
 check("el fact marca la proficiencia", "(Proficient)" in facts)
-check("pending consumido", not (r2["combat_state"] or {}).get("pending_player_roll"))
+check("pending consumido", not pend_of(r2))
 
 # ═══════════════════════════════════════════════════════════════════════════
 print("\nT2 — nombres de habilidad en español")
@@ -200,7 +209,7 @@ check("fact ORPHAN ROLL presente", "ORPHAN ROLL" in facts)
 check("cita el dado crudo (17)", "1d20 = 17" in facts)
 check("pide declarar la acción", "declare the action" in facts)
 check("sin state_updates", r["state_updates"] == [])
-check("sin pending nuevo", not (r["combat_state"] or {}).get("pending_player_roll"))
+check("sin pending nuevo", not (r["combat_state"] or {}).get("pending_rolls"))
 check("no pide una tirada", r["prompt_player_roll"] is None)
 # el motor no debe mutar nada
 e = MechanicEngine(CombatState())
@@ -257,18 +266,16 @@ def wolf(hp=50, ac=10):
 for order in ([7, 19], [19, 7]):
     c = wolf(ac=20)  # AC 20: con 7+7=14 falla, con 19+7=26 pega
     e = MechanicEngine(c)
-    e.pending_player_roll = {"type": "weapon_attack",
-                             "weapon": {"name": "Greatsword", "bonus": "+7", "damage": "2d6+4"},
-                             "target": "Wolf", "target_data": c.initiative_order[0],
-                             "character_name": "Björn Glacierfist"}
+    arm(e, {"type": "weapon_attack",
+            "weapon": {"name": "Greatsword", "bonus": "+7", "damage": "2d6+4"},
+            "target": "Wolf", "target_data": c.initiative_order[0]})
     r = e.process_player_roll(BJORN, {"dice": "2d20", "result": 26, "rolls": order})
     check(f"weapon_attack {order} → usa 19 (HIT)", r.get("attack_roll") == 19 and r.get("hit"))
     check(f"weapon_attack {order} → nota en el summary",
           "ADVANTAGE ASSUMED" in e.get_results_summary())
 
 e = MechanicEngine(CombatState())
-e.pending_player_roll = {"type": "skill_check", "skill": "Perception", "dc": 15,
-                         "character_name": "Björn Glacierfist"}
+arm(e, {"type": "skill_check", "skill": "Perception", "dc": 15})
 r = e.process_player_roll(BJORN, {"dice": "2d20", "result": 12, "rolls": [3, 9]})
 check("skill_check 2d20 → usa 9, no 3", r.get("roll") == 9 and r.get("total") == 15)
 check("skill_check emite la nota", "ADVANTAGE ASSUMED" in e.get_results_summary())
@@ -284,14 +291,14 @@ combat0["current_turn_index"] = 1
 combat0["actions_remaining"] = 2
 r1 = o.process_message(message="ataco con mi greatsword", sender_name="Björn Glacierfist",
                        character_context=BJORN, party_characters=[BJORN], combat_data=combat0)
-p = (r1["combat_state"] or {}).get("pending_player_roll")
+p = pend_of(r1)
 check("declaración → pending weapon_attack", (p or {}).get("type") == "weapon_attack")
 check("arma correcta (Greatsword, no attacks[0])", (p or {}).get("weapon", {}).get("name") == "Greatsword")
 
 r2 = o.process_message(message=sysev("Björn Glacierfist", "1d20", 18, [18]),
                        sender_name="Björn Glacierfist", character_context=BJORN,
                        party_characters=[BJORN], combat_data=r1["combat_state"])
-p2 = (r2["combat_state"] or {}).get("pending_player_roll")
+p2 = pend_of(r2)
 check("d20 → pending weapon_damage 2d6+4", (p2 or {}).get("damage_spec") == "2d6+4")
 check("sin ADVANTAGE ASSUMED en 1d20 normal", "ADVANTAGE ASSUMED" not in nllm.last_user)
 
@@ -302,13 +309,12 @@ check("daño aplicado al NPC (50 → 38)",
       any(c.get("name") == "Wolf" and c.get("hp") == 38
           for c in (r3["combat_state"] or {}).get("initiative_order", [])))
 e = MechanicEngine(wolf())
-e.pending_player_roll = {"type": "weapon_damage", "weapon": {"name": "Greatsword", "damage": "2d6+4"},
-                         "damage_spec": "2d6+4", "target": "Wolf",
-                         "target_data": e.combat.initiative_order[0],
-                         "character_name": "Björn Glacierfist"}
+arm(e, {"type": "weapon_damage", "weapon": {"name": "Greatsword", "damage": "2d6+4"},
+        "damage_spec": "2d6+4", "target": "Wolf",
+        "target_data": e.combat.initiative_order[0]})
 e.process_player_roll(BJORN, {"dice": "1d20", "result": 5, "rolls": [5]})
 check("SAM-039/042: dado equivocado sigue rechazado", "INVALID DICE" in e.get_results_summary())
-check("SAM-039/042: pending preservado", e.pending_player_roll is not None)
+check("SAM-039/042: pending preservado", e.get_pending("char-bjorn") is not None)
 
 # ═══════════════════════════════════════════════════════════════════════════
 print("\nT7 — smoke test .format() de todos los prompts tocados")

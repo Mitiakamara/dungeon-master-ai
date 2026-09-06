@@ -81,12 +81,78 @@ class MechanicEngine:
         self.combat = combat_state or CombatState()
         self.results = []  # Accumulates mechanical results for the narrator
         self.state_updates = []  # DB updates to apply (HP, XP, inventory, etc.)
-        self.pending_player_roll = None  # What we're waiting for the player to roll
+        # Instrucción 239: ONE pending-roll slot PER CHARACTER, keyed by
+        # character_id. A die routes by the id of whoever rolled it — never by
+        # name. A die whose roller has no slot is an ORPHAN ROLL.
+        self.pending_rolls: dict[str, dict] = {}
+        # Slots armed during THIS request — transient, never persisted. Lets the
+        # orchestrator tell "declared just now" (needs a PROMPT PLAYER line)
+        # from "still outstanding from an earlier request" (PENDING ROLLS ctx).
+        self.armed_this_request: set[str] = set()
 
     def reset_turn(self):
         """Clear results for a new turn."""
         self.results = []
         self.state_updates = []
+
+    # ─────────────────────────────────────
+    # PENDING ROLLS — one slot per character (instrucción 239)
+    # ─────────────────────────────────────
+
+    @staticmethod
+    def _slot_key(character_id) -> str:
+        """Normalize an id to a slot key; '' when there is no usable id."""
+        if character_id is None:
+            return ""
+        key = str(character_id).strip()
+        return "" if key.lower() in ("", "none") else key
+
+    def set_pending(self, character_id, character_name, pending: dict) -> bool:
+        """
+        Arm a pending roll for ONE character. Stamps character_id and
+        character_name on the dict. Re-declaring replaces that character's own
+        slot only (INFO); other characters' slots are never touched. Refuses
+        (False + WARNING) without a character_id: an id-less actor (GM without
+        a sheet) can't own a roll, and a slot without an id could never be
+        routed back to anyone.
+        """
+        key = self._slot_key(character_id)
+        if not key:
+            print(f"⚠️ set_pending refused: no character_id for {character_name!r} "
+                  f"({pending.get('type')}) — no pending armed")
+            return False
+        entry = dict(pending)
+        entry["character_id"] = key
+        entry["character_name"] = character_name
+        previous = self.pending_rolls.get(key)
+        if previous:
+            print(f"ℹ️ Pending replaced for {character_name} ({key}): "
+                  f"{previous.get('type')} → {entry.get('type')}")
+        self.pending_rolls[key] = entry
+        self.armed_this_request.add(key)
+        return True
+
+    def get_pending(self, character_id) -> Optional[dict]:
+        """This character's pending roll, or None. Never someone else's."""
+        key = self._slot_key(character_id)
+        return self.pending_rolls.get(key) if key else None
+
+    def clear_pending(self, character_id):
+        """Free ONE character's slot. Other characters keep theirs."""
+        key = self._slot_key(character_id)
+        if key and self.pending_rolls.pop(key, None) is not None:
+            self.armed_this_request.discard(key)
+
+    def all_pending(self) -> list[dict]:
+        """Every outstanding pending in the campaign (facts + guard)."""
+        return list(self.pending_rolls.values())
+
+    @staticmethod
+    def _mark_pending_refused(result: dict):
+        """A declaration that could not arm a slot must not ask for dice."""
+        result["needs_player_roll"] = False
+        result["prompt_player"] = None
+        result["pending_refused"] = True
 
     # ─────────────────────────────────────
     # PLAYER ACTIONS
@@ -134,14 +200,14 @@ class MechanicEngine:
                     result["needs_player_roll"] = True
                     result["damage_dice"] = self._get_spell_damage_dice(spell, caster)
                     result["prompt_player"] = f"¡{target['name']} falla la salvación! Tira {result['damage_dice']} de daño."
-                    self.pending_player_roll = {
+                    if not self.set_pending(caster.get("id"), caster.get("name"), {
                         "type": "spell_damage",
                         "spell": spell["name"],
                         "target": target["name"],
                         "target_data": target,
                         "damage_spec": clean_dice_spec(result["damage_dice"]),  # SAM-042
-                        "character_name": caster.get("name"),  # SAM-049: owner
-                    }
+                    }):
+                        self._mark_pending_refused(result)
                 else:
                     result["needs_player_roll"] = False
                     result["prompt_player"] = f"¡{target['name']} resiste el hechizo!"
@@ -154,22 +220,24 @@ class MechanicEngine:
         elif save_atk and (save_atk.startswith("+") or save_atk.startswith("-")):
             result["needs_player_roll"] = True
             result["prompt_player"] = f"Haz tu tirada de ataque con {spell['name']}."
-            self.pending_player_roll = {
+            if not self.set_pending(caster.get("id"), caster.get("name"), {
                 "type": "spell_attack",
                 "spell": spell["name"],
                 "target": target["name"],
                 "target_data": target,
                 "attack_bonus": save_atk,
-                "character_name": caster.get("name"),  # SAM-049: owner
-            }
+            }):
+                self._mark_pending_refused(result)
 
         self.results.append(result)
         return result
 
-    def process_attack(self, attacker: dict, weapon: dict, target: dict) -> dict:
+    def process_attack(self, attacker: dict, weapon: dict, target: dict,
+                       sneak_dice: Optional[str] = None) -> dict:
         """
         Process a weapon attack.
         Player rolls attack — we wait for SYSTEM EVENT.
+        sneak_dice: Sneak Attack chain hint (SAM-003), decided by the caller.
         """
         result = {
             "action": "attack",
@@ -180,12 +248,16 @@ class MechanicEngine:
             "needs_player_roll": True,
             "prompt_player": f"Haz tu tirada de ataque con {weapon['name']} (bono {weapon.get('bonus', '+0')})."
         }
-        self.pending_player_roll = {
+        # Instrucción 239: the owner is stamped HERE by set_pending — no caller
+        # setdefault, no ownerless attack pending possible.
+        if not self.set_pending(attacker.get("id"), attacker.get("name"), {
             "type": "weapon_attack",
             "weapon": weapon,
             "target": target["name"],
-            "target_data": target
-        }
+            "target_data": target,
+            "sneak_dice": sneak_dice,
+        }):
+            self._mark_pending_refused(result)
         self.results.append(result)
         return result
 
@@ -202,17 +274,14 @@ class MechanicEngine:
             "needs_player_roll": True,
             "prompt_player": f"Haz una tirada de {skill}."
         }
-        self.pending_player_roll = {
+        # The check belongs to whoever declared it — set_pending stamps the
+        # owner (id + name) so an ownerless skill pending can never exist.
+        if not self.set_pending(character.get("id"), character.get("name"), {
             "type": "skill_check",
             "skill": skill,
             "dc": dc,
-            # SAM-049/SAM-053: the check belongs to whoever declared it. The
-            # orchestrator overrides character_name with the authoritative
-            # sender_name, but stamping here means an ownerless skill pending
-            # can never be created, whatever the call site.
-            "character_name": character.get("name"),
-            "character_id": character.get("id"),
-        }
+        }):
+            self._mark_pending_refused(result)
         self.results.append(result)
         return result
 
@@ -225,7 +294,12 @@ class MechanicEngine:
         Process a SYSTEM EVENT dice roll from a player.
         roll_data: {"dice": "1d20", "result": 18, "rolls": [18]}
         """
-        pending = self.pending_player_roll
+        # Instrucción 239: route by the roller's character_id — their own slot
+        # or nothing. Another character's pending is invisible from here, so a
+        # die from the wrong player is simply an orphan (fact below), never a
+        # silent swallow (SAM-063) and never someone else's resolution (SAM-049).
+        char_id = character.get("id")
+        pending = self.get_pending(char_id)
         if not pending:
             # SAM-053: no pending action. This used to return silently WITHOUT
             # appending to self.results — empty facts dropped the request into
@@ -250,18 +324,6 @@ class MechanicEngine:
             self.results.append(result)
             return {"action": "freeform_roll", "roll": roll_data, "character": char_name}
 
-        # SAM-049: the pending belongs to a specific character. A die from anyone
-        # else is THEIR own freeform roll — never consume or resolve someone
-        # else's pending. This is the ONLY ownership check outside combat (the
-        # turn guard only runs when combat.active), so it guards exploration too
-        # (e.g. Björn's Perception pending vs a die Fekas rolls).
-        owner = (pending.get("character_name") or "").strip().lower()
-        roller = (character.get("name") or "").strip().lower()
-        if owner and roller and owner != roller:
-            print(f"🚫 Roll by {character.get('name')} ignored — pending belongs to "
-                  f"{pending.get('character_name')} (preserved)")
-            return {"action": "freeform_roll", "roll": roll_data, "character": character.get("name", "Unknown")}
-
         # SAM-039/042: strict dice validation. If the rolled dice don't match
         # what the pending action requires, reject WITHOUT touching state and
         # keep the pending intact so the correct die can be rolled next request.
@@ -272,7 +334,7 @@ class MechanicEngine:
             print(f"⛔ Invalid dice: expected {invalid['expected']}, got {invalid['rolled']} — pending preserved")
             return result
 
-        self.pending_player_roll = None  # Clear pending
+        self.clear_pending(char_id)  # slot freed; a chained roll re-arms it below
 
         if pending["type"] == "spell_damage":
             return self._resolve_spell_damage(character, roll_data, pending)
@@ -520,7 +582,8 @@ class MechanicEngine:
             result["needs_player_roll"] = True
             result["damage_dice"] = damage_dice
             result["prompt_player"] = f"{'¡CRÍTICO! ' if hit_result['critical'] else ''}¡Impacto! Tira {damage_dice} de daño."
-            self.pending_player_roll = {
+            # Chained roll: same character (the roller owns the slot by construction).
+            self.set_pending(character.get("id"), character.get("name"), {
                 "type": "weapon_damage",
                 # Carry the NORMALIZED damage so the modifier parse in
                 # _resolve_weapon_damage and the prompt agree.
@@ -533,8 +596,7 @@ class MechanicEngine:
                 "damage_spec": clean_dice_spec(damage_dice),
                 # SAM-003: carry the Sneak Attack chain hint to the damage roll
                 "sneak_dice": pending.get("sneak_dice"),
-                "character_name": pending.get("character_name"),
-            }
+            })
         else:
             result["needs_player_roll"] = False
             result["prompt_player"] = "¡Fallo!" if not hit_result["fumble"] else "¡Pifia!"
@@ -587,14 +649,13 @@ class MechanicEngine:
             if sneak_dice and not result["target_killed"]:
                 result["needs_player_roll"] = True
                 result["prompt_player"] = f"¡Sneak Attack! Tira {sneak_dice} de daño adicional."
-                self.pending_player_roll = {
+                self.set_pending(character.get("id"), character.get("name"), {
                     "type": "sneak_damage",
                     "dice": sneak_dice,
                     "damage_spec": clean_dice_spec(sneak_dice),  # SAM-042
                     "target": target["name"],
                     "target_data": {**target, "hp": hp_result["new_hp"]},
-                    "character_name": pending.get("character_name"),
-                }
+                })
 
         self.results.append(result)
         return result
@@ -656,13 +717,12 @@ class MechanicEngine:
         if hit_result["hit"]:
             result["needs_player_roll"] = True
             result["prompt_player"] = "¡Impacto! Tira el daño."
-            self.pending_player_roll = {
+            self.set_pending(character.get("id"), character.get("name"), {
                 "type": "spell_damage",
                 "spell": pending["spell"],
                 "target": target["name"],
                 "target_data": target,
-                "character_name": pending.get("character_name") or character.get("name"),  # SAM-049
-            }
+            })
         else:
             result["needs_player_roll"] = False
 
@@ -1028,6 +1088,17 @@ class MechanicEngine:
         lines = []
         for r in self.results:
             action = r.get("action", "")
+
+            # Instrucción 239 (B9): the declaration could not arm a slot — the
+            # actor has no character sheet (id-less GM). Say so instead of
+            # asking for a die that nobody could ever resolve.
+            if r.get("pending_refused"):
+                who = r.get("caster") or r.get("attacker") or r.get("character") or "The sender"
+                lines.append(
+                    f"NO CHARACTER SHEET: {who} has no character record in this campaign, "
+                    f"so the {action} cannot be registered. Do NOT ask for dice."
+                )
+                continue
 
             # SAM-059: the advantage disclosure rides above whatever the roll
             # resolved into, so the narrator can quote it either way.

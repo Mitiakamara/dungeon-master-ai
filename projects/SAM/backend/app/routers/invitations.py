@@ -7,6 +7,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from app.core.security import verify_token
+from app.core.access import is_admin
 
 load_dotenv()
 
@@ -21,12 +22,8 @@ CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 
 def verify_admin(user_id: str) -> bool:
-    """Check if user has admin role in profiles."""
-    try:
-        result = supabase.table("profiles").select("role").eq("id", user_id).execute()
-        return result.data and result.data[0].get("role") == "admin"
-    except Exception:
-        return False
+    """Check if user has admin role in profiles (single source: core.access)."""
+    return is_admin(user_id)
 
 
 def generate_code(length: int = 6) -> str:
