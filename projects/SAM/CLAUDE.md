@@ -108,7 +108,14 @@ Archivos `*.resolved` (`implementation_plan_phase_16_math.md.resolved`, `project
 
 **Permitidos:**
 - `npm install`, `npm run dev`, `npm run build`, `npm run lint` en `projects/SAM/frontend/`.
-- `pip install -r requirements.txt`, `uvicorn server:app --reload` en `projects/SAM/backend/`.
+- `pip install -r requirements.txt`, `uvicorn server:app --reload` en `projects/SAM/backend/` (siempre con el venv de abajo).
+
+**Venv y tests del backend (instrucción 241 — correr antes de cada push):**
+- Venv del proyecto: `projects/SAM/backend/.venv` (Python 3.14, ignorado por git y por Dropbox vía stream `com.dropbox.ignored`). No existe `python` a secas en la máquina: el intérprete base es `python3.14`. `backend/venv/` (sin punto) es el venv viejo con ruta muerta — no usar.
+- Crear o reparar: desde `projects/SAM/backend/`, `python3.14 -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements.txt pytest`. No hace falta "activar": invocar siempre `.venv/Scripts/python.exe`.
+- Suite pytest: `PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests/ -q` (`tests/conftest.py` pone `backend/` en `sys.path`; con el venv completo usa el `langchain_core` real, sin venv lo stubbea — corre igual).
+- Harnesses legacy de la raíz (scripts, no pytest): `PYTHONUTF8=1 .venv/Scripts/python.exe test_samNNN.py` — `test_sam039_042`, `test_sam045_046`, `test_sam053_054_059` corren solo con stdlib; `test_sam044` importa `server.py` y **necesita el venv completo** (`supabase`, `langchain_google_genai`, `google.genai`).
+- `PYTHONUTF8=1` es obligatorio en Windows: los tests imprimen emojis y nombres con diéresis.
 - Lectura de cualquier archivo del proyecto.
 - Ejecutar scripts de seed en `backend/app/scripts/` contra la BD de **desarrollo**.
 - Crear feature branches desde el workspace root (`git checkout -b feat/...`).
